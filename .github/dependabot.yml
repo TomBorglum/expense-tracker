@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Keep the GitHub Actions referenced in workflows up to date, including the
+  # setup-direnv action pinned by SHA and the other pinned actions. This is the
+  # only ecosystem Dependabot supports here today; the pixi.toml python pin is
+  # handled separately by update-python.yml (Dependabot has no conda/pixi support).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      # "ci": these actions run only in CI, so label their bumps accordingly and
+      # consistently with the workflow's own commits.
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
