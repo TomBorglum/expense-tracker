@@ -1,0 +1,103 @@
+name: Update Python
+
+# pixi.toml pins python with an exact conda-forge version that Dependabot cannot
+# track. This job bumps the pin to the newest STABLE conda-forge release and
+# re-solves pixi.lock, then opens a PR. Authenticates as the expense-tracker-bot
+# GitHub App (Contents + Pull requests: read/write) rather than GITHUB_TOKEN, so the
+# PR behaves like a human-opened one and can trigger any (future) required status
+# checks - events made with GITHUB_TOKEN do not start further workflow runs.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      # Activate the environment declared in .envrc (use pixi), exposing pixi to
+      # the steps below - the same .envrc used for local development.
+      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@33884001947de7ee0eb6c11c6cb0b43c44564524 # v1.1.0
+
+      - name: Check for a newer stable Python
+        id: check
+        run: |
+          set -euo pipefail
+          manifest="pixi.toml"
+          current="$(grep -oP '^python\s*=\s*"==\K[0-9]+\.[0-9]+\.[0-9]+' "$manifest")"
+
+          # Newest STABLE conda-forge python: the .versions list is unsorted and
+          # includes pre-releases (e.g. 3.15.0a8), so filter to X.Y.Z and version-sort.
+          latest="$(curl -fsSL --proto '=https' \
+            "https://api.anaconda.org/package/conda-forge/python" \
+            | jq -r '.versions[]' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -n1)"
+          echo "current=$current  latest=$latest"
+
+          # Only ever move forward (guards against a yanked/regressed index).
+          newest="$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n1)"
+          if [[ "$current" == "$latest" || "$newest" != "$latest" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Already on the latest stable ($current); nothing to do."
+            exit 0
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Apply the bump
+        if: steps.check.outputs.changed == 'true'
+        env:
+          LATEST: ${{ steps.check.outputs.latest }}
+        run: |
+          set -euo pipefail
+          # Rewrite the exact pin (keep the == exact-pin convention), then re-solve
+          # the lockfile without installing.
+          sed -i -E "s|^(python[[:space:]]*=[[:space:]]*)\"==[0-9.]+\"|\1\"==${LATEST}\"|" pixi.toml
+          pixi lock
+
+      - name: Resolve the bot's commit identity
+        id: bot
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          # create-github-app-token exposes the slug but not the numeric user id,
+          # which the noreply address needs.
+          id="$(gh api "/users/${SLUG}[bot]" --jq .id)"
+          echo "name=${SLUG}[bot]" >> "$GITHUB_OUTPUT"
+          echo "email=${id}+${SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+
+      - name: Create pull request
+        if: steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          committer: ${{ steps.bot.outputs.name }} <${{ steps.bot.outputs.email }}>
+          author: ${{ steps.bot.outputs.name }} <${{ steps.bot.outputs.email }}>
+          branch: deps/update-python
+          delete-branch: true
+          base: main
+          commit-message: "deps: bump python to ${{ steps.check.outputs.latest }}"
+          title: "deps: bump python to ${{ steps.check.outputs.latest }}"
+          body: |
+            Automated bump of the `pixi.toml` python pin to the newest stable
+            conda-forge release **${{ steps.check.outputs.latest }}**, with
+            `pixi.lock` re-solved to match.
