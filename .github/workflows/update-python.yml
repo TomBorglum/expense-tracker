@@ -5,7 +5,7 @@ name: Update Python
 # re-solves pixi.lock, then opens a PR. Authenticates as the expense-tracker-bot
 # GitHub App (Contents + Pull requests: read/write) rather than GITHUB_TOKEN, so the
 # PR behaves like a human-opened one and can trigger any (future) required status
-# checks — events made with GITHUB_TOKEN do not start further workflow runs.
+# checks - events made with GITHUB_TOKEN do not start further workflow runs.
 
 on:
   schedule:
@@ -30,7 +30,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       # Activate the environment declared in .envrc (use pixi), exposing pixi to
-      # the steps below — the same .envrc used for local development.
+      # the steps below - the same .envrc used for local development.
       - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@33884001947de7ee0eb6c11c6cb0b43c44564524 # v1.1.0
 
       - name: Check for a newer stable Python
