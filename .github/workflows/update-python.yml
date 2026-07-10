@@ -9,7 +9,7 @@ name: Update Python
 
 on:
   schedule:
-    - cron: '0 6 * * 1' # Mondays 06:00 UTC — matches the lazydocker cadence
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
   workflow_dispatch:
 
 permissions:
