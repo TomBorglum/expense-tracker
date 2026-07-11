@@ -5,8 +5,6 @@ file: ``src/expense_tracker/config.py`` -> repo root) so tasks work regardless o
 the current working directory.
 """
 
-from __future__ import annotations
-
 import os
 from pathlib import Path
 

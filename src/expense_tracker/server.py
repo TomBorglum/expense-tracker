@@ -6,8 +6,6 @@ Filtering is driven entirely by an HTML ``<form method="get">`` that reloads the
 page - there is no client-side JavaScript.
 """
 
-from __future__ import annotations
-
 from flask import Flask, render_template, request
 
 from . import config, db, queries
@@ -20,7 +18,7 @@ def create_app() -> Flask:
         static_folder=str(config.ROOT_DIR / "static"),
     )
 
-    @app.route("/")
+    @app.get("/")
     def dashboard():
         # Normalize blank query args to None so filters are truly optional.
         date_from = request.args.get("from") or None

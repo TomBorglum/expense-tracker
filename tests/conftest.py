@@ -1,8 +1,7 @@
 """Shared fixtures: a SQLite database built from a temporary CSV directory."""
 
-from __future__ import annotations
-
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -25,7 +24,7 @@ def data_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def conn(data_dir: Path, tmp_path: Path) -> sqlite3.Connection:
+def conn(data_dir: Path, tmp_path: Path) -> Iterator[sqlite3.Connection]:
     db_path = tmp_path / "test.sqlite"
     loader.build(data_dir=data_dir, db_path=db_path)
     connection = db.connect(db_path)

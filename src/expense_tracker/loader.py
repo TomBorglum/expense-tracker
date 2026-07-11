@@ -8,10 +8,9 @@ Money is stored as an integer number of cents (``amount_cents``) so that SQL
 ``SUM`` is exact - never as a float.
 """
 
-from __future__ import annotations
-
 import csv
 import sqlite3
+from collections.abc import Iterator
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -46,7 +45,7 @@ def _parse_amount_cents(value: str) -> int:
     return int(cents)
 
 
-def _iter_rows(csv_path: Path):
+def _iter_rows(csv_path: Path) -> Iterator[tuple[str, int, str, str, str]]:
     """Yield validated ``(date, amount_cents, category, description)`` tuples."""
     with csv_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
@@ -92,7 +91,7 @@ def build(data_dir: Path | None = None, db_path: Path | None = None) -> int:
     db_path = db_path or config.DB_PATH
 
     csv_files = sorted(data_dir.glob("*.csv"))
-    rows: list[tuple] = []
+    rows: list[tuple[str, int, str, str, str]] = []
     for csv_path in csv_files:
         rows.extend(_iter_rows(csv_path))
 

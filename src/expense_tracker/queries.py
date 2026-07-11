@@ -7,8 +7,6 @@ Money is stored as integer cents; these functions convert to ``Decimal`` dollars
 (cents / 100) so callers never do float arithmetic on money.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from decimal import Decimal
 from typing import NamedTuple
@@ -37,10 +35,10 @@ class MonthTotal(NamedTuple):
 
 def _where(
     date_from: str | None, date_to: str | None, category: str | None
-) -> tuple[str, list]:
+) -> tuple[str, list[str]]:
     """Build a WHERE clause and its parameters from optional filters."""
     clauses: list[str] = []
-    params: list = []
+    params: list[str] = []
     if date_from:
         clauses.append("date >= ?")
         params.append(date_from)

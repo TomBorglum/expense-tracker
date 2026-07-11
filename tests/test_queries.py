@@ -1,7 +1,5 @@
 """Tests for the pure query functions."""
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from expense_tracker import queries
