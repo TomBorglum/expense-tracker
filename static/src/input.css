@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind v4 uses CSS-first configuration and auto-detects source files.
+ * Explicitly register the template directory so the standalone CLI scans it
+ * for utility classes regardless of the working directory.
+ */
+@source "../../templates";

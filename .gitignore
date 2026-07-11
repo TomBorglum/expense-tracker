@@ -1,9 +1,21 @@
 # Pixi environment (managed via pixi.lock; never committed)
 .pixi/
 
+# Downloaded standalone Tailwind CLI binary (fetched by `pixi run setup-tailwind`)
+tools/tailwindcss
+
+# Compiled Tailwind stylesheet (build artifact of `pixi run build-css`)
+static/css/tailwind.css
+
+# Ephemeral SQLite database, rebuilt from data/*.csv on every run
+*.sqlite
+*.sqlite3
+
 # Python caches / artifacts
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Note: data/*.csv is the source of truth and IS committed.

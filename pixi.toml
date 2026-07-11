@@ -5,11 +5,22 @@ platforms = ["linux-64"]
 
 [dependencies]
 python = "==3.14.6"
+flask = "==3.1.2"
 ruff = "==0.15.21"
 mypy = "==2.2.0"
 pytest = "==9.1.1"
 
+# Put the src-layout package on the import path for every task and shell.
+[activation.env]
+PYTHONPATH = "src"
+
 [tasks]
+# Download the pinned standalone Tailwind CLI (no Node) into tools/tailwindcss.
+setup-tailwind = "mkdir -p tools && curl -sSL -o tools/tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 && chmod +x tools/tailwindcss"
+build-css = "./tools/tailwindcss -i static/src/input.css -o static/css/tailwind.css --minify"
+watch-css = "./tools/tailwindcss -i static/src/input.css -o static/css/tailwind.css --watch"
+load = "python -m expense_tracker.loader"
+serve = { cmd = "python -m expense_tracker", depends-on = ["build-css"] }
 lint = "ruff check ."
 format = "ruff format ."
 typecheck = "mypy"
