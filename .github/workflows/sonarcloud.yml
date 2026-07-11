@@ -1,0 +1,35 @@
+name: SonarCloud
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  scan:
+    name: Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history so SonarCloud can attribute issues to the right commits.
+          fetch-depth: 0
+      # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
+      # download one at runtime (a transient point of failure). Paired with
+      # sonar.scanner.skipJreProvisioning below.
+      - name: Set up JDK
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: SonarQube Cloud Scan
+        uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
+        with:
+          args: -Dsonar.scanner.skipJreProvisioning=true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
