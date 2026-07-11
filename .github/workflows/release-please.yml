@@ -1,0 +1,37 @@
+name: Release Please
+
+# Automates releases. On every push to main, release-please opens (or updates) a
+# single "chore: release X.Y.Z" PR that bumps CHANGELOG.md and the version
+# manifest from the Conventional Commit messages since the last tag. Merging that
+# PR creates the git tag and the GitHub Release with the generated notes.
+#
+# Authenticates as the expense-tracker-bot GitHub App rather than with GITHUB_TOKEN,
+# because events created by GITHUB_TOKEN do not trigger further workflow runs: the
+# release PR would never run the SonarCloud check, and the tag/release could not
+# trigger downstream workflows. App installation tokens have no such restriction.
+# The App needs Contents: read/write (branch, tag, release), Pull requests:
+# read/write (the release PR) and Issues: read/write (the autorelease:* labels).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
