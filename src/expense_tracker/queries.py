@@ -14,7 +14,10 @@ from typing import NamedTuple
 
 def _cents_to_dollars(cents: int | None) -> Decimal:
     # SUM(...) over no rows yields NULL (None); treat an absent total as zero.
-    return (Decimal(cents if cents is not None else 0) / 100).quantize(Decimal("0.01"))
+    if cents is None:
+        cents = 0
+    dollars = Decimal(cents) / 100
+    return dollars.quantize(Decimal("0.01"))
 
 
 class Expense(NamedTuple):
@@ -120,7 +123,8 @@ def grand_total(
         f"SELECT COALESCE(SUM(amount_cents), 0) AS total FROM expenses{where}",
         params,
     ).fetchone()
-    return _cents_to_dollars(row["total"])
+    # An aggregate without GROUP BY always returns one row, but guard defensively.
+    return _cents_to_dollars(row["total"] if row is not None else 0)
 
 
 def categories(conn: sqlite3.Connection) -> list[str]:
@@ -134,4 +138,6 @@ def categories(conn: sqlite3.Connection) -> list[str]:
 def date_range(conn: sqlite3.Connection) -> tuple[str | None, str | None]:
     """Return the (min, max) expense date, or (None, None) when empty."""
     row = conn.execute("SELECT MIN(date) AS lo, MAX(date) AS hi FROM expenses").fetchone()
+    if row is None:
+        return (None, None)
     return (row["lo"], row["hi"])
