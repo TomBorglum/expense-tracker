@@ -56,12 +56,10 @@ concatenated. Amounts are stored internally as integer cents so totals are exact
 
 ## Prerequisites
 
-[Pixi](https://pixi.sh/) is the only prerequisite - it manages the exact Python
-and dependency versions. Install it with:
-
-```bash
-curl -fsSL https://pixi.sh/install.sh | bash
-```
+This repository uses [Pixi](https://pixi.sh/) to manage the exact Python and
+dependency versions, provisioned automatically through [direnv](https://direnv.org/)
+via [`.envrc`](.envrc). With direnv allowed (`direnv allow`), `pixi` is on your
+`PATH` when you enter the directory - no manual installation needed.
 
 ## First-time setup
 
