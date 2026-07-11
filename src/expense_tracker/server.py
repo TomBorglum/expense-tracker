@@ -24,21 +24,25 @@ def create_app() -> Flask:
         date_from = request.args.get("from") or None
         date_to = request.args.get("to") or None
         category = request.args.get("category") or None
-        filters = dict(date_from=date_from, date_to=date_to, category=category)
+        filters = {"date_from": date_from, "date_to": date_to, "category": category}
 
         conn = db.connect()
         try:
-            context = dict(
-                expenses=queries.all_expenses(conn, **filters),
-                by_category=queries.total_by_category(conn, **filters),
-                by_month=queries.total_by_month(conn, **filters),
-                total=queries.grand_total(conn, **filters),
-                all_categories=queries.categories(conn),
-                min_date=queries.date_range(conn)[0],
-                max_date=queries.date_range(conn)[1],
+            context = {
+                "expenses": queries.all_expenses(conn, **filters),
+                "by_category": queries.total_by_category(conn, **filters),
+                "by_month": queries.total_by_month(conn, **filters),
+                "total": queries.grand_total(conn, **filters),
+                "all_categories": queries.categories(conn),
+                "min_date": queries.date_range(conn)[0],
+                "max_date": queries.date_range(conn)[1],
                 # Echo current filter values back into the form.
-                selected=dict(date_from=date_from or "", date_to=date_to or "", category=category or ""),
-            )
+                "selected": {
+                    "date_from": date_from or "",
+                    "date_to": date_to or "",
+                    "category": category or "",
+                },
+            }
         finally:
             conn.close()
         return render_template("index.html", **context)

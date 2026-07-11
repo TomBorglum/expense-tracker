@@ -19,6 +19,12 @@ jobs:
         with:
           # Full history so SonarCloud can attribute issues to the right commits.
           fetch-depth: 0
+      # Activate the environment declared in .envrc (use pixi), exposing pixi to
+      # the steps below - the same .envrc used for local development.
+      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@33884001947de7ee0eb6c11c6cb0b43c44564524 # v1.1.0
+      # Produce coverage.xml (sonar.python.coverage.reportPaths) for the scan.
+      - name: Run tests with coverage
+        run: pixi run test
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with
       # sonar.scanner.skipJreProvisioning below.

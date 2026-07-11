@@ -12,8 +12,9 @@ from decimal import Decimal
 from typing import NamedTuple
 
 
-def _cents_to_dollars(cents: int) -> Decimal:
-    return (Decimal(cents) / 100).quantize(Decimal("0.01"))
+def _cents_to_dollars(cents: int | None) -> Decimal:
+    # SUM(...) over no rows yields NULL (None); treat an absent total as zero.
+    return (Decimal(cents if cents is not None else 0) / 100).quantize(Decimal("0.01"))
 
 
 class Expense(NamedTuple):

@@ -18,4 +18,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# Coverage artifacts (produced by `pixi run test`, consumed by SonarCloud)
+.coverage
+coverage.xml
+
 # Note: data/*.csv is the source of truth and IS committed.

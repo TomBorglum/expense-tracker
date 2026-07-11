@@ -9,6 +9,7 @@ flask = "==3.1.2"
 ruff = "==0.15.21"
 mypy = "==2.2.0"
 pytest = "==9.1.1"
+pytest-cov = "==7.1.0"
 
 # Put the src-layout package on the import path for every task and shell.
 [activation.env]
@@ -24,4 +25,4 @@ serve = { cmd = "python -m expense_tracker", depends-on = ["build-css"] }
 lint = "ruff check ."
 format = "ruff format ."
 typecheck = "mypy"
-test = "pytest"
+test = "pytest --cov=expense_tracker --cov-report=xml --cov-report=term-missing"
