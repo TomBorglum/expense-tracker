@@ -1,0 +1,52 @@
+{
+  // Interpreter: the pixi default environment. direnv (.envrc "use pixi")
+  // already activates it, so VS Code should not re-activate in terminals.
+  "python.defaultInterpreterPath": "${workspaceFolder}/.pixi/envs/default/bin/python",
+  "python.terminal.activateEnvironment": false,
+
+  // Ruff owns Python formatting and lint fixes on save.
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+
+  // Use the pixi-installed tool binaries, not the extensions' bundled copies.
+  "ruff.importStrategy": "fromEnvironment",
+  "mypy-type-checker.importStrategy": "fromEnvironment",
+
+  // Pylance for IntelliSense; mypy owns strict type checking, so keep Pylance
+  // at "basic" to avoid duplicate diagnostics.
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.autoImportCompletions": true,
+
+  // Testing via pytest against the tests/ directory.
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests"],
+
+  // File hygiene matching repo conventions (ASCII/UTF-8, final newline).
+  "files.encoding": "utf8",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+
+  // Visual guide matching the Ruff line-length (see pyproject.toml).
+  "editor.rulers": [100],
+
+  // Keep build artifacts out of the file explorer and search.
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true,
+    "**/.pixi": true
+  },
+  "search.exclude": {
+    "**/.pixi": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true
+  }
+}

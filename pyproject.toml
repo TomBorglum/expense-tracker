@@ -1,0 +1,21 @@
+# Tool configuration only. Dependencies and the environment are managed by pixi
+# (see pixi.toml); this file exists so ruff, mypy, and pytest discover their
+# settings. It intentionally has no [project] or [build-system] table, so pixi
+# does not treat it as a project manifest.
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
