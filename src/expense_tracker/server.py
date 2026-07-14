@@ -19,7 +19,7 @@ def create_app() -> Flask:
     )
 
     @app.get("/")
-    def dashboard():
+    def dashboard() -> str:
         # Normalize blank query args to None so filters are truly optional.
         date_from = request.args.get("from") or None
         date_to = request.args.get("to") or None
