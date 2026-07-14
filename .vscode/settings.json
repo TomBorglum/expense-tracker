@@ -36,6 +36,22 @@
   // Visual guide matching the Ruff line-length (see pyproject.toml).
   "editor.rulers": [100],
 
+  // Frontend: the templates are Jinja, not plain HTML. Treat them as jinja-html
+  // so the Jinja extension highlights {% %}/{{ }}, then map that language back to
+  // html so Tailwind IntelliSense and Emmet still engage on the embedded markup.
+  "files.associations": {
+    "**/templates/*.html": "jinja-html"
+  },
+  "emmet.includeLanguages": {
+    "jinja-html": "html"
+  },
+  "tailwindCSS.includeLanguages": {
+    "jinja-html": "html"
+  },
+  // Tailwind v4 is CSS-first (no tailwind.config.js); point IntelliSense at the
+  // stylesheet entry point that imports Tailwind and registers the sources.
+  "tailwindCSS.experimental.configFile": "static/src/input.css",
+
   // Keep build artifacts out of the file explorer and search.
   "files.exclude": {
     "**/__pycache__": true,

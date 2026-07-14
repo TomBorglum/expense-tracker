@@ -10,7 +10,9 @@
     "tamasfe.even-better-toml",
     "redhat.vscode-yaml",
     "github.vscode-github-actions",
-    "editorconfig.editorconfig"
+    "editorconfig.editorconfig",
+    "bradlc.vscode-tailwindcss",
+    "samuelcolvin.jinjahtml"
   ],
   "unwantedRecommendations": [
     "renan-r-santos.pixi-code"
