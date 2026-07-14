@@ -1,0 +1,9 @@
+# Pixi environment (managed via pixi.lock; never committed)
+.pixi/
+
+# Python caches / artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
