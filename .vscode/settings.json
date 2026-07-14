@@ -3,6 +3,12 @@
   // already activates it, so VS Code should not re-activate in terminals.
   "python.defaultInterpreterPath": "${workspaceFolder}/.pixi/envs/default/bin/python",
   "python.terminal.activateEnvironment": false,
+  // Both the classic Python extension and the newer Python Environments
+  // extension are installed. Without this, Pylance follows the classic
+  // extension's own resolution (system python, no Flask) and ignores the
+  // Environments extension, which correctly resolves the pixi env via
+  // defaultInterpreterPath. Turning this on makes them agree. Reload required.
+  "python.useEnvironmentsExtension": true,
 
   // Ruff owns Python formatting and lint fixes on save.
   "[python]": {
@@ -92,5 +98,11 @@
     "**/.pixi": true,
     "**/.mypy_cache": true,
     "**/.ruff_cache": true
-  }
+  },
+  // Use the pixi environment manager (from renan-r-santos.pixi-code) so the
+  // Python Environments extension can claim the .pixi/envs/default env and make
+  // it selectable / auto-activated. The built-in system/conda managers do not
+  // own pixi envs, so without this the interpreter is not offered in the picker.
+  "python-envs.defaultEnvManager": "renan-r-santos.pixi-code:pixi",
+  "python-envs.defaultPackageManager": "renan-r-santos.pixi-code:pixi"
 }
