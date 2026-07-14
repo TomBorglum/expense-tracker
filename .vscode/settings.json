@@ -99,5 +99,10 @@
     "**/.mypy_cache": true,
     "**/.ruff_cache": true
   },
-  "python-envs.defaultEnvManager": "ms-python.python:system"
+  // Use the pixi environment manager (from renan-r-santos.pixi-code) so the
+  // Python Environments extension can claim the .pixi/envs/default env and make
+  // it selectable / auto-activated. The built-in system/conda managers do not
+  // own pixi envs, so without this the interpreter is not offered in the picker.
+  "python-envs.defaultEnvManager": "renan-r-santos.pixi-code:pixi",
+  "python-envs.defaultPackageManager": "renan-r-santos.pixi-code:pixi"
 }
