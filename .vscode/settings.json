@@ -51,6 +51,29 @@
   // Tailwind v4 is CSS-first (no tailwind.config.js); point IntelliSense at the
   // stylesheet entry point that imports Tailwind and registers the sources.
   "tailwindCSS.experimental.configFile": "static/src/input.css",
+  // Tailwind IntelliSense recommends enabling completions inside attribute
+  // strings; scope it to the Jinja templates so other languages are unaffected.
+  "[jinja-html]": {
+    "editor.quickSuggestions": {
+      "strings": "on"
+    }
+  },
+
+  // Config-file editors. Even Better TOML and RedHat YAML own formatting and
+  // schema validation for their file types. No formatOnSave: pixi.toml and the
+  // workflow YAML are hand-maintained (exact pins, SHA-pinned actions), so
+  // reformat on demand rather than reflowing tables on every save. Workflow
+  // files under .github/workflows are claimed by the GitHub Actions extension
+  // (language id github-actions-workflow), so [yaml] never touches them.
+  "[toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml"
+  },
+  "evenBetterToml.schema.associations": {
+    "pixi.toml": "https://pixi.sh/latest/schema/manifest/schema.json"
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
 
   // Keep build artifacts out of the file explorer and search.
   "files.exclude": {
