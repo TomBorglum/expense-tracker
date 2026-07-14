@@ -7,14 +7,12 @@
     "ms-python.mypy-type-checker",
     "SonarSource.sonarlint-vscode",
     "mkhl.direnv",
+    "renan-r-santos.pixi-code",
     "tamasfe.even-better-toml",
     "redhat.vscode-yaml",
     "github.vscode-github-actions",
     "editorconfig.editorconfig",
     "bradlc.vscode-tailwindcss",
     "samuelcolvin.jinjahtml"
-  ],
-  "unwantedRecommendations": [
-    "renan-r-santos.pixi-code"
   ]
 }
