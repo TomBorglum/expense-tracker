@@ -52,6 +52,11 @@
   // stylesheet entry point that imports Tailwind and registers the sources.
   "tailwindCSS.experimental.configFile": "static/src/input.css",
 
+  // The built-in CSS linter runs alongside Tailwind IntelliSense and flags
+  // Tailwind-only at-rules (@source, @theme, @apply, ...) as unknown. Silence
+  // it; the standalone Tailwind CLI parses these directives fine.
+  "css.lint.unknownAtRules": "ignore",
+
   // Keep build artifacts out of the file explorer and search.
   "files.exclude": {
     "**/__pycache__": true,
