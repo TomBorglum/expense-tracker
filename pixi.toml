@@ -9,10 +9,12 @@ platforms = ["linux-64"]
 python = "==3.14.6"
 flask = "==3.1.2"
 
-# Production task(s), available in every environment. The app is not installed as
-# a package, so PYTHONPATH points flask at the src-layout package.
-[tasks]
-run = { cmd = "flask --app expense_tracker:create_app run", env = { PYTHONPATH = "src" } }
+# The app itself, installed editable so `expense_tracker` imports everywhere
+# (tests, serve, REPL) with no PYTHONPATH. pixi builds it via hatchling.
+[pypi-dependencies]
+expense-tracker = { path = ".", editable = true }
+
+# Dev task(s) live with the dev tooling in the "test" feature; see below.
 
 # Test-only dependencies, isolated in the "test" feature so the lean
 # prod environment can exclude them.
@@ -25,6 +27,9 @@ ruff = "==0.15.21"
 # Test task lives with the test feature: present in default (which includes
 # the test feature), absent from prod.
 [feature.test.tasks]
+# Dev server with reloader + debugger; in the dev feature so the lean prod env
+# cannot launch the debugger. No PYTHONPATH needed (app is installed editable).
+serve = "flask --app expense_tracker:create_app run --debug"
 test = "pytest"
 typecheck = "basedpyright"
 lint = "ruff check"
