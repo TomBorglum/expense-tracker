@@ -7,10 +7,16 @@ platforms = ["linux-64"]
 # Folded into EVERY environment, so both default and prod get these.
 [dependencies]
 python = "==3.14.6"
+flask = "==3.1.3"
+# The stdlib sqlite3 module needs no package, but the engine it links against is a
+# conda-forge dependency. Pinned explicitly rather than left to resolve transitively
+# via python: update-python.yml re-solves the lockfile on a schedule, which would
+# otherwise move the database engine silently inside a "bump python" PR.
+libsqlite = "==3.53.3"
 
 # Production task(s), available in every environment.
 [tasks]
-# serve = "python app.py"
+serve = "flask --app expense_tracker run --debug"
 
 # Test-only dependencies, isolated in the "test" feature so the lean
 # prod environment can exclude them.
@@ -27,6 +33,23 @@ typecheck = "basedpyright"
 lint = "ruff check"
 fix = "ruff check --fix"
 format = "ruff format"
+
+# Tailwind is not packaged on conda-forge, so it cannot be a pixi dependency and
+# cannot enter pixi.lock. It is pinned here instead: exact version plus a sha256
+# of the release asset, kept together so a bump is a single edit. The binary is
+# gitignored; the compiled CSS it produces is committed, which is what keeps the
+# Docker image free of any Node or Tailwind toolchain.
+[feature.test.tasks.tailwind-install]
+cmd = "bash scripts/install-tailwind.sh"
+env = { TAILWIND_VERSION = "4.3.3", TAILWIND_SHA256 = "dc61b3ac6b8c9ca874c0cc4c57b2409791a64c5540404ca5f5367360babc313a" }
+
+[feature.test.tasks.css]
+cmd = "bin/tailwindcss -i expense_tracker/static/src/input.css -o expense_tracker/static/dist/app.css --minify"
+depends-on = ["tailwind-install"]
+
+[feature.test.tasks.css-watch]
+cmd = "bin/tailwindcss -i expense_tracker/static/src/input.css -o expense_tracker/static/dist/app.css --watch"
+depends-on = ["tailwind-install"]
 
 # Two environments on one solve-group:
 # - default: runtime + test tooling -> editor, local dev, CI, `pixi run test`

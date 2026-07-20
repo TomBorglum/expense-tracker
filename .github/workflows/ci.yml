@@ -1,0 +1,45 @@
+name: CI
+
+# Lint, type-check, and test on every PR. SonarCloud runs separately and covers
+# code quality; this workflow covers correctness.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, typecheck, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # Activate the environment declared in .envrc (use pixi), exposing pixi to
+      # the steps below - the same .envrc used for local development.
+      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@4d0c097062a22e89899efbc087ac110f56c7fff0 # v1.2.0
+
+      - name: Install environment
+        run: pixi install
+
+      # Separate steps so a failure names the tool that failed.
+      - name: Lint
+        run: pixi run lint
+
+      - name: Typecheck
+        run: pixi run typecheck
+
+      - name: Test
+        run: pixi run test
+
+      # The compiled CSS is committed so the Docker image needs no build step.
+      # Rebuild it here and fail if the result differs from what was committed,
+      # otherwise the checked-in stylesheet silently drifts from the templates.
+      - name: Verify committed CSS is current
+        run: |
+          pixi run css
+          git diff --exit-code -- expense_tracker/static/dist/app.css

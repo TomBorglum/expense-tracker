@@ -1,0 +1,7 @@
+{
+  "include": ["expense_tracker", "tests"],
+  "pythonVersion": "3.14",
+  "typeCheckingMode": "strict",
+  "venvPath": ".pixi/envs",
+  "venv": "default"
+}

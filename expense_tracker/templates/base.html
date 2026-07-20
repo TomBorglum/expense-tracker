@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Expense Tracker{% endblock %}</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='dist/app.css') }}"
+    />
+  </head>
+  <body class="min-h-screen bg-slate-50 text-slate-900">
+    <header class="border-b border-slate-200 bg-white">
+      <div class="mx-auto max-w-5xl px-6 py-4">
+        <h1 class="text-xl font-semibold">Expense Tracker</h1>
+      </div>
+    </header>
+    <main class="mx-auto max-w-5xl px-6 py-8">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

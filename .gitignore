@@ -1,2 +1,17 @@
 # Pixi environment
 .pixi/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+
+# Vendored tailwindcss standalone binary (fetched by `pixi run tailwind-install`)
+bin/
+
+# Flask instance folder: holds the SQLite database
+instance/
+*.db

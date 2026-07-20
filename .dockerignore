@@ -1,0 +1,27 @@
+# Solved environment: the image installs its own via `pixi install -e prod`.
+.pixi/
+
+# Dev-only tailwindcss binary. The compiled CSS is committed, so the image needs
+# no Tailwind toolchain at all.
+bin/
+scripts/
+
+# Not needed at runtime.
+tests/
+pytest.ini
+ruff.toml
+pyrightconfig.json
+.editorconfig
+.github/
+.git/
+.gitignore
+
+# Local state and sample data.
+instance/
+data/
+*.db
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/

@@ -1,0 +1,15 @@
+/*
+ * Tailwind v4 entry point. v4 is CSS-first: there is no tailwind.config.js, and
+ * template scanning is declared with @source below rather than a `content` array.
+ */
+
+/*
+ * source(none) disables Tailwind's automatic source detection, which otherwise
+ * scans the whole project tree. Without it, prose in unrelated files (the word
+ * "container" in README.md, for example) generates utility classes, making the
+ * committed stylesheet depend on files that have nothing to do with the UI.
+ * Templates are declared explicitly below instead.
+ */
+@import "tailwindcss" source(none);
+
+@source "../../templates/**/*.html";

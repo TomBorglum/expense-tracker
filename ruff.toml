@@ -1,0 +1,12 @@
+# Standalone ruff config. Section headers drop the `tool.ruff` prefix that the
+# pyproject.toml form uses. Discovery order is .ruff.toml > ruff.toml > pyproject.toml.
+
+target-version = "py314"
+line-length = 100
+
+[lint]
+# E/F pycodestyle+pyflakes, I isort, UP pyupgrade, B bugbear, SIM simplify.
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[format]
+docstring-code-format = true
