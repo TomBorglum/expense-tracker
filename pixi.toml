@@ -35,6 +35,7 @@ typecheck = "basedpyright"
 lint = "ruff check"
 fix = "ruff check --fix"
 format = "ruff format"
+format-check = "ruff format --check"
 
 # Two environments on one solve-group:
 # - default: runtime + test tooling -> editor, local dev, CI, `pixi run test`
