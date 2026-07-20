@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Activate the environment declared in .envrc (use pixi), exposing pixi to
+      # the steps below - the same .envrc used for local development.
+      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@4d0c097062a22e89899efbc087ac110f56c7fff0 # v1.2.0
+      - run: pixi run test

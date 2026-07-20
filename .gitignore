@@ -7,3 +7,8 @@ __pycache__/
 
 # Standalone Tailwind CLI binary (fetched locally, not committed)
 /bin/tailwindcss
+
+# Test/coverage artifacts
+.pytest_cache/
+.coverage
+coverage.xml
