@@ -23,3 +23,6 @@ addopts = "--strict-markers --strict-config --cov=expense_tracker --cov-report=x
 [tool.basedpyright]
 typeCheckingMode = "strict"
 extraPaths = ["src"]
+# Some runtime deps (e.g. flask-wtf) ship no type stubs; we cannot control that.
+# Silence only the "missing stubs" notice -- unknown-type usage is still reported.
+reportMissingTypeStubs = false

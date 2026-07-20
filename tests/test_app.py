@@ -6,3 +6,11 @@ def test_hello_world() -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "Hello, World!"
+
+
+def test_csrf_protection_enabled() -> None:
+    app = create_app()
+    # Flask-WTF registers CSRFProtect under app.extensions["csrf"] and needs a
+    # signing key; both being present means state-changing routes are protected.
+    assert "csrf" in app.extensions
+    assert app.config["SECRET_KEY"]
