@@ -18,7 +18,7 @@ packages = ["src/expense_tracker"]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=expense_tracker --cov-report=xml --cov-report=term-missing"
+addopts = "--strict-markers --strict-config --cov=expense_tracker --cov-report=xml --cov-report=term-missing"
 
 [tool.basedpyright]
 typeCheckingMode = "strict"
