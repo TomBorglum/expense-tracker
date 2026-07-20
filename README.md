@@ -31,6 +31,12 @@ Visit http://localhost:5000/ and you should see `Hello, World!`.
 
 CI runs `lint`, `format-check`, `typecheck`, and `test` on every pull request.
 
+## Configuration
+
+Config is read from `FLASK_`-prefixed environment variables. **Production must set
+`FLASK_SECRET_KEY`** (used to sign CSRF tokens) to a real, stable secret. The
+`serve` and `test` tasks supply a dev-only value automatically.
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for branch naming, Conventional Commit,

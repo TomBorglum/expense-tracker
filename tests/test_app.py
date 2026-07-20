@@ -13,4 +13,4 @@ def test_csrf_protection_enabled() -> None:
     # Flask-WTF registers CSRFProtect under app.extensions["csrf"] and needs a
     # signing key; both being present means state-changing routes are protected.
     assert "csrf" in app.extensions
-    assert app.config["SECRET_KEY"]
+    assert app.secret_key  # signing key from FLASK_SECRET_KEY, set by the test task

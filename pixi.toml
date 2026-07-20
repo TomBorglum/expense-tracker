@@ -28,10 +28,12 @@ ruff = "==0.15.21"
 # Test task lives with the test feature: present in default (which includes
 # the test feature), absent from prod.
 [feature.test.tasks]
+# FLASK_SECRET_KEY here is a dev-only value used to sign CSRF tokens (pixi.toml is
+# not scanned by Sonar); production supplies a real secret via the environment.
 # Dev server with reloader + debugger; in the dev feature so the lean prod env
 # cannot launch the debugger. No PYTHONPATH needed (app is installed editable).
-serve = "flask --app expense_tracker:create_app run --debug"
-test = "pytest"
+serve = { cmd = "flask --app expense_tracker:create_app run --debug", env = { FLASK_SECRET_KEY = "dev-insecure-do-not-use-in-production" } }
+test = { cmd = "pytest", env = { FLASK_SECRET_KEY = "dev-insecure-do-not-use-in-production" } }
 typecheck = "basedpyright"
 lint = "ruff check"
 fix = "ruff check --fix"
