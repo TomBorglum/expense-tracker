@@ -3,14 +3,35 @@ name = "expense-tracker"
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
+# Production / runtime dependencies (the "default" feature).
+# Folded into EVERY environment, so both default and prod get these.
 [dependencies]
 python = "==3.14.6"
-ruff = "==0.15.21"
-mypy = "==2.2.0"
-pytest = "==9.1.1"
 
+# Production task(s), available in every environment.
 [tasks]
-lint = "ruff check ."
-format = "ruff format ."
-typecheck = "mypy"
+# serve = "python app.py"
+
+# Test-only dependencies, isolated in the "test" feature so the lean
+# prod environment can exclude them.
+[feature.test.dependencies]
+pytest = "==9.1.1"
+basedpyright = "==1.39.8"
+ruff = "==0.15.21"
+
+# Test task lives with the test feature: present in default (which includes
+# the test feature), absent from prod.
+[feature.test.tasks]
 test = "pytest"
+typecheck = "basedpyright"
+lint = "ruff check"
+fix = "ruff check --fix"
+format = "ruff format"
+
+# Two environments on one solve-group:
+# - default: runtime + test tooling -> editor, local dev, CI, `pixi run test`
+# - prod:    runtime only (default feature) -> what a Docker image installs
+# Same solve-group keeps python pinned identically across both.
+[environments]
+default = { features = ["test"], solve-group = "prod" }
+prod = { solve-group = "prod" }
