@@ -1,2 +1,9 @@
 # Pixi environment
 .pixi/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Standalone Tailwind CLI binary (fetched locally, not committed)
+/bin/tailwindcss
