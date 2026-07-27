@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
       # Activate the environment declared in .envrc (use pixi), exposing pixi to
       # the steps below - the same .envrc used for local development.
-      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@4d0c097062a22e89899efbc087ac110f56c7fff0 # v1.2.0
+      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@8dcab46a65c9a90ecc0bde4cbc834a21a905a5d4 # v1.3.0
       # Cheapest gates first so a lint/type/format failure fails fast, before the
       # JDK setup and the scan.
       - run: pixi run lint
