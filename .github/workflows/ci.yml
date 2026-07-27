@@ -1,4 +1,8 @@
-name: SonarCloud
+name: CI
+
+# Single workflow for all PR/push gates plus the SonarCloud scan. Running them in
+# one job means the pixi env is built once and `pixi run test` produces coverage.xml
+# once, which the scan step below reuses (no duplicate test run across workflows).
 
 on:
   push:
@@ -8,17 +12,29 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: read # SonarCloud PR decoration
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  scan:
-    name: Scan
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history so SonarCloud can attribute issues to the right commits.
           fetch-depth: 0
+      # Activate the environment declared in .envrc (use pixi), exposing pixi to
+      # the steps below - the same .envrc used for local development.
+      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@4d0c097062a22e89899efbc087ac110f56c7fff0 # v1.2.0
+      # Cheapest gates first so a lint/type/format failure fails fast, before the
+      # JDK setup and the scan.
+      - run: pixi run lint
+      - run: pixi run format-check
+      - run: pixi run typecheck
+      - run: pixi run test # writes coverage.xml for the scan below
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with
       # sonar.scanner.skipJreProvisioning below.
