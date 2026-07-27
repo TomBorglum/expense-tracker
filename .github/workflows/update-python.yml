@@ -25,13 +25,13 @@ jobs:
           client-id: ${{ secrets.AUTOMATION_APP_CLIENT_ID }}
           private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ steps.app-token.outputs.token }}
 
       # Activate the environment declared in .envrc (use pixi), exposing pixi to
       # the steps below - the same .envrc used for local development.
-      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@4d0c097062a22e89899efbc087ac110f56c7fff0 # v1.2.0
+      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@8dcab46a65c9a90ecc0bde4cbc834a21a905a5d4 # v1.3.0
 
       - name: Check for a newer stable Python
         id: check
