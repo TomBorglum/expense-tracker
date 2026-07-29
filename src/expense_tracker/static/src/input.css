@@ -2,14 +2,15 @@
    tailwind.config.js. Compiled to ../css/app.css by `pixi run css-build`.
 
    source(none) disables Tailwind's automatic filesystem scan so the build never
-   walks the whole repo; the @source below (resolved relative to this file) is the
-   single place class names are detected. Add a line here if templates ever live
-   somewhere else.
+   walks the whole repo; the source lines below (resolved relative to this file)
+   are the single place class names are detected.
 
-   Keep this a directory, not a file. Naming a file makes the path Ctrl-clickable
-   in Zed (it cannot open a directory target), but then only that file is scanned
-   and every class used by the other templates is silently dropped from app.css -
-   the page renders unstyled with no error. The directory form picks up new
-   templates automatically. */
+   Every template is listed individually rather than pointing at the directory,
+   because Zed can follow a document link to a file but not to a folder - so these
+   paths are Ctrl-clickable. The cost is that an unlisted template is silently
+   skipped: its classes vanish from app.css and the page renders unstyled with no
+   error. tests/test_frontend.py turns that into a test failure, so add a line here
+   whenever you add a template. */
 @import "tailwindcss" source(none);
-@source "../../templates";
+@source "../../templates/base.html";
+@source "../../templates/index.html";
