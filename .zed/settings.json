@@ -49,8 +49,12 @@
       "settings": {
         // Having attached above, the server still needs to know how to parse these
         // files. Mapping to html gives class completion in class="..." attributes.
+        // Both spellings are listed because the extension declares no language_ids,
+        // so the id Zed sends is derived rather than stated - unmatched keys are
+        // ignored, so covering both is free.
         "includeLanguages": {
-          "html-jinja": "html"
+          "html-jinja": "html",
+          "HTML-Jinja": "html"
         },
         "experimental": {
           // Tailwind v4 is CSS-first, so the "config" is a stylesheet. Auto-detection
