@@ -1,15 +1,13 @@
 // Project-level Zed settings. Committed so the frontend tooling behaves the same
 // for everyone; personal preferences belong in your own ~/.config/zed/settings.json.
 {
-  // Language support this project needs. The html extension is a Zed default.
-  // html-jinja (not the jinja2 extension) is the right one here: our templates are
-  // HTML documents with Jinja embedded, and html-jinja layers Jinja onto the HTML
-  // grammar, whereas jinja2 uses a standalone Jinja grammar that would degrade the
-  // surrounding markup highlighting.
-  "auto_install_extensions": {
-    "html": true,
-    "html-jinja": true
-  },
+  // REQUIRED ONE-TIME SETUP: install the `html-jinja` extension (Zed: Extensions,
+  // search "HTML-Jinja"). Extension installation is a global-only setting, so it
+  // cannot be declared here - until it is installed, the HTML-Jinja entries below
+  // report an unknown language. Pick html-jinja, not the similarly named jinja2
+  // extension: our templates are HTML documents with Jinja embedded, and html-jinja
+  // layers Jinja onto the HTML grammar, whereas jinja2 uses a standalone Jinja
+  // grammar that would degrade the surrounding markup highlighting.
 
   // Flask templates are Jinja, not plain HTML - without this, {% block %} and
   // {{ ... }} parse as broken markup. The extension only claims .jinja/.jinja2/.j2

@@ -35,8 +35,11 @@ running the app needs no Tailwind binary. That means: **after editing a template
 `.zed/settings.json` configures [Zed](https://zed.dev) for this frontend: it treats
 `templates/*.html` as HTML-Jinja, attaches the Tailwind language server there for class
 completion, and swaps the CSS language server for Tailwind's so v4 at-rules
-(`@import "tailwindcss"`, `@source`) are understood instead of flagged as errors. The
-`html-jinja` extension is auto-installed on opening the project. Other editors need
+(`@import "tailwindcss"`, `@source`) are understood instead of flagged as errors.
+
+One-time setup: install the **HTML-Jinja** extension from Zed's extension panel.
+Extension installation is a global-only setting, so the project file cannot request it;
+until it is installed Zed reports `HTML-Jinja` as an unknown language. Other editors need
 their own equivalent; nothing here affects the build.
 
 ## Development tasks
