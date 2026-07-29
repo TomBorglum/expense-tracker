@@ -3,11 +3,19 @@
 {
   // REQUIRED ONE-TIME SETUP: install the `html-jinja` extension (Zed: Extensions,
   // search "HTML-Jinja"). Extension installation is a global-only setting, so it
-  // cannot be declared here - until it is installed, the HTML-Jinja entries below
-  // report an unknown language. Pick html-jinja, not the similarly named jinja2
+  // cannot be declared here. Pick html-jinja, not the similarly named jinja2
   // extension: our templates are HTML documents with Jinja embedded, and html-jinja
   // layers Jinja onto the HTML grammar, whereas jinja2 uses a standalone Jinja
   // grammar that would degrade the surrounding markup highlighting.
+  //
+  // EXPECTED WARNING: when the project is opened over a remote (Zed on Windows
+  // against a WSL checkout, for example), Zed reports "No language with this name
+  // is installed" on the HTML-Jinja entries below. It is a false positive - the
+  // settings file is validated by the remote host, and Zed only uploads extensions
+  // that provide a language server. html-jinja is grammar-only, so it stays on the
+  // client and the remote never learns the name. Highlighting and the status-bar
+  // language both work regardless; verify there rather than trusting the squiggle.
+  // Do not "fix" it by deleting these entries.
 
   // Flask templates are Jinja, not plain HTML - without this, {% block %} and
   // {{ ... }} parse as broken markup. The extension only claims .jinja/.jinja2/.j2

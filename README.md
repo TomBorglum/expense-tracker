@@ -38,9 +38,10 @@ completion, and swaps the CSS language server for Tailwind's so v4 at-rules
 (`@import "tailwindcss"`, `@source`) are understood instead of flagged as errors.
 
 One-time setup: install the **HTML-Jinja** extension from Zed's extension panel.
-Extension installation is a global-only setting, so the project file cannot request it;
-until it is installed Zed reports `HTML-Jinja` as an unknown language. Other editors need
-their own equivalent; nothing here affects the build.
+Extension installation is a global-only setting, so the project file cannot request it.
+Over a remote (Zed on Windows against a WSL checkout) Zed also warns that `HTML-Jinja`
+is not installed even once it is - a false positive explained in `.zed/settings.json`.
+Other editors need their own equivalent; nothing here affects the build.
 
 ## Development tasks
 
