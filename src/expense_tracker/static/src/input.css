@@ -1,0 +1,9 @@
+/* Tailwind v4 is CSS-first: this stylesheet is the config, there is no
+   tailwind.config.js. Compiled to ../css/app.css by `pixi run css-build`.
+
+   source(none) disables Tailwind's automatic filesystem scan so the build never
+   walks the whole repo; the @source below (resolved relative to this file) is the
+   single place class names are detected. Add a line here if templates ever live
+   somewhere else. */
+@import "tailwindcss" source(none);
+@source "../../templates";

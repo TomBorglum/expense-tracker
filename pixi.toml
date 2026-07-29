@@ -39,6 +39,23 @@ lint = "ruff check"
 fix = "ruff check --fix"
 format = "ruff format"
 format-check = "ruff format --check"
+# Tailwind is a standalone binary (no conda-forge package, no Node in this repo),
+# fetched on demand by css-install; the compiled app.css is committed so a fresh
+# clone serves a styled page without it. Only the dev feature builds CSS - prod
+# ships the committed output and never needs the binary.
+css-install = "bash scripts/install-tailwind.sh"
+css-build = { cmd = "./bin/tailwindcss -i src/expense_tracker/static/src/input.css -o src/expense_tracker/static/css/app.css --minify", depends-on = [
+  "css-install",
+] }
+css-watch = { cmd = "./bin/tailwindcss -i src/expense_tracker/static/src/input.css -o src/expense_tracker/static/css/app.css --watch", depends-on = [
+  "css-install",
+] }
+# Freshness gate: rebuild, then fail if the committed CSS is stale relative to the
+# templates and input.css it is generated from. ls-files first because `git diff`
+# reports no change for an untracked file, which would pass a missing app.css.
+css-check = { cmd = "git ls-files --error-unmatch src/expense_tracker/static/css/app.css > /dev/null && git diff --exit-code -- src/expense_tracker/static/css/app.css", depends-on = [
+  "css-build",
+] }
 
 # Two environments on one solve-group:
 # - default: runtime + test tooling -> editor, local dev, CI, `pixi run test`

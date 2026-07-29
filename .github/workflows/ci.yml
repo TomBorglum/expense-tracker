@@ -35,6 +35,9 @@ jobs:
       - run: pixi run format-check
       - run: pixi run typecheck
       - run: pixi run test # writes coverage.xml for the scan below
+      # Last of the pixi gates because it downloads the ~110MB standalone Tailwind
+      # binary; fails if the committed app.css is stale relative to the templates.
+      - run: pixi run css-check
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with
       # sonar.scanner.skipJreProvisioning below.

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}expense-tracker{% endblock %}</title>
+    {# Build the URL via url_for so it stays correct if the app is ever mounted
+       under a path prefix; do not hardcode /static. #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
+  </head>
+  <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+    <main class="mx-auto flex min-h-screen max-w-3xl items-center justify-center px-4">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

@@ -1,11 +1,22 @@
-from expense_tracker import create_app
+from expense_tracker import GREETING, create_app
 
 
 def test_hello_world() -> None:
     client = create_app().test_client()
+    response = client.get("/api/hello")
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == GREETING
+
+
+def test_index_renders_html() -> None:
+    client = create_app().test_client()
     response = client.get("/")
     assert response.status_code == 200
-    assert response.get_data(as_text=True) == "Hello, World!"
+    assert response.mimetype == "text/html"
+    body = response.get_data(as_text=True)
+    assert GREETING in body
+    # The compiled stylesheet is what makes this a styled page rather than bare markup.
+    assert "css/app.css" in body
 
 
 def test_csrf_protection_enabled() -> None:
