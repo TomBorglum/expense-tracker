@@ -5,8 +5,9 @@
 __pycache__/
 *.py[cod]
 
-# Standalone Tailwind CLI binary (fetched locally, not committed)
-/bin/tailwindcss
+# Frontend build tooling (Tailwind CLI + language server), restored by `npm ci`
+# from the committed package-lock.json
+node_modules/
 
 # Test/coverage artifacts
 .pytest_cache/

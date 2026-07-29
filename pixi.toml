@@ -24,6 +24,11 @@ pytest = "==9.1.1"
 pytest-cov = "==7.0.0"
 basedpyright = "==1.39.8"
 ruff = "==0.15.21"
+# Runs the Tailwind CLI and, in the editor, the Tailwind language server. Already
+# arrives transitively via basedpyright (depends: nodejs >=20); pinned explicitly so
+# the CSS build does not rest on another package's dependency. Dev feature only, so
+# the prod environment stays free of it.
+nodejs = "==26.5.0"
 
 # Test task lives with the test feature: present in default (which includes
 # the test feature), absent from prod.
@@ -39,15 +44,17 @@ lint = "ruff check"
 fix = "ruff check --fix"
 format = "ruff format"
 format-check = "ruff format --check"
-# Tailwind is a standalone binary (no conda-forge package, no Node in this repo),
-# fetched on demand by css-install; the compiled app.css is committed so a fresh
-# clone serves a styled page without it. Only the dev feature builds CSS - prod
-# ships the committed output and never needs the binary.
-css-install = "bash scripts/install-tailwind.sh"
-css-build = { cmd = "./bin/tailwindcss -i src/expense_tracker/static/src/input.css -o src/expense_tracker/static/css/app.css --minify", depends-on = [
+# Tailwind is pinned in package.json/package-lock.json rather than fetched as a
+# standalone binary, so the compiler and the editor's Tailwind language server load
+# the identical version - the language server resolves `tailwindcss` from
+# node_modules, and a second independently-pinned copy would drift from this one.
+# The compiled app.css is committed, so a fresh clone serves a styled page without
+# running any of this, and prod needs neither Node nor node_modules.
+css-install = "npm ci"
+css-build = { cmd = "node_modules/.bin/tailwindcss -i src/expense_tracker/static/src/input.css -o src/expense_tracker/static/css/app.css --minify", depends-on = [
   "css-install",
 ] }
-css-watch = { cmd = "./bin/tailwindcss -i src/expense_tracker/static/src/input.css -o src/expense_tracker/static/css/app.css --watch", depends-on = [
+css-watch = { cmd = "node_modules/.bin/tailwindcss -i src/expense_tracker/static/src/input.css -o src/expense_tracker/static/css/app.css --watch", depends-on = [
   "css-install",
 ] }
 # Freshness gate: rebuild, then fail if the committed CSS is stale relative to the

@@ -1,13 +1,27 @@
 // Project-level Zed settings. Committed so the frontend tooling behaves the same
 // for everyone; personal preferences belong in your own ~/.config/zed/settings.json.
+//
+// Requires `pixi run css-install` (npm ci) to have been run. The Tailwind language
+// server resolves `tailwindcss` from node_modules, so the editor uses the exact
+// version package.json pins and `pixi run css-build` compiles with - one pin, no
+// drift. Without node_modules the server silently falls back to a bundled copy of
+// Tailwind: completions still appear but reflect the wrong version, and @source
+// paths stop resolving.
 {
   "languages": {
-    // The stock CSS server does not know Tailwind v4 at-rules, so it squiggles
-    // `@import "tailwindcss"` and `@source` in static/src/input.css and cannot
-    // resolve the @source path. The Tailwind server keeps normal CSS IntelliSense
-    // and understands both, which also makes the @source path navigable.
+    // Two Tailwind servers, doing different jobs - both are needed:
+    //
+    // tailwindcss-language-server loads the Tailwind project from node_modules and
+    // is what resolves `@source` into a document link you can follow to the
+    // templates directory. It is listed first so it takes precedence.
+    //
+    // tailwindcss-intellisense-css replaces the stock CSS server, which does not
+    // know the v4 at-rules and squiggles `@import "tailwindcss"` and `@source`. It
+    // keeps normal CSS IntelliSense while understanding them - but it never loads a
+    // Tailwind project, so on its own the @source path stays unresolvable.
     "CSS": {
       "language_servers": [
+        "tailwindcss-language-server",
         "tailwindcss-intellisense-css",
         "!vscode-css-language-server",
         "..."

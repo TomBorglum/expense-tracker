@@ -1,0 +1,9 @@
+{
+  "name": "expense-tracker-frontend",
+  "private": true,
+  "description": "Frontend build tooling only. Tailwind is pinned here so the compiler and Zed's Tailwind language server load the same version; see .zed/settings.json.",
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "tailwindcss": "4.3.3"
+  }
+}

@@ -21,23 +21,38 @@ The same greeting is served as plain text at http://localhost:5000/api/hello.
 ## Frontend
 
 Server-rendered Jinja templates in `src/expense_tracker/templates/`, styled with
-[Tailwind CSS](https://tailwindcss.com) v4. **No JavaScript and no Node toolchain** -
-Tailwind runs as a standalone binary that `pixi run css-install` fetches into
-`bin/tailwindcss` (version- and sha256-pinned in `scripts/install-tailwind.sh`).
+[Tailwind CSS](https://tailwindcss.com) v4. **The application ships no JavaScript** -
+pages are plain server-rendered HTML.
 
 Tailwind v4 is CSS-first, so `src/expense_tracker/static/src/input.css` is the config;
 there is no `tailwind.config.js`. The compiled `static/css/app.css` **is committed**, so
-running the app needs no Tailwind binary. That means: **after editing a template, run
+running the app needs no build step at all - `pixi install && pixi run serve` serves a
+styled page on a fresh clone. That means: **after editing a template, run
 `pixi run css-build` and commit the result** - CI's `css-check` fails on stale CSS.
+
+### Why Tailwind is an npm dependency
+
+Tailwind is pinned in `package.json` with a committed `package-lock.json`, and
+`pixi run css-install` restores it with `npm ci`. Node comes from pixi (`nodejs` in the
+dev feature), so there is no system prerequisite beyond pixi itself.
+
+This is a build-time dev dependency only: `prod` has no Node and no `node_modules`, and
+nothing from npm reaches the browser. The reason for npm rather than the standalone
+Tailwind binary is **version drift**. Editors run Tailwind's language server, which
+resolves `tailwindcss` from `node_modules`; with only a standalone binary it cannot find
+one and silently falls back to a bundled copy of a different version, so completions
+describe a Tailwind you are not compiling with and `@source` paths stop resolving. One
+npm pin means the compiler and the editor load the identical version by construction.
 
 ### Editor setup
 
-`.zed/settings.json` swaps the CSS language server for Tailwind's, so the v4 at-rules
-in `input.css` (`@import "tailwindcss"`, `@source`) are understood instead of flagged as
-errors, and pins the v4 stylesheet entry point. Templates are left as plain HTML on
+`.zed/settings.json` swaps the CSS language server for Tailwind's, so the v4 at-rules in
+`input.css` (`@import "tailwindcss"`, `@source`) are understood instead of flagged as
+errors, and pins the v4 stylesheet entry point. Run `pixi run css-install` once so the
+language server can load the pinned Tailwind. Templates are left as plain HTML on
 purpose, which is what keeps Tailwind class completion working in them - the file
-explains the trade-off. No extension install is needed. Other editors need their own
-equivalent; nothing here affects the build.
+explains the trade-off. Other editors need their own equivalent; nothing here affects
+the build.
 
 ## Development tasks
 
@@ -50,7 +65,7 @@ equivalent; nothing here affects the build.
 | `pixi run format` | Format with ruff |
 | `pixi run format-check` | Check formatting without writing changes |
 | `pixi run typecheck` | Type-check with basedpyright (strict) |
-| `pixi run css-install` | Fetch the pinned standalone Tailwind CLI into `bin/` |
+| `pixi run css-install` | Restore the pinned Tailwind toolchain (`npm ci`) |
 | `pixi run css-build` | Compile `input.css` to the committed `static/css/app.css` |
 | `pixi run css-watch` | Rebuild CSS on change while developing |
 | `pixi run css-check` | Fail if the committed CSS is stale (used by CI) |
