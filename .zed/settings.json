@@ -1,30 +1,6 @@
 // Project-level Zed settings. Committed so the frontend tooling behaves the same
 // for everyone; personal preferences belong in your own ~/.config/zed/settings.json.
 {
-  // REQUIRED ONE-TIME SETUP: install the `html-jinja` extension (Zed: Extensions,
-  // search "HTML-Jinja"). Extension installation is a global-only setting, so it
-  // cannot be declared here. Pick html-jinja, not the similarly named jinja2
-  // extension: our templates are HTML documents with Jinja embedded, and html-jinja
-  // layers Jinja onto the HTML grammar, whereas jinja2 uses a standalone Jinja
-  // grammar that would degrade the surrounding markup highlighting.
-  //
-  // EXPECTED WARNING: when the project is opened over a remote (Zed on Windows
-  // against a WSL checkout, for example), Zed reports "No language with this name
-  // is installed" on the HTML-Jinja entries below. It is a false positive - the
-  // settings file is validated by the remote host, and Zed only uploads extensions
-  // that provide a language server. html-jinja is grammar-only, so it stays on the
-  // client and the remote never learns the name. Highlighting and the status-bar
-  // language both work regardless; verify there rather than trusting the squiggle.
-  // Do not "fix" it by deleting these entries.
-
-  // Flask templates are Jinja, not plain HTML - without this, {% block %} and
-  // {{ ... }} parse as broken markup. The extension only claims .jinja/.jinja2/.j2
-  // by default, so .html templates have to be mapped explicitly. Scoped to the
-  // templates directory so any other .html file in the repo stays plain HTML.
-  "file_types": {
-    "HTML-Jinja": ["**/templates/**/*.html"]
-  },
-
   "languages": {
     // The stock CSS server does not know Tailwind v4 at-rules, so it squiggles
     // `@import "tailwindcss"` and `@source` in static/src/input.css and cannot
@@ -36,33 +12,38 @@
         "!vscode-css-language-server",
         "..."
       ]
-    },
-    // The Tailwind server only attaches to its own default language list, which
-    // HTML-Jinja is not on; without this it never starts for the templates.
-    "HTML-Jinja": {
-      "language_servers": ["tailwindcss-language-server", "..."]
     }
   },
 
   "lsp": {
     "tailwindcss-language-server": {
       "settings": {
-        // Having attached above, the server still needs to know how to parse these
-        // files. Mapping to html gives class completion in class="..." attributes.
-        // Both spellings are listed because the extension declares no language_ids,
-        // so the id Zed sends is derived rather than stated - unmatched keys are
-        // ignored, so covering both is free.
-        "includeLanguages": {
-          "html-jinja": "html",
-          "HTML-Jinja": "html"
-        },
         "experimental": {
           // Tailwind v4 is CSS-first, so the "config" is a stylesheet. Auto-detection
           // usually finds it, but this path is nested deep enough to be worth pinning.
-          "configFile": "src/expense_tracker/static/src/input.css",
-          "classRegex": ["class=\"([^\"]*)\"", "class='([^']*)'"]
+          "configFile": "src/expense_tracker/static/src/input.css"
         }
       }
     }
   }
 }
+
+// Deliberately NOT mapping templates/*.html to a Jinja language.
+//
+// The html-jinja extension highlights {% %} and {{ }} properly, and mapping
+// templates to its HTML-Jinja language works for highlighting - but it silently
+// kills Tailwind class completion in exactly those files, so the two cannot be had
+// together here. Zed routes completion requests from the client, and only registers
+// an LSP adapter for a language the client and server both know. Over a remote (Zed
+// on Windows against a WSL checkout) the language server runs on the remote, and Zed
+// only uploads extensions that provide a language server - html-jinja is grammar-only
+// and stays on the client. The remote therefore never learns the HTML-Jinja language,
+// no adapter is registered, and Zed never sends textDocument/completion: the server
+// receives didOpen/didChange and publishes diagnostics, but is never asked for
+// completions. Verified in the LSP RPC log; no includeLanguages value changes it.
+//
+// Leaving the templates as plain HTML keeps them on the Tailwind server's default
+// language list, so class completion works. The cost is that Jinja delimiters get no
+// special highlighting. If you want it per-file, switch the buffer language from the
+// status bar; if you edit templates locally rather than over a remote, mapping
+// file_types to "HTML-Jinja" works fully and is worth reconsidering.
