@@ -30,6 +30,15 @@ there is no `tailwind.config.js`. The compiled `static/css/app.css` **is committ
 running the app needs no Tailwind binary. That means: **after editing a template, run
 `pixi run css-build` and commit the result** - CI's `css-check` fails on stale CSS.
 
+### Editor setup
+
+`.zed/settings.json` configures [Zed](https://zed.dev) for this frontend: it treats
+`templates/*.html` as Jinja2, keeps Tailwind class completion working there, and swaps
+the CSS language server for Tailwind's so v4 at-rules (`@import "tailwindcss"`,
+`@source`) are understood instead of flagged as errors. The `jinja2` extension is
+auto-installed on opening the project. Other editors need their own equivalent; nothing
+here affects the build.
+
 ## Development tasks
 
 | Command | What it does |

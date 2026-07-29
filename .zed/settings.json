@@ -1,0 +1,49 @@
+// Project-level Zed settings. Committed so the frontend tooling behaves the same
+// for everyone; personal preferences belong in your own ~/.config/zed/settings.json.
+{
+  // Language support this project needs. The html extension is a Zed default; jinja2
+  // is a community extension and must be present for the file_types mapping below.
+  "auto_install_extensions": {
+    "html": true,
+    "jinja2": true
+  },
+
+  // Flask templates are Jinja, not plain HTML - without this, {% block %} and
+  // {{ ... }} parse as markup errors. Scoped to the templates directory so any
+  // other .html file in the repo stays plain HTML.
+  "file_types": {
+    "Jinja2": ["**/templates/**/*.html"]
+  },
+
+  "languages": {
+    // The stock CSS server does not know Tailwind v4 at-rules, so it squiggles
+    // `@import "tailwindcss"` and `@source` in static/src/input.css and cannot
+    // resolve the @source path. The Tailwind server keeps normal CSS IntelliSense
+    // and understands both, which also makes the @source path navigable.
+    "CSS": {
+      "language_servers": [
+        "tailwindcss-intellisense-css",
+        "!vscode-css-language-server",
+        "..."
+      ]
+    }
+  },
+
+  "lsp": {
+    "tailwindcss-language-server": {
+      "settings": {
+        // Jinja2 is not one of the Tailwind server's default languages; mapping it
+        // to html keeps class completion working in the templates after the
+        // file_types mapping above changes them away from HTML.
+        "includeLanguages": {
+          "jinja2": "html"
+        },
+        "experimental": {
+          // Tailwind v4 is CSS-first, so the "config" is a stylesheet. Auto-detection
+          // usually finds it, but this path is nested deep enough to be worth pinning.
+          "configFile": "src/expense_tracker/static/src/input.css"
+        }
+      }
+    }
+  }
+}
