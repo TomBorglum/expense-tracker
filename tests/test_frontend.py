@@ -1,8 +1,8 @@
-"""Guards the hand-maintained @source list in input.css.
+"""Guards the hand-maintained @source list in tailwind.css.
 
-Tailwind only scans what input.css names. A template that is not listed compiles
-without error and without its classes, so the page renders unstyled and nothing
-warns you. This test makes that a failure instead.
+Tailwind only scans what tailwind.css names. A template that is not listed
+compiles without error and without its classes, so the page renders unstyled and
+nothing warns you. This test makes that a failure instead.
 """
 
 import re
@@ -11,7 +11,7 @@ from pathlib import Path
 import expense_tracker
 
 PACKAGE_ROOT = Path(expense_tracker.__file__).parent
-INPUT_CSS = PACKAGE_ROOT / "static" / "src" / "input.css"
+INPUT_CSS = PACKAGE_ROOT / "tailwind.css"
 TEMPLATES = PACKAGE_ROOT / "templates"
 
 # /* ... */ is the only comment form Tailwind's CSS accepts; strip it so prose

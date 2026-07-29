@@ -1,9 +1,14 @@
 /* Tailwind v4 is CSS-first: this stylesheet is the config, there is no
-   tailwind.config.js. Compiled to ../css/app.css by `pixi run css-build`.
+   tailwind.config.js. Compiled to static/css/app.css by `pixi run css-build`.
+
+   It sits beside templates/ rather than under static/ for two reasons: Tailwind
+   resolves source paths relative to this file and offers no alias mechanism, so
+   being here keeps them short; and everything under static/ is served publicly,
+   while this file is build input rather than an asset.
 
    source(none) disables Tailwind's automatic filesystem scan so the build never
-   walks the whole repo; the source lines below (resolved relative to this file)
-   are the single place class names are detected.
+   walks the whole repo; the source lines below are the single place class names
+   are detected.
 
    Every template is listed individually rather than pointing at the directory,
    because Zed can follow a document link to a file but not to a folder - so these
@@ -12,5 +17,5 @@
    error. tests/test_frontend.py turns that into a test failure, so add a line here
    whenever you add a template. */
 @import "tailwindcss" source(none);
-@source "../../templates/base.html";
-@source "../../templates/index.html";
+@source "templates/base.html";
+@source "templates/index.html";

@@ -35,7 +35,7 @@
         "experimental": {
           // Tailwind v4 is CSS-first, so the "config" is a stylesheet. Auto-detection
           // usually finds it, but this path is nested deep enough to be worth pinning.
-          "configFile": "src/expense_tracker/static/src/input.css"
+          "configFile": "src/expense_tracker/tailwind.css"
         }
       }
     }

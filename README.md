@@ -24,7 +24,7 @@ Server-rendered Jinja templates in `src/expense_tracker/templates/`, styled with
 [Tailwind CSS](https://tailwindcss.com) v4. **The application ships no JavaScript** -
 pages are plain server-rendered HTML.
 
-Tailwind v4 is CSS-first, so `src/expense_tracker/static/src/input.css` is the config;
+Tailwind v4 is CSS-first, so `src/expense_tracker/tailwind.css` is the config;
 there is no `tailwind.config.js`. The compiled `static/css/app.css` **is committed**, so
 running the app needs no build step at all - `pixi install && pixi run serve` serves a
 styled page on a fresh clone. That means: **after editing a template, run
@@ -47,7 +47,7 @@ npm pin means the compiler and the editor load the identical version by construc
 ### Editor setup
 
 `.zed/settings.json` swaps the CSS language server for Tailwind's, so the v4 at-rules in
-`input.css` (`@import "tailwindcss"`, `@source`) are understood instead of flagged as
+`tailwind.css` (`@import "tailwindcss"`, `@source`) are understood instead of flagged as
 errors, and pins the v4 stylesheet entry point. Run `pixi run css-install` once so the
 language server can load the pinned Tailwind. Templates are left as plain HTML on
 purpose, which is what keeps Tailwind class completion working in them - the file
@@ -66,7 +66,7 @@ the build.
 | `pixi run format-check` | Check formatting without writing changes |
 | `pixi run typecheck` | Type-check with basedpyright (strict) |
 | `pixi run css-install` | Restore the pinned Tailwind toolchain (`npm ci`) |
-| `pixi run css-build` | Compile `input.css` to the committed `static/css/app.css` |
+| `pixi run css-build` | Compile `tailwind.css` to the committed `static/css/app.css` |
 | `pixi run css-watch` | Rebuild CSS on change while developing |
 | `pixi run css-check` | Fail if the committed CSS is stale (used by CI) |
 

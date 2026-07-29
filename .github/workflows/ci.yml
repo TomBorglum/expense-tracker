@@ -36,7 +36,7 @@ jobs:
       - run: pixi run typecheck
       - run: pixi run test # writes coverage.xml for the scan below
       # Last of the pixi gates because it runs `npm ci` first; fails if the committed
-      # app.css is stale relative to the templates and input.css it comes from.
+      # app.css is stale relative to the templates and tailwind.css it comes from.
       - run: pixi run css-check
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with
