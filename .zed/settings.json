@@ -1,18 +1,22 @@
 // Project-level Zed settings. Committed so the frontend tooling behaves the same
 // for everyone; personal preferences belong in your own ~/.config/zed/settings.json.
 {
-  // Language support this project needs. The html extension is a Zed default; jinja2
-  // is a community extension and must be present for the file_types mapping below.
+  // Language support this project needs. The html extension is a Zed default.
+  // html-jinja (not the jinja2 extension) is the right one here: our templates are
+  // HTML documents with Jinja embedded, and html-jinja layers Jinja onto the HTML
+  // grammar, whereas jinja2 uses a standalone Jinja grammar that would degrade the
+  // surrounding markup highlighting.
   "auto_install_extensions": {
     "html": true,
-    "jinja2": true
+    "html-jinja": true
   },
 
   // Flask templates are Jinja, not plain HTML - without this, {% block %} and
-  // {{ ... }} parse as markup errors. Scoped to the templates directory so any
-  // other .html file in the repo stays plain HTML.
+  // {{ ... }} parse as broken markup. The extension only claims .jinja/.jinja2/.j2
+  // by default, so .html templates have to be mapped explicitly. Scoped to the
+  // templates directory so any other .html file in the repo stays plain HTML.
   "file_types": {
-    "Jinja2": ["**/templates/**/*.html"]
+    "HTML-Jinja": ["**/templates/**/*.html"]
   },
 
   "languages": {
@@ -26,22 +30,27 @@
         "!vscode-css-language-server",
         "..."
       ]
+    },
+    // The Tailwind server only attaches to its own default language list, which
+    // HTML-Jinja is not on; without this it never starts for the templates.
+    "HTML-Jinja": {
+      "language_servers": ["tailwindcss-language-server", "..."]
     }
   },
 
   "lsp": {
     "tailwindcss-language-server": {
       "settings": {
-        // Jinja2 is not one of the Tailwind server's default languages; mapping it
-        // to html keeps class completion working in the templates after the
-        // file_types mapping above changes them away from HTML.
+        // Having attached above, the server still needs to know how to parse these
+        // files. Mapping to html gives class completion in class="..." attributes.
         "includeLanguages": {
-          "jinja2": "html"
+          "html-jinja": "html"
         },
         "experimental": {
           // Tailwind v4 is CSS-first, so the "config" is a stylesheet. Auto-detection
           // usually finds it, but this path is nested deep enough to be worth pinning.
-          "configFile": "src/expense_tracker/static/src/input.css"
+          "configFile": "src/expense_tracker/static/src/input.css",
+          "classRegex": ["class=\"([^\"]*)\"", "class='([^']*)'"]
         }
       }
     }
