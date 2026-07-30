@@ -53,6 +53,51 @@ side. If you do turn `format_on_save` on, Zed picks up the pinned `prettier` fro
 `node_modules` rather than its bundled copy, so the result still matches CI - but note
 that combining it with an `autosave.after_delay` reformats continuously as you type.
 
+### Verifying the pins
+
+To confirm the declared pins match what is installed:
+
+```sh
+npm ls @tailwindcss/language-server @vtsls/language-server typescript tailwindcss prettier
+```
+
+Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`. One nested entry is expected and is
+not drift: `@vtsls/language-server` bundles its own `typescript@5.9.3`, but Zed sends
+`{"typescript": {"tsdk": "node_modules/typescript/lib"}}` as workspace configuration,
+which redirects it to the pinned top-level copy.
+
+To confirm Zed is actually using them, run this on the Linux side while Zed is open:
+
+```sh
+ps -eo pid,args | grep -E '[v]tsls|[t]ailwindcss-language-server'
+```
+
+Paths under this repo's `node_modules/` mean the pins took effect. Paths under
+`~/.local/share/zed/` mean they did not - usually because `node_modules` is missing
+(run `pixi run web-install`) or `node` is not on PATH for Zed's remote server.
+
+### Known Zed quirk: "Binary: Unknown" over a remote/WSL backend
+
+In `dev: open language server logs` -> **Server Info**, `vtsls` reports
+`Binary: Unknown` and `Version: Unknown`. **This is expected and does not mean the
+server failed to start.**
+
+On a remote project (a Windows Zed client against a WSL backend, for example) the
+client registers each language server with no binary information, and only fills it
+in if the server later sends an LSP `client/registerCapability`. The Tailwind server
+does that, so its binary path shows up; `vtsls` does not, so its entry stays
+`Unknown` no matter how many times you restart Zed. `Version` is likewise never
+populated for any server on a remote project.
+
+Two related things that also look like faults but are not:
+
+- The per-server **Logs** tab is usually empty. It only shows `window/logMessage`
+  notifications, which most servers never send. Traffic under **RPC Messages** is the
+  sign of a healthy server.
+- Use the `ps` command above rather than Server Info when you actually need to know
+  which binary Zed launched. For the version, find the `initialize` response in
+  **RPC Messages** and read its `serverInfo` field.
+
 ## Development tasks
 
 | Command | What it does |

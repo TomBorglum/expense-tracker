@@ -7,6 +7,10 @@
 // them at ./node_modules instead. Run `pixi run web-install` first, or the paths do
 // not exist yet and the language servers will not start.
 //
+// Before concluding a pin is broken: over a remote/WSL backend Zed's Server Info
+// panel shows "Binary: Unknown" for vtsls even when it is working correctly. See
+// "Known Zed quirk" in README.md for how to verify properly (use `ps`).
+//
 // Not set on purpose:
 //   format_on_save   - left to your user settings. Formatting is applied by
 //                      `pixi run web-format` and gated in CI by web-format-check.
