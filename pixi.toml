@@ -54,6 +54,9 @@ format-check = "ruff format --check"
 web-install = "pnpm install --frozen-lockfile"
 web-build = "pnpm run build"
 web-check = "pnpm run check"
+# vitest + coverage; writes coverage/frontend/lcov.info for the SonarCloud scan,
+# mirroring how `test` writes coverage.xml for Python.
+web-test = "pnpm run test"
 web-format = "pnpm run format"
 # Zed formats on save with the project's pinned prettier, so this is the gate that
 # keeps editor output and CI in agreement.

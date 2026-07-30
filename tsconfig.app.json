@@ -29,5 +29,5 @@
       "@data/*": ["./src/expense_tracker/*"]
     }
   },
-  "include": ["frontend/src"]
+  "include": ["frontend/src", "frontend/tests"]
 }

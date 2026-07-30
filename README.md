@@ -39,6 +39,12 @@ page is the only public surface.
 
 For frontend-only work, `pnpm dev` gives you vite's dev server with hot reload.
 
+Frontend tests use vitest and live in `frontend/tests/`. `frontend/src/main.tsx` is
+excluded from coverage in both `vite.config.ts` and `sonar-project.properties` - it
+only wires React to the DOM. Note that `vite.config.ts` pins vitest's root to the
+repo root so the lcov report records repo-relative paths; without that SonarCloud
+resolves them against the Python package and reports the frontend as uncovered.
+
 ### Package manager
 
 Dependencies are installed with **pnpm**, whose version is pinned in `pixi.toml`
@@ -130,12 +136,13 @@ Two related things that also look like faults but are not:
 | `pixi run web-install` | Install frontend dependencies (`pnpm install --frozen-lockfile`) |
 | `pixi run web-build` | Build the frontend into `src/expense_tracker/static/` |
 | `pixi run web-check` | Type-check the frontend with tsc |
+| `pixi run web-test` | Run the frontend tests (vitest) with coverage |
 | `pixi run web-format` | Format the frontend with prettier |
 | `pixi run web-format-check` | Check frontend formatting without writing changes |
 | `pixi run web-verify` | Rebuild and fail if the committed bundle has drifted |
 
 CI runs `lint`, `format-check`, `typecheck`, `test`, `web-format-check`, `web-check`,
-and `web-verify` on every pull request.
+`web-test`, and `web-verify` on every pull request, then the SonarCloud scan.
 
 ## Configuration
 

@@ -40,6 +40,7 @@ jobs:
       - run: pixi run web-install
       - run: pixi run web-format-check
       - run: pixi run web-check
+      - run: pixi run web-test # writes coverage/frontend/lcov.info for the scan below
       - run: pixi run web-verify
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with
