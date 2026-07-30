@@ -2,7 +2,7 @@
 node_modules/
 src/expense_tracker/static/
 .pixi/
-package-lock.json
+pnpm-lock.yaml
 pixi.lock
 coverage.xml
 

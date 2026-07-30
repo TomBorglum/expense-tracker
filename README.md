@@ -14,7 +14,7 @@ in `frontend/`, and tests in `tests/`.
 
 ```sh
 pixi install          # set up the environment (installs the app editable)
-pixi run web-install  # install frontend dependencies (npm ci)
+pixi run web-install  # install frontend dependencies (pnpm)
 pixi run web-build    # build the frontend into src/expense_tracker/static/
 pixi run serve        # start the dev server on http://localhost:5000
 ```
@@ -37,7 +37,23 @@ The greeting is baked into the bundle at build time from
 single source of truth, and it is why the app exposes no greeting API - the rendered
 page is the only public surface.
 
-For frontend-only work, `npm run dev` gives you vite's dev server with hot reload.
+For frontend-only work, `pnpm dev` gives you vite's dev server with hot reload.
+
+### Package manager
+
+Dependencies are installed with **pnpm**, whose version is pinned in `pixi.toml`
+alongside Node. Two deliberate choices worth knowing:
+
+- **There is no `packageManager` field in `package.json`, and there must not be.**
+  pnpm's `pmOnFail` defaults to `download`, so that field would make pnpm fetch and
+  run its own copy of the declared version, bypassing the pixi pin. `pixi.toml` is the
+  single source of truth for the pnpm version.
+- **`pnpm-workspace.yaml` holds `minimumReleaseAgeExclude` entries.** pnpm 11 refuses
+  to install versions published in the last 24 hours (`minimumReleaseAge`, default
+  1440 minutes) as a supply-chain guard. Because this project pins exact versions,
+  pnpm cannot silently fall back to an older release, so a freshly published pin has
+  to be listed there explicitly. Entries stay harmless once the version ages out;
+  prune them when convenient.
 
 ## Editor setup (Zed)
 
@@ -58,7 +74,7 @@ that combining it with an `autosave.after_delay` reformats continuously as you t
 To confirm the declared pins match what is installed:
 
 ```sh
-npm ls @tailwindcss/language-server @vtsls/language-server typescript tailwindcss prettier
+pnpm ls @tailwindcss/language-server @vtsls/language-server typescript tailwindcss prettier
 ```
 
 Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`. One nested entry is expected and is
@@ -109,7 +125,7 @@ Two related things that also look like faults but are not:
 | `pixi run format` | Format with ruff |
 | `pixi run format-check` | Check formatting without writing changes |
 | `pixi run typecheck` | Type-check with basedpyright (strict) |
-| `pixi run web-install` | Install frontend dependencies (`npm ci`) |
+| `pixi run web-install` | Install frontend dependencies (`pnpm install --frozen-lockfile`) |
 | `pixi run web-build` | Build the frontend into `src/expense_tracker/static/` |
 | `pixi run web-check` | Type-check the frontend with tsc |
 | `pixi run web-format` | Format the frontend with prettier |
