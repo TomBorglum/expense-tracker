@@ -48,12 +48,14 @@ alongside Node. Two deliberate choices worth knowing:
   pnpm's `pmOnFail` defaults to `download`, so that field would make pnpm fetch and
   run its own copy of the declared version, bypassing the pixi pin. `pixi.toml` is the
   single source of truth for the pnpm version.
-- **`pnpm-workspace.yaml` holds `minimumReleaseAgeExclude` entries.** pnpm 11 refuses
-  to install versions published in the last 24 hours (`minimumReleaseAge`, default
-  1440 minutes) as a supply-chain guard. Because this project pins exact versions,
-  pnpm cannot silently fall back to an older release, so a freshly published pin has
-  to be listed there explicitly. Entries stay harmless once the version ages out;
-  prune them when convenient.
+- **Pins must be at least 24 hours old.** pnpm 11 refuses to install versions
+  published in the last 24 hours (`minimumReleaseAge`, default 1440 minutes) as a
+  supply-chain guard. Because this project pins exact versions, pnpm cannot silently
+  fall back to an older release - it will instead ask you to exempt the version in a
+  `pnpm-workspace.yaml`. **Prefer picking the newest release that already clears the
+  window over adding an exemption**, which would disable the guard for precisely the
+  freshest, least-vetted package. There is deliberately no `pnpm-workspace.yaml` in
+  this repo.
 
 ## Editor setup (Zed)
 
