@@ -1,0 +1,3 @@
+/* Tailwind CSS v4 is configured in CSS, not in a tailwind.config.js. Source files
+   are auto-detected from this file's directory, which covers frontend/src. */
+@import "tailwindcss";

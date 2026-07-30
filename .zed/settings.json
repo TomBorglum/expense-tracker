@@ -1,0 +1,55 @@
+// Project settings for Zed. Deliberately minimal: it carries only what is specific
+// to THIS repo, so it never overrides a preference set in your user settings.
+//
+// The one thing it must do is stop Zed drifting from the versions in package.json.
+// Zed's built-in Tailwind and TypeScript adapters otherwise install their own npm
+// "latest" copies under ~/.local/share/zed/; the binary.path overrides below point
+// them at ./node_modules instead. Run `pixi run web-install` first, or the paths do
+// not exist yet and the language servers will not start.
+//
+// Before concluding a pin is broken: over a remote/WSL backend Zed's Server Info
+// panel shows "Binary: Unknown" for vtsls even when it is working correctly. See
+// "Known Zed quirk" in README.md for how to verify properly (use `ps`).
+//
+// Not set on purpose:
+//   format_on_save   - left to your user settings. Formatting is applied by
+//                      `pixi run web-format` and gated in CI by web-format-check.
+//   formatter        - Zed's default "auto" already picks the pinned prettier.
+//   language_servers - ["!typescript-language-server", "vtsls", "..."] is already
+//                      Zed's default for TSX/TypeScript/JavaScript.
+//   load_direnv      - "direct" is already Zed's default; that is what puts pixi's
+//                      node on PATH for the #!/usr/bin/env node shims below.
+{
+  "languages": {
+    // Match .prettierrc.json (tabWidth: 2) so hand-typed indentation agrees with
+    // what prettier writes. Zed's global default is 4.
+    "TSX": { "tab_size": 2 },
+    "TypeScript": { "tab_size": 2 },
+    "JavaScript": { "tab_size": 2 },
+    "CSS": { "tab_size": 2 },
+    "HTML": { "tab_size": 2 },
+    "JSON": { "tab_size": 2 },
+    "JSONC": { "tab_size": 2 }
+  },
+
+  "lsp": {
+    "tailwindcss-language-server": {
+      "binary": {
+        // Pinned by package.json. Without this, Zed installs @tailwindcss/language-server@latest.
+        "path": "node_modules/.bin/tailwindcss-language-server",
+        "arguments": ["--stdio"],
+        "ignore_system_version": true
+      }
+    },
+    "vtsls": {
+      "binary": {
+        // Pinned by package.json. Without this, Zed installs @vtsls/language-server@latest.
+        "path": "node_modules/.bin/vtsls",
+        "arguments": ["--stdio"],
+        "ignore_system_version": true
+      }
+      // No "tsdk" setting needed: Zed already resolves node_modules/typescript/lib
+      // from the worktree, so the compiler is the pinned one (typescript 6.0.3).
+    }
+  }
+}

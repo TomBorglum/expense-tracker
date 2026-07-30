@@ -24,6 +24,14 @@ pytest = "==9.1.1"
 pytest-cov = "==7.0.0"
 basedpyright = "==1.39.8"
 ruff = "==0.15.21"
+# Frontend toolchain (vite/tailwind) and the language servers Zed is pinned to.
+# Previously arrived transitively via basedpyright; pinned explicitly now that the
+# build depends on it. Stays in the test feature so prod remains Node-free.
+nodejs = "==26.5.0"
+# The package manager, pinned here rather than via a "packageManager" field in
+# package.json: pnpm's pmOnFail defaults to "download", so that field would make pnpm
+# fetch its own version and bypass this pin. pixi is the single source of truth.
+pnpm = "==11.18.0"
 
 # Test task lives with the test feature: present in default (which includes
 # the test feature), absent from prod.
@@ -39,6 +47,21 @@ lint = "ruff check"
 fix = "ruff check --fix"
 format = "ruff format"
 format-check = "ruff format --check"
+
+# Frontend (vite + React + Tailwind v4). The build output in
+# src/expense_tracker/static/ is committed, so `web-verify` is the gate that keeps
+# it in step with frontend/ and greeting.json.
+web-install = "pnpm install --frozen-lockfile"
+web-build = "pnpm run build"
+web-check = "pnpm run check"
+# vitest + coverage; writes coverage/frontend/lcov.info for the SonarCloud scan,
+# mirroring how `test` writes coverage.xml for Python.
+web-test = "pnpm run test"
+web-format = "pnpm run format"
+# Zed formats on save with the project's pinned prettier, so this is the gate that
+# keeps editor output and CI in agreement.
+web-format-check = "pnpm run format-check"
+web-verify = "pnpm run build && git diff --exit-code -- src/expense_tracker/static"
 
 # Two environments on one solve-group:
 # - default: runtime + test tooling -> editor, local dev, CI, `pixi run test`
