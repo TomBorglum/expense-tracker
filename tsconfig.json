@@ -1,0 +1,6 @@
+{
+  // Solution-style root config: the app (browser) and the build tooling (Node)
+  // are checked separately so browser code never sees Node globals.
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+}

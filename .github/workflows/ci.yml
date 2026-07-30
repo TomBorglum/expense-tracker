@@ -35,6 +35,12 @@ jobs:
       - run: pixi run format-check
       - run: pixi run typecheck
       - run: pixi run test # writes coverage.xml for the scan below
+      # Frontend gates. web-verify rebuilds and fails if the committed bundle in
+      # src/expense_tracker/static/ has drifted from frontend/ or greeting.json.
+      - run: pixi run web-install
+      - run: pixi run web-format-check
+      - run: pixi run web-check
+      - run: pixi run web-verify
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with
       # sonar.scanner.skipJreProvisioning below.

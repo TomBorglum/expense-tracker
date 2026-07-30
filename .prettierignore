@@ -1,0 +1,17 @@
+# Generated or vendored
+node_modules/
+src/expense_tracker/static/
+.pixi/
+package-lock.json
+pixi.lock
+coverage.xml
+
+# Owned by other tooling, or hand-formatted prose we do not want reflowed
+*.md
+*.yml
+*.yaml
+.zed/
+# Rewritten by release-please; a formatting disagreement here would fail CI on a
+# release PR no human touched.
+.release-please-manifest.json
+release-please-config.json
