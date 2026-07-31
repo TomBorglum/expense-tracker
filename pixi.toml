@@ -7,8 +7,12 @@ platforms = ["linux-64"]
 # Folded into EVERY environment, so both default and prod get these.
 [dependencies]
 python = "==3.14.6"
-flask = "==3.1.2"
-flask-wtf = "==1.3.0"
+# fastapi-core, not fastapi: on conda-forge the plain `fastapi` package is the
+# `fastapi[standard]` bundle and drags uvicorn-standard, jinja2, python-multipart,
+# email_validator and fastapi-cli into the lean prod environment. This app uses none
+# of them.
+fastapi-core = "==0.141.1"
+uvicorn = "==0.52.0"
 
 # The app itself, installed editable so `expense_tracker` imports everywhere
 # (tests, serve, REPL) with no PYTHONPATH. pixi builds it via hatchling.
@@ -22,6 +26,11 @@ expense-tracker = { path = ".", editable = true }
 [feature.test.dependencies]
 pytest = "==9.1.1"
 pytest-cov = "==7.0.0"
+# What starlette's TestClient runs on; test-only, so prod does not ship it. It must
+# be httpx2 rather than httpx: starlette imports `httpx2 as httpx` under
+# TYPE_CHECKING, so with plain httpx the client is typed as Unknown and basedpyright
+# fails the strict-mode gate.
+httpx2 = "==2.9.1"
 basedpyright = "==1.39.8"
 ruff = "==0.15.21"
 # Frontend toolchain (vite/tailwind) and the language servers Zed is pinned to.
@@ -36,12 +45,11 @@ pnpm = "==11.18.0"
 # Test task lives with the test feature: present in default (which includes
 # the test feature), absent from prod.
 [feature.test.tasks]
-# FLASK_SECRET_KEY here is a dev-only value used to sign CSRF tokens (pixi.toml is
-# not scanned by Sonar); production supplies a real secret via the environment.
-# Dev server with reloader + debugger; in the dev feature so the lean prod env
-# cannot launch the debugger. No PYTHONPATH needed (app is installed editable).
-serve = { cmd = "flask --app expense_tracker:create_app run --debug", env = { FLASK_SECRET_KEY = "dev-insecure-do-not-use-in-production" } }
-test = { cmd = "pytest", env = { FLASK_SECRET_KEY = "dev-insecure-do-not-use-in-production" } }
+# Dev server with the reloader, on uvicorn's default port 8000. --factory is what
+# lets create_app be the target. In the test feature so the lean prod env cannot
+# launch the reloader. No PYTHONPATH needed (app is installed editable).
+serve = "uvicorn expense_tracker:create_app --factory --reload"
+test = "pytest"
 typecheck = "basedpyright"
 lint = "ruff check"
 fix = "ruff check --fix"

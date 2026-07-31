@@ -1,6 +1,6 @@
 # expense-tracker
 
-A small Flask application serving a React + Tailwind CSS v4 frontend. The backend
+A small FastAPI application serving a React + Tailwind CSS v4 frontend. The backend
 lives in `src/expense_tracker/` (a `create_app()` application factory), the frontend
 in `frontend/`, and tests in `tests/`.
 
@@ -16,10 +16,10 @@ in `frontend/`, and tests in `tests/`.
 pixi install          # set up the environment (installs the app editable)
 pixi run web-install  # install frontend dependencies (pnpm)
 pixi run web-build    # build the frontend into src/expense_tracker/static/
-pixi run serve        # start the dev server on http://localhost:5000
+pixi run serve        # start the dev server on http://localhost:8000
 ```
 
-Visit http://localhost:5000/ and you should see `Hello, World!`.
+Visit http://localhost:8000/ and you should see `Hello, World!`.
 
 ## Frontend
 
@@ -33,7 +33,7 @@ is self-contained and the lean `prod` environment never needs Node. Rebuild it w
 the committed bundle has drifted.
 
 The greeting is baked into the bundle at build time from
-`src/expense_tracker/greeting.json`, which Flask reads too. That one file is the
+`src/expense_tracker/greeting.json`, which the backend reads too. That one file is the
 single source of truth, and it is why the app exposes no greeting API - the rendered
 page is the only public surface.
 
@@ -126,7 +126,7 @@ Two related things that also look like faults but are not:
 
 | Command | What it does |
 | --- | --- |
-| `pixi run serve` | Run the dev server (reloader + debugger) |
+| `pixi run serve` | Run the uvicorn dev server on port 8000 (with reloader) |
 | `pixi run test` | Run the test suite with coverage |
 | `pixi run lint` | Lint with ruff |
 | `pixi run fix` | Auto-fix lint issues |
@@ -146,9 +146,11 @@ CI runs `lint`, `format-check`, `typecheck`, `test`, `web-format-check`, `web-ch
 
 ## Configuration
 
-Config is read from `FLASK_`-prefixed environment variables. **Production must set
-`FLASK_SECRET_KEY`** (used to sign CSRF tokens) to a real, stable secret. The
-`serve` and `test` tasks supply a dev-only value automatically.
+There is none: the app reads no environment variables and no config files. The
+greeting is baked into the bundle at build time, so the only inputs are the committed
+static files. FastAPI's OpenAPI schema and its `/docs` and `/redoc` UIs are switched
+off in `create_app()` - the app exposes no API for them to describe, and the rendered
+page is meant to be the only public surface.
 
 ## Contributing
 

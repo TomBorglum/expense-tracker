@@ -11,8 +11,8 @@ import { defineConfig } from "vitest/config";
 // environment never needs Node.
 export default defineConfig({
   root: "frontend",
-  // Flask's built-in static route serves the package's static/ folder at /static/,
-  // so emitted asset URLs must carry that prefix.
+  // The backend mounts the package's static/ folder at /static/, so emitted asset
+  // URLs must carry that prefix.
   base: "/static/",
   plugins: [react(), tailwindcss()],
   resolve: {

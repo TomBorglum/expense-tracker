@@ -1,5 +1,5 @@
 // The greeting is owned by the Python package and baked in at build time, so the
-// page needs no API call and Flask exposes no endpoint for it.
+// page needs no API call and the backend exposes no endpoint for it.
 import greeting from "@data/greeting.json";
 
 export default function App() {
