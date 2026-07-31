@@ -6,14 +6,20 @@ in `frontend/`, and tests in `tests/`.
 
 ## Prerequisites
 
-- [pixi](https://pixi.sh) - manages the Python toolchain, Node, and dependencies.
-  Running `pixi install` (or any `pixi run` task) provisions everything from
-  `pixi.toml`.
+- [direnv](https://direnv.net) and [pixi](https://pixi.sh). The committed `.envrc`
+  runs `use pixi`, so entering the directory provisions the Python toolchain, Node,
+  and dependencies from `pixi.toml` - and re-provisions whenever `pixi.toml` changes,
+  because the directive watches it. Run `direnv allow` once after cloning; there is
+  no separate `pixi install` step.
+
+  The `use pixi` directive is not built into direnv - it comes from the direnv
+  library installed by [`wsl-cloud-init`](https://github.com/TomBorglum/wsl-cloud-init),
+  whose `setup-direnv` action CI uses to activate this same `.envrc`.
 
 ## Quickstart
 
 ```sh
-pixi install          # set up the environment (installs the app editable)
+cd expense-tracker    # direnv provisions the environment on entry
 pixi run web-install  # install frontend dependencies (pnpm)
 pixi run web-build    # build the frontend into src/expense_tracker/static/
 pixi run serve        # start the dev server on http://localhost:8000
