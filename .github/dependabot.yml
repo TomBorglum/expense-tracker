@@ -36,6 +36,20 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Spelled out rather than inherited: Dependabot already applies a 3-day cooldown
+    # to version updates when this block is absent, so the wait exists either way -
+    # this only makes it visible and tunable. A release younger than its cooldown is
+    # skipped by that week's run and picked up by a later one.
+    #
+    # Longer for majors because they cost the most here: a React or Vite major needs
+    # the rest of the toolchain (plugin-react, @types/*, testing-library) to catch up
+    # first, and it arrives as its own PR needing a rebuilt bundle committed to the
+    # branch. Patches keep the 3-day default. Security updates ignore cooldown.
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
     # Bump the exact pin ("4.3.3" to "4.3.4") rather than widening it to a range,
     # per the exact-pin rule in CLAUDE.md.
     versioning-strategy: "increase"
