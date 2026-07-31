@@ -1,11 +1,12 @@
 // Project settings for Zed. Deliberately minimal: it carries only what is specific
 // to THIS repo, so it never overrides a preference set in your user settings.
 //
-// The one thing it must do is stop Zed drifting from the versions in package.json.
-// Zed's built-in Tailwind and TypeScript adapters otherwise install their own npm
-// "latest" copies under ~/.local/share/zed/; the binary.path overrides below point
-// them at ./node_modules instead. Run `pixi run web-install` first, or the paths do
-// not exist yet and the language servers will not start.
+// The one thing it must do is stop Zed drifting from the versions in
+// frontend/package.json. Zed's built-in Tailwind and TypeScript adapters otherwise
+// install their own npm "latest" copies under ~/.local/share/zed/; the binary.path
+// overrides below point them at ./frontend/node_modules instead (paths here are
+// relative to the worktree root, not to this file). Run `pixi run web-install`
+// first, or the paths do not exist yet and the language servers will not start.
 //
 // Before concluding a pin is broken: over a remote/WSL backend Zed's Server Info
 // panel shows "Binary: Unknown" for vtsls even when it is working correctly. See
@@ -35,21 +36,28 @@
   "lsp": {
     "tailwindcss-language-server": {
       "binary": {
-        // Pinned by package.json. Without this, Zed installs @tailwindcss/language-server@latest.
-        "path": "node_modules/.bin/tailwindcss-language-server",
+        // Pinned by frontend/package.json. Without this, Zed installs
+        // @tailwindcss/language-server@latest.
+        "path": "frontend/node_modules/.bin/tailwindcss-language-server",
         "arguments": ["--stdio"],
         "ignore_system_version": true
       }
     },
     "vtsls": {
       "binary": {
-        // Pinned by package.json. Without this, Zed installs @vtsls/language-server@latest.
-        "path": "node_modules/.bin/vtsls",
+        // Pinned by frontend/package.json. Without this, Zed installs
+        // @vtsls/language-server@latest.
+        "path": "frontend/node_modules/.bin/vtsls",
         "arguments": ["--stdio"],
         "ignore_system_version": true
+      },
+      // Spelled out because node_modules/ is no longer at the worktree root: Zed's
+      // implicit lookup is for <worktree>/node_modules/typescript/lib, which does
+      // not exist here, and vtsls would silently fall back to its own bundled
+      // compiler. This keeps the editor on the pinned typescript 6.0.3.
+      "settings": {
+        "typescript": { "tsdk": "frontend/node_modules/typescript/lib" }
       }
-      // No "tsdk" setting needed: Zed already resolves node_modules/typescript/lib
-      // from the worktree, so the compiler is the pinned one (typescript 6.0.3).
     }
   }
 }

@@ -1,8 +1,23 @@
 # expense-tracker
 
-A small FastAPI application serving a React + Tailwind CSS v4 frontend. The backend
-lives in `src/expense_tracker/` (a `create_app()` application factory), the frontend
-in `frontend/`, and tests in `tests/`.
+A small FastAPI application serving a React + Tailwind CSS v4 frontend.
+
+`backend/` and `frontend/` are siblings, each owning its own tooling and tests. The
+root holds only what spans both: pixi orchestrates the two toolchains, and one
+SonarCloud project covers both languages.
+
+```
+expense-tracker/
+  pixi.toml, pixi.lock          # environments and every `pixi run` task, both stacks
+  sonar-project.properties      # one Sonar project spanning both languages
+  backend/
+    pyproject.toml              # hatchling, ruff, pytest, basedpyright
+    src/expense_tracker/        # create_app() factory, greeting.json, committed bundle
+    tests/
+  frontend/
+    package.json, tsconfig*.json, vite.config.ts, .prettierrc.json
+    index.html, src/, tests/
+```
 
 ## Prerequisites
 
@@ -21,7 +36,7 @@ in `frontend/`, and tests in `tests/`.
 ```sh
 cd expense-tracker    # direnv provisions the environment on entry
 pixi run web-install  # install frontend dependencies (pnpm)
-pixi run web-build    # build the frontend into src/expense_tracker/static/
+pixi run web-build    # build the frontend into backend/src/expense_tracker/static/
 pixi run serve        # start the dev server on http://localhost:8000
 ```
 
@@ -32,31 +47,39 @@ Visit http://localhost:8000/ and you should see `Hello, World!`.
 The frontend is a React 19 SPA built by vite, styled with Tailwind CSS v4 (configured
 in CSS via `frontend/src/styles/app.css` - there is no `tailwind.config.js`).
 
-`src/expense_tracker/static/` is **generated output and is committed**, so the wheel
-is self-contained and the lean `prod` environment never needs Node. Rebuild it with
-`pixi run web-build` and commit the result whenever you change `frontend/` or
-`src/expense_tracker/greeting.json`; `pixi run web-verify` (also run in CI) fails if
-the committed bundle has drifted.
+`backend/src/expense_tracker/static/` is **generated output and is committed**, so the
+wheel is self-contained and the lean `prod` environment never needs Node. Vite writes
+there directly rather than into a `frontend/dist/`. Rebuild it with `pixi run
+web-build` and commit the result whenever you change `frontend/` or
+`backend/src/expense_tracker/greeting.json`; `pixi run web-verify` (also run in CI)
+fails if the committed bundle has drifted.
 
 The greeting is baked into the bundle at build time from
-`src/expense_tracker/greeting.json`, which the backend reads too. That one file is the
-single source of truth, and it is why the app exposes no greeting API - the rendered
-page is the only public surface.
+`backend/src/expense_tracker/greeting.json`, which the backend reads too. That one file
+is the single source of truth, and it is why the app exposes no greeting API - the
+rendered page is the only public surface. React imports it through the `@data` alias,
+defined once in `frontend/vite.config.ts` for the bundler and once in
+`frontend/tsconfig.app.json` for the type checker; both must point at the same place.
 
-For frontend-only work, `pnpm dev` gives you vite's dev server with hot reload.
+For frontend-only work, `pnpm dev` from `frontend/` gives you vite's dev server with
+hot reload.
 
 Frontend tests use vitest and live in `frontend/tests/`. `frontend/src/main.tsx` is
-excluded from coverage in both `vite.config.ts` and `sonar-project.properties` - it
-only wires React to the DOM. Note that `vite.config.ts` pins vitest's root to the
-repo root so the lcov report records repo-relative paths; without that SonarCloud
-resolves them against the Python package and reports the frontend as uncovered.
+excluded from coverage in both `frontend/vite.config.ts` and
+`sonar-project.properties` - it only wires React to the DOM. Note that
+`frontend/vite.config.ts` pins vitest's root back up to the repo root (`new
+URL("../", import.meta.url)`) even though vite's own root is `frontend/`. That is what
+makes the lcov report record repo-relative paths like `frontend/src/App.tsx`; without
+it SonarCloud resolves them against the Python package and reports the frontend as
+uncovered - silently, with a green build.
 
 ### Package manager
 
 Dependencies are installed with **pnpm**, whose version is pinned in `pixi.toml`
 alongside Node. Two deliberate choices worth knowing:
 
-- **There is no `packageManager` field in `package.json`, and there must not be.**
+- **There is no `packageManager` field in `frontend/package.json`, and there must not
+  be.**
   pnpm's `pmOnFail` defaults to `download`, so that field would make pnpm fetch and
   run its own copy of the declared version, bypassing the pixi pin. `pixi.toml` is the
   single source of truth for the pnpm version.
@@ -72,7 +95,10 @@ alongside Node. Two deliberate choices worth knowing:
 ## Editor setup (Zed)
 
 `.zed/settings.json` pins the Tailwind and TypeScript language servers to the copies
-in `node_modules`, so Zed **reports** exactly what CI enforces. Zed would otherwise
+in `frontend/node_modules`, so Zed **reports** exactly what CI enforces. Those paths
+are relative to the worktree root, and the `vtsls` entry also spells out a `tsdk` -
+Zed's implicit lookup only checks `<worktree>/node_modules/typescript/lib`, which does
+not exist now that the frontend owns its dependencies. Zed would otherwise
 install its own always-latest copies. Run `pixi run web-install` before opening the
 project, or those paths do not exist yet and the language servers will not start.
 
@@ -80,7 +106,8 @@ The file is deliberately minimal and does not enable `format_on_save` - that is 
 to your own Zed settings. Formatting is applied by `pixi run web-format` and gated in
 CI by `pixi run web-format-check`, the same way `ruff format` works on the Python
 side. If you do turn `format_on_save` on, Zed picks up the pinned `prettier` from
-`node_modules` rather than its bundled copy, so the result still matches CI - but note
+`frontend/node_modules` rather than its bundled copy, so the result still matches CI -
+but note
 that combining it with an `autosave.after_delay` reformats continuously as you type.
 
 ### Verifying the pins
@@ -88,13 +115,14 @@ that combining it with an `autosave.after_delay` reformats continuously as you t
 To confirm the declared pins match what is installed:
 
 ```sh
-pnpm ls @tailwindcss/language-server @vtsls/language-server typescript tailwindcss prettier
+cd frontend && pnpm ls @tailwindcss/language-server @vtsls/language-server typescript tailwindcss prettier
 ```
 
 Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`. One nested entry is expected and is
-not drift: `@vtsls/language-server` bundles its own `typescript@5.9.3`, but Zed sends
-`{"typescript": {"tsdk": "node_modules/typescript/lib"}}` as workspace configuration,
-which redirects it to the pinned top-level copy.
+not drift: `@vtsls/language-server` bundles its own `typescript@5.9.3`, but the `tsdk`
+setting in `.zed/settings.json` sends
+`{"typescript": {"tsdk": "frontend/node_modules/typescript/lib"}}` as workspace
+configuration, which redirects it to the pinned top-level copy.
 
 To confirm Zed is actually using them, run this on the Linux side while Zed is open:
 
@@ -102,7 +130,7 @@ To confirm Zed is actually using them, run this on the Linux side while Zed is o
 ps -eo pid,args | grep -E '[v]tsls|[t]ailwindcss-language-server'
 ```
 
-Paths under this repo's `node_modules/` mean the pins took effect. Paths under
+Paths under this repo's `frontend/node_modules/` mean the pins took effect. Paths under
 `~/.local/share/zed/` mean they did not - usually because `node_modules` is missing
 (run `pixi run web-install`) or `node` is not on PATH for Zed's remote server.
 
@@ -140,12 +168,15 @@ Two related things that also look like faults but are not:
 | `pixi run format-check` | Check formatting without writing changes |
 | `pixi run typecheck` | Type-check with basedpyright (strict) |
 | `pixi run web-install` | Install frontend dependencies (`pnpm install --frozen-lockfile`) |
-| `pixi run web-build` | Build the frontend into `src/expense_tracker/static/` |
+| `pixi run web-build` | Build the frontend into `backend/src/expense_tracker/static/` |
 | `pixi run web-check` | Type-check the frontend with tsc |
 | `pixi run web-test` | Run the frontend tests (vitest) with coverage |
 | `pixi run web-format` | Format the frontend with prettier |
 | `pixi run web-format-check` | Check frontend formatting without writing changes |
 | `pixi run web-verify` | Rebuild and fail if the committed bundle has drifted |
+
+Every task sets its own working directory in `pixi.toml` (`backend/` or `frontend/`),
+so `pixi run <task>` behaves the same wherever you invoke it from.
 
 CI runs `lint`, `format-check`, `typecheck`, `test`, `web-format-check`, `web-check`,
 `web-test`, and `web-verify` on every pull request, then the SonarCloud scan.
