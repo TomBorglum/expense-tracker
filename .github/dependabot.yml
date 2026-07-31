@@ -1,9 +1,9 @@
 version: 2
 updates:
   # Keep the GitHub Actions referenced in workflows up to date, including the
-  # setup-direnv action pinned by SHA and the other pinned actions. This is the
-  # only ecosystem Dependabot supports here today; the pixi.toml python pin is
-  # handled separately by update-python.yml (Dependabot has no conda/pixi support).
+  # setup-direnv action pinned by SHA and the other pinned actions. The pixi.toml
+  # python pin is handled separately by update-python.yml, since Dependabot has no
+  # conda/pixi support.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -16,3 +16,55 @@ updates:
       actions:
         patterns:
           - "*"
+
+  # Frontend toolchain (vite + React + Tailwind). package.json and pnpm-lock.yaml
+  # live at the repo root, not in frontend/, so the directory is "/". pnpm is driven
+  # through the "npm" ecosystem: Dependabot picks pnpm once it sees pnpm-lock.yaml.
+  #
+  # Two preconditions here are easy to break by accident:
+  #   - package.json must stay free of a "packageManager" field. pnpm 11 writes a
+  #     multi-document lockfile when it manages its own version, and Dependabot
+  #     cannot parse that (dependabot-core#14794). pixi.toml pins pnpm instead, and
+  #     its comment there gives the other reason to keep it out of package.json.
+  #   - The lockfile must stay at lockfileVersion 9.0, which Dependabot does parse.
+  #
+  # Bumps to vite, @vitejs/plugin-react, tailwindcss, @tailwindcss/vite, react or
+  # react-dom change the committed bundle in src/expense_tracker/static/, so
+  # `pixi run web-verify` fails on those PRs until `pixi run web-build` output is
+  # committed to the Dependabot branch.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Bump the exact pin ("4.3.3" to "4.3.4") rather than widening it to a range,
+    # per the exact-pin rule in CLAUDE.md.
+    versioning-strategy: "increase"
+    commit-message:
+      # Which prefix a PR gets is decided by package.json, not by this file:
+      # Dependabot reads the literal block name a package sits in, and uses "deps"
+      # if any package in the PR came from "dependencies", "chore" otherwise. That
+      # is any?, not all?, so the weekly grouped PR is "deps" whenever it carries a
+      # runtime package and "chore" when it is tooling only.
+      #
+      # The blocks follow npm's ordinary runtime/build-time convention - react,
+      # react-dom, tailwindcss and @tailwindcss/vite are runtime, the rest is
+      # tooling. Deliberately not a "does it change the committed bundle" split:
+      # vite and @vitejs/plugin-react do change it and are still "chore", because a
+      # minifier-output diff is nothing a user can act on. Splitting this way costs
+      # nothing here - package.json is private and nothing installs it from a
+      # registry, so the two blocks carry no packaging meaning of their own.
+      #
+      # Per release-please-config.json, "deps" is a visible changelog section and
+      # cuts a release; "chore" is hidden and does not.
+      prefix: "deps"
+      prefix-development: "chore"
+    groups:
+      frontend:
+        patterns:
+          - "*"
+        # Minor and patch ride together in one weekly PR; majors fall outside the
+        # group and get their own PR, so a breaking React or Vite bump is reviewed
+        # and revertable on its own.
+        update-types:
+          - "minor"
+          - "patch"
