@@ -40,11 +40,24 @@ updates:
     # per the exact-pin rule in CLAUDE.md.
     versioning-strategy: "increase"
     commit-message:
-      # "deps": react/tailwind/vite output ships inside the committed bundle, so
-      # these bumps are user-visible and belong in the changelog's Dependencies
-      # section (and cut a release). No prefix-development: every package here is a
-      # devDependency, so it would swallow the whole ecosystem.
+      # Which prefix a PR gets is decided by package.json, not by this file:
+      # Dependabot reads the literal block name a package sits in, and uses "deps"
+      # if any package in the PR came from "dependencies", "chore" otherwise. That
+      # is any?, not all?, so the weekly grouped PR is "deps" whenever it carries a
+      # runtime package and "chore" when it is tooling only.
+      #
+      # The blocks follow npm's ordinary runtime/build-time convention - react,
+      # react-dom, tailwindcss and @tailwindcss/vite are runtime, the rest is
+      # tooling. Deliberately not a "does it change the committed bundle" split:
+      # vite and @vitejs/plugin-react do change it and are still "chore", because a
+      # minifier-output diff is nothing a user can act on. Splitting this way costs
+      # nothing here - package.json is private and nothing installs it from a
+      # registry, so the two blocks carry no packaging meaning of their own.
+      #
+      # Per release-please-config.json, "deps" is a visible changelog section and
+      # cuts a release; "chore" is hidden and does not.
       prefix: "deps"
+      prefix-development: "chore"
     groups:
       frontend:
         patterns:
