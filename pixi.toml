@@ -48,7 +48,11 @@ pnpm = "==11.18.0"
 # Dev server with the reloader, on uvicorn's default port 8000. --factory is what
 # lets create_app be the target. In the test feature so the lean prod env cannot
 # launch the reloader. No PYTHONPATH needed (app is installed editable).
-serve = "uvicorn expense_tracker:create_app --factory --reload"
+# --reload-dir is not optional: without it uvicorn watches the whole working
+# directory, and its stat reloader rglobs for *.py and stats every hit four times a
+# second -- which here means walking .pixi/ and node_modules/ to find 1891 files when
+# only the 2 under src/ can ever matter.
+serve = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
 test = "pytest"
 typecheck = "basedpyright"
 lint = "ruff check"
