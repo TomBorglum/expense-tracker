@@ -50,6 +50,30 @@ updates:
       semver-major-days: 30
       semver-minor-days: 7
       semver-patch-days: 3
+    # TypeScript 7 is the native Go rewrite, and its npm package no longer ships
+    # tsserver.js or the JS compiler API. vtsls - the language server Zed drives,
+    # pinned to node_modules in .zed/settings.json - validates a workspace tsdk by
+    # looking for tsserver.js, so it rejects the worktree copy and silently falls back
+    # to its own bundled typescript 5.9.3. The editor would then sit two majors behind
+    # the compiler CI runs, with no error shown. Confirmed upstream in
+    # zed-industries/zed#60951, #60970 and #61126.
+    #
+    # `tsc -b` itself is fine on 7, so this hold is about the editor, not CI. Moving to
+    # 7 means adopting Zed's tsgo extension, which installs its own TypeScript and
+    # cannot be pointed at node_modules, breaking the single-copy pinning used for
+    # every other tool here.
+    #
+    # Revisit when zed-extensions/tsgo#61 ("Resolve project-local TypeScript
+    # installations") ships, or when Zed drives TypeScript 7 without an extension.
+    # To unblock, delete this whole ignore entry.
+    #
+    # Note: ignore conditions suppress security updates for this package too. Fine
+    # here - typescript is a devDependency, package.json is private, and the committed
+    # bundle contains no compiler code.
+    ignore:
+      - dependency-name: "typescript"
+        versions:
+          - ">= 7"
     # Bump the exact pin ("4.3.3" to "4.3.4") rather than widening it to a range,
     # per the exact-pin rule in CLAUDE.md.
     versioning-strategy: "increase"
