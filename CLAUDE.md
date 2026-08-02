@@ -34,3 +34,58 @@ publishes the GitHub Release.
 - **ASCII-only** committed source (no em-dashes, smart quotes, arrows, ellipses).
 - **Pin dependency versions exactly** (`==` in `pixi.toml`) and **SHA-pin GitHub
   Actions** with a version comment.
+
+## Commands
+
+`pixi run <task>` is the single interface for both stacks - the same commands CI
+runs, so passing them locally means passing CI. Every task declares its own `cwd`
+in `pixi.toml` (`backend/` or `frontend/`), so it behaves identically no matter
+where you invoke it from. The full task table is in
+[`README.md`](README.md#development-tasks).
+
+Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in
+order (cheapest first, so it fails fast):
+
+```sh
+pixi run lint && pixi run format-check && pixi run typecheck && pixi run test &&
+pixi run web-install && pixi run web-format-check && pixi run web-check &&
+pixi run web-test && pixi run web-verify
+```
+
+## Build invariants
+
+Break one of these and CI goes red on an otherwise correct change.
+
+- **The committed bundle.** `backend/src/expense_tracker/static/` is vite output
+  and **is committed**, so the wheel is self-contained and the `prod` environment
+  needs no Node. Any change under `frontend/` or to
+  `backend/src/expense_tracker/greeting.json` must be followed by
+  `pixi run web-build` with the result committed - `pixi run web-verify` fails
+  otherwise. Rationale in [`README.md`](README.md#frontend).
+- **No API surface.** The app exposes one route (`/`) and no OpenAPI, `/docs` or
+  `/redoc`; see `create_app()` in `backend/src/expense_tracker/__init__.py`. The
+  greeting is baked into the bundle at build time, so there is nothing to serve.
+  `backend/tests/test_app.py` asserts their absence - adding a `/api/greeting`
+  endpoint or re-enabling the docs routes fails the suite **by design**.
+- **Two places, one value.** The `@data` alias is declared in both
+  `frontend/vite.config.ts` (bundler) and `frontend/tsconfig.app.json` (types).
+  The `frontend/src/main.tsx` coverage exclusion is declared in both
+  `frontend/vite.config.ts` and `sonar-project.properties`. Change each pair
+  together.
+- **`frontend/package.json` must not gain a `packageManager` field**, and
+  `frontend/pnpm-lock.yaml` must stay at `lockfileVersion: 9.0`. The first would
+  bypass the pnpm pin in `pixi.toml`; both would break Dependabot's lockfile
+  parsing. See [`README.md`](README.md#package-manager) and
+  `.github/dependabot.yml`.
+
+## Quality gates
+
+- **Python:** basedpyright in `strict` mode, and ruff with
+  `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]` - both configured in
+  `backend/pyproject.toml`.
+- **Frontend:** `tsc -b` against a `strict` tsconfig, plus prettier. There is no
+  JS/TS linter.
+- **Suppressions carry a reason.** Match the existing style: an inline comment
+  next to the pragma saying why, as with the two
+  `# pyright: ignore[reportUnusedFunction]` in
+  `backend/src/expense_tracker/__init__.py`.

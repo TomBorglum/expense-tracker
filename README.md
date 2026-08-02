@@ -22,14 +22,21 @@ expense-tracker/
 ## Prerequisites
 
 - [direnv](https://direnv.net) and [pixi](https://pixi.sh). The committed `.envrc`
-  runs `use pixi`, so entering the directory provisions the Python toolchain, Node,
-  and dependencies from `pixi.toml` - and re-provisions whenever `pixi.toml` changes,
-  because the directive watches it. Run `direnv allow` once after cloning; there is
-  no separate `pixi install` step.
+  runs `use pixi python`, so entering the directory provisions the Python toolchain,
+  Node, and dependencies from `pixi.toml` - and re-provisions whenever `pixi.toml`
+  changes, because the directive watches it. Run `direnv allow` once after cloning;
+  there is no separate `pixi install` step.
 
-  The `use pixi` directive is not built into direnv - it comes from the direnv
-  library installed by [`wsl-cloud-init`](https://github.com/TomBorglum/wsl-cloud-init),
-  whose `setup-direnv` action CI uses to activate this same `.envrc`.
+  The `.envrc` also runs `use sonarqube_mcp`, which exports the configuration for the
+  SonarQube MCP server declared in `.mcp.json` (a container that gives an editor or
+  agent access to this project's SonarCloud analysis). It reads `SONARQUBE_TOKEN` and
+  `SONARQUBE_ORG` from the environment; the server is the only thing that needs them,
+  so nothing else here breaks if they are unset.
+
+  Neither directive is built into direnv - both come from the direnv library
+  installed by [`wsl-cloud-init`](https://github.com/TomBorglum/wsl-cloud-init),
+  whose `setup-direnv` action CI uses to activate this same `.envrc`. Without that
+  library, `direnv allow` reports the directives as unknown commands.
 
 ## Quickstart
 
@@ -178,8 +185,9 @@ Two related things that also look like faults but are not:
 Every task sets its own working directory in `pixi.toml` (`backend/` or `frontend/`),
 so `pixi run <task>` behaves the same wherever you invoke it from.
 
-CI runs `lint`, `format-check`, `typecheck`, `test`, `web-format-check`, `web-check`,
-`web-test`, and `web-verify` on every pull request, then the SonarCloud scan.
+CI runs `lint`, `format-check`, `typecheck`, `test`, `web-install`,
+`web-format-check`, `web-check`, `web-test`, and `web-verify` on every pull request,
+then the SonarCloud scan.
 
 ## Configuration
 
