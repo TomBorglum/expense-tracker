@@ -26,8 +26,8 @@
     // No baseUrl: it is deprecated in TypeScript 6, and paths already resolve
     // relative to this file.
     "paths": {
-      "@data/*": ["./src/expense_tracker/*"]
+      "@data/*": ["../backend/src/expense_tracker/*"]
     }
   },
-  "include": ["frontend/src", "frontend/tests"]
+  "include": ["src", "tests"]
 }

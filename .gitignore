@@ -5,9 +5,9 @@
 __pycache__/
 *.py[cod]
 
-# Frontend dependencies (restored with `pixi run web-install`).
-# Note: src/expense_tracker/static/ is the vite build output and IS committed, so
-# the wheel is self-contained and the prod environment needs no Node.
+# Frontend dependencies (restored with `pixi run web-install`), now under frontend/.
+# Note: backend/src/expense_tracker/static/ is the vite build output and IS
+# committed, so the wheel is self-contained and the prod environment needs no Node.
 node_modules/
 
 # Test/coverage artifacts

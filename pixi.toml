@@ -15,9 +15,10 @@ fastapi-core = "==0.141.1"
 uvicorn = "==0.52.0"
 
 # The app itself, installed editable so `expense_tracker` imports everywhere
-# (tests, serve, REPL) with no PYTHONPATH. pixi builds it via hatchling.
+# (tests, serve, REPL) with no PYTHONPATH. pixi builds it via hatchling from
+# backend/pyproject.toml.
 [pypi-dependencies]
-expense-tracker = { path = ".", editable = true }
+expense-tracker = { path = "backend", editable = true }
 
 # Dev task(s) live with the dev tooling in the "test" feature; see below.
 
@@ -44,36 +45,44 @@ pnpm = "==11.18.0"
 
 # Test task lives with the test feature: present in default (which includes
 # the test feature), absent from prod.
+#
+# Each stack's tooling reads its config from its own directory - ruff, pytest and
+# basedpyright from backend/pyproject.toml, the pnpm scripts from
+# frontend/package.json - so the tasks below carry an explicit `cwd` rather than
+# relying on where `pixi run` happened to be invoked.
 [feature.test.tasks]
 # Dev server with the reloader, on uvicorn's default port 8000. --factory is what
 # lets create_app be the target. In the test feature so the lean prod env cannot
-# launch the reloader. No PYTHONPATH needed (app is installed editable).
+# launch the reloader. Runs from the repo root - no cwd and no PYTHONPATH needed,
+# because the app is installed editable.
 # --reload-dir is not optional: without it uvicorn watches the whole working
 # directory, and its stat reloader rglobs for *.py and stats every hit four times a
 # second -- which here means walking .pixi/ and node_modules/ to find 1891 files when
-# only the 2 under src/ can ever matter.
-serve = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
-test = "pytest"
-typecheck = "basedpyright"
-lint = "ruff check"
-fix = "ruff check --fix"
-format = "ruff format"
-format-check = "ruff format --check"
+# only the 2 under backend/src/ can ever matter.
+serve = "uvicorn expense_tracker:create_app --factory --reload --reload-dir backend/src"
+# Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
+test = { cmd = "pytest", cwd = "backend" }
+typecheck = { cmd = "basedpyright", cwd = "backend" }
+lint = { cmd = "ruff check", cwd = "backend" }
+fix = { cmd = "ruff check --fix", cwd = "backend" }
+format = { cmd = "ruff format", cwd = "backend" }
+format-check = { cmd = "ruff format --check", cwd = "backend" }
 
 # Frontend (vite + React + Tailwind v4). The build output in
-# src/expense_tracker/static/ is committed, so `web-verify` is the gate that keeps
-# it in step with frontend/ and greeting.json.
-web-install = "pnpm install --frozen-lockfile"
-web-build = "pnpm run build"
-web-check = "pnpm run check"
-# vitest + coverage; writes coverage/frontend/lcov.info for the SonarCloud scan,
-# mirroring how `test` writes coverage.xml for Python.
-web-test = "pnpm run test"
-web-format = "pnpm run format"
+# backend/src/expense_tracker/static/ is committed, so `web-verify` is the gate that
+# keeps it in step with frontend/ and greeting.json.
+web-install = { cmd = "pnpm install --frozen-lockfile", cwd = "frontend" }
+web-build = { cmd = "pnpm run build", cwd = "frontend" }
+web-check = { cmd = "pnpm run check", cwd = "frontend" }
+# vitest + coverage; writes coverage/frontend/lcov.info at the repo root for the
+# SonarCloud scan, mirroring how `test` writes coverage.xml for Python.
+web-test = { cmd = "pnpm run test", cwd = "frontend" }
+web-format = { cmd = "pnpm run format", cwd = "frontend" }
 # Zed formats on save with the project's pinned prettier, so this is the gate that
 # keeps editor output and CI in agreement.
-web-format-check = "pnpm run format-check"
-web-verify = "pnpm run build && git diff --exit-code -- src/expense_tracker/static"
+web-format-check = { cmd = "pnpm run format-check", cwd = "frontend" }
+# The git pathspec is relative to cwd, hence the climb back out of frontend/.
+web-verify = { cmd = "pnpm run build && git diff --exit-code -- ../backend/src/expense_tracker/static", cwd = "frontend" }
 
 # Two environments on one solve-group:
 # - default: runtime + test tooling -> editor, local dev, CI, `pixi run test`

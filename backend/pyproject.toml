@@ -18,6 +18,9 @@ packages = ["src/expense_tracker"]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.pytest.ini_options]
+# Explicit rather than relying on rootdir discovery, so collection does not depend
+# on which directory pytest is invoked from.
+testpaths = ["tests"]
 addopts = "--strict-markers --strict-config --cov=expense_tracker --cov-report=xml --cov-report=term-missing"
 
 [tool.basedpyright]

@@ -18,8 +18,9 @@ updates:
           - "*"
 
   # Frontend toolchain (vite + React + Tailwind). package.json and pnpm-lock.yaml
-  # live at the repo root, not in frontend/, so the directory is "/". pnpm is driven
-  # through the "npm" ecosystem: Dependabot picks pnpm once it sees pnpm-lock.yaml.
+  # live in frontend/ alongside the sources they describe, so the directory is
+  # "/frontend". pnpm is driven through the "npm" ecosystem: Dependabot picks pnpm
+  # once it sees pnpm-lock.yaml.
   #
   # Two preconditions here are easy to break by accident:
   #   - package.json must stay free of a "packageManager" field. pnpm 11 writes a
@@ -29,11 +30,11 @@ updates:
   #   - The lockfile must stay at lockfileVersion 9.0, which Dependabot does parse.
   #
   # Bumps to vite, @vitejs/plugin-react, tailwindcss, @tailwindcss/vite, react or
-  # react-dom change the committed bundle in src/expense_tracker/static/, so
+  # react-dom change the committed bundle in backend/src/expense_tracker/static/, so
   # `pixi run web-verify` fails on those PRs until `pixi run web-build` output is
   # committed to the Dependabot branch.
   - package-ecosystem: "npm"
-    directory: "/"
+    directory: "/frontend"
     schedule:
       interval: "weekly"
     # Spelled out rather than inherited: Dependabot already applies a 3-day cooldown
@@ -52,7 +53,7 @@ updates:
       semver-patch-days: 3
     # TypeScript 7 is the native Go rewrite, and its npm package no longer ships
     # tsserver.js or the JS compiler API. vtsls - the language server Zed drives,
-    # pinned to node_modules in .zed/settings.json - validates a workspace tsdk by
+    # pinned to frontend/node_modules in .zed/settings.json - validates a tsdk by
     # looking for tsserver.js, so it rejects the worktree copy and silently falls back
     # to its own bundled typescript 5.9.3. The editor would then sit two majors behind
     # the compiler CI runs, with no error shown. Confirmed upstream in

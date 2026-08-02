@@ -1,3 +1,11 @@
-/* Tailwind CSS v4 is configured in CSS, not in a tailwind.config.js. Source files
-   are auto-detected from this file's directory, which covers frontend/src. */
-@import "tailwindcss";
+/* Tailwind CSS v4 is configured in CSS, not in a tailwind.config.js.
+
+   Automatic source detection is switched off and the scan pinned to the two things
+   that actually render: index.html and the components under src/. Left automatic,
+   Tailwind takes its base from the nearest package.json - frontend/ - and mines
+   every file there for class names, config files included. A word like "relative"
+   or "block" in a vite.config.ts comment then emits a real utility, which changes
+   the committed bundle and fails `pixi run web-verify` for no reason. */
+@import "tailwindcss" source(none);
+@source "../../index.html";
+@source "../";
