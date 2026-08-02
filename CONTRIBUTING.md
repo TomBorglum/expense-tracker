@@ -2,8 +2,10 @@
 
 Releases are automated with [release-please](https://github.com/googleapis/release-please).
 It reads the commit history on `main`, decides the next version, and maintains a
-"chore(main): release X.Y.Z" pull request that updates [`CHANGELOG.md`](CHANGELOG.md)
-and the version. Merging that PR tags the version and publishes the GitHub Release.
+"chore(main): release X.Y.Z" pull request that updates `CHANGELOG.md` and the
+version. Merging that PR tags the version and publishes the GitHub Release.
+`CHANGELOG.md` does not exist yet - release-please creates it in the first release
+PR it opens, and no release has been cut so far.
 
 For that to work, commits must follow [Conventional Commits](https://www.conventionalcommits.org/).
 This document is the guard rail for how to name commits and branches so the
