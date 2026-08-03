@@ -18,5 +18,9 @@
     "isolatedModules": true,
     "skipLibCheck": true
   },
-  "include": ["vite.config.ts"]
+  // eslint.config.ts belongs to the Node-side tooling, not the browser app. Listing
+  // it here gets it type-checked by `pnpm run check` and gives typescript-eslint's
+  // project service a real project for it, so no allowDefaultProject escape hatch is
+  // needed to lint the lint config.
+  "include": ["vite.config.ts", "eslint.config.ts"]
 }

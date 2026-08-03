@@ -40,6 +40,9 @@ jobs:
       - run: pixi run web-install
       - run: pixi run web-format-check
       - run: pixi run web-check
+      # After web-check: type-aware eslint builds a full TS program, so it is the
+      # priciest of the static gates and a plain type error should surface first.
+      - run: pixi run web-lint
       - run: pixi run web-test # writes coverage/frontend/lcov.info for the scan below
       - run: pixi run web-verify
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to

@@ -15,7 +15,7 @@ expense-tracker/
     src/expense_tracker/        # create_app() factory, greeting.json, committed bundle
     tests/
   frontend/
-    package.json, tsconfig*.json, vite.config.ts, .prettierrc.json
+    package.json, tsconfig*.json, vite.config.ts, eslint.config.ts, .prettierrc.json
     index.html, src/, tests/
 ```
 
@@ -139,6 +139,17 @@ not exist now that the frontend owns its dependencies. Zed would otherwise
 install its own always-latest copies. Run `pixi run web-install` before opening the
 project, or those paths do not exist yet and the language servers will not start.
 
+**ESLint is pinned differently.** Zed's ESLint support is a built-in adapter that runs
+Zed's own bundled `vscode-eslint` server, so there is no binary to repoint. What
+matters is the `eslint` **module** that server loads at runtime, because that is what
+supplies the rules, their severities and the version. `.zed/settings.json` therefore
+sets `nodePath` to `frontend/node_modules` and `workingDirectories` to `["frontend"]`
+instead of a `binary.path`. Without those, resolution can land on the worktree root -
+which has no `node_modules` now that the frontend owns its dependencies, the same gap
+that breaks Zed's implicit `typescript/lib` lookup - and the server silently falls back
+to a globally installed eslint or reports nothing. The same `pixi run web-install`
+precondition applies.
+
 The file is deliberately minimal and does not enable `format_on_save` - that is left
 to your own Zed settings. Formatting is applied by `pixi run web-format` and gated in
 CI by `pixi run web-format-check`, the same way `ruff format` works on the Python
@@ -152,10 +163,10 @@ that combining it with an `autosave.after_delay` reformats continuously as you t
 To confirm the declared pins match what is installed:
 
 ```sh
-cd frontend && pnpm ls @tailwindcss/language-server @vtsls/language-server typescript tailwindcss prettier
+cd frontend && pnpm ls @tailwindcss/language-server @vtsls/language-server typescript tailwindcss prettier eslint
 ```
 
-Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`. One nested entry is expected and is
+Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`, `10.8.0`. One nested entry is expected and is
 not drift: `@vtsls/language-server` bundles its own `typescript@5.9.3`, but the `tsdk`
 setting in `.zed/settings.json` sends
 `{"typescript": {"tsdk": "frontend/node_modules/typescript/lib"}}` as workspace
@@ -164,12 +175,19 @@ configuration, which redirects it to the pinned top-level copy.
 To confirm Zed is actually using them, run this on the Linux side while Zed is open:
 
 ```sh
-ps -eo pid,args | grep -E '[v]tsls|[t]ailwindcss-language-server'
+ps -eo pid,args | grep -E '[v]tsls|[t]ailwindcss-language-server|[e]slintServer'
 ```
 
 Paths under this repo's `frontend/node_modules/` mean the pins took effect. Paths under
 `~/.local/share/zed/` mean they did not - usually because `node_modules` is missing
 (run `pixi run web-install`) or `node` is not on PATH for Zed's remote server.
+
+`eslintServer.js` is the exception: it always runs from `~/.local/share/zed/`, because
+that server is Zed's own and only the module it loads is pinned. To check that one, put
+a deliberate error in a `.tsx` file - `const x: any = 1;` should raise
+`@typescript-eslint/no-explicit-any`, and a `<li>` inside a `.map()` without a `key`
+should raise `@eslint-react/no-missing-key`. A stray global eslint has neither this
+config nor these plugins, so it would report nothing at all.
 
 ### Known Zed quirk: "Binary: Unknown" over a remote/WSL backend
 
@@ -207,6 +225,8 @@ Two related things that also look like faults but are not:
 | `pixi run web-install` | Install frontend dependencies (`pnpm install --frozen-lockfile`) |
 | `pixi run web-build` | Build the frontend into `backend/src/expense_tracker/static/` |
 | `pixi run web-check` | Type-check the frontend with tsc |
+| `pixi run web-lint` | Lint the frontend with eslint (type-aware, `--max-warnings 0`) |
+| `pixi run web-lint-fix` | Auto-fix frontend lint issues |
 | `pixi run web-test` | Run the frontend tests (vitest) with coverage |
 | `pixi run web-format` | Format the frontend with prettier |
 | `pixi run web-format-check` | Check frontend formatting without writing changes |
@@ -216,8 +236,8 @@ Every task sets its own working directory in `pixi.toml` (`backend/` or `fronten
 so `pixi run <task>` behaves the same wherever you invoke it from.
 
 CI runs `lint`, `format-check`, `typecheck`, `test`, `web-install`,
-`web-format-check`, `web-check`, `web-test`, and `web-verify` on every pull request,
-then the SonarCloud scan.
+`web-format-check`, `web-check`, `web-lint`, `web-test`, and `web-verify` on every pull
+request, then the SonarCloud scan.
 
 ## Configuration
 

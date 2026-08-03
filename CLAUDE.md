@@ -49,7 +49,7 @@ order (cheapest first, so it fails fast):
 ```sh
 pixi run lint && pixi run format-check && pixi run typecheck && pixi run test &&
 pixi run web-install && pixi run web-format-check && pixi run web-check &&
-pixi run web-test && pixi run web-verify
+pixi run web-lint && pixi run web-test && pixi run web-verify
 ```
 
 ## Build invariants
@@ -77,6 +77,12 @@ Break one of these and CI goes red on an otherwise correct change.
   `paths`. The `frontend/src/main.tsx` coverage exclusion is declared in both
   `frontend/vite.config.ts` and `sonar-project.properties`. Change each pair
   together.
+- **Every linted file needs a tsconfig that owns it.** eslint runs type-aware via
+  `parserOptions.projectService`, so a `.ts`/`.tsx` file outside every tsconfig's
+  `include` fails to lint rather than being skipped. `src/` and `tests/` come from
+  `tsconfig.app.json`; `vite.config.ts` and `eslint.config.ts` are listed in
+  `tsconfig.node.json`. A new file at the `frontend/` root has to be added there
+  too.
 - **`frontend/package.json` must not gain a `packageManager` field**, and
   `frontend/pnpm-lock.yaml` must stay at `lockfileVersion: 9.0`. The first would
   bypass the pnpm pin in `pixi.toml`; both would break Dependabot's lockfile
@@ -94,9 +100,23 @@ Break one of these and CI goes red on an otherwise correct change.
 - **Python:** basedpyright in `strict` mode, and ruff with
   `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]` - both configured in
   `backend/pyproject.toml`.
-- **Frontend:** `tsc -b` against a `strict` tsconfig, plus prettier. There is no
-  JS/TS linter.
+- **Frontend:** `tsc -b` against a `strict` tsconfig, prettier, and eslint 10 in
+  `frontend/eslint.config.ts` - typescript-eslint `strictTypeChecked` +
+  `stylisticTypeChecked` (type-aware, via `parserOptions.projectService`), ESLint
+  React `strict-type-checked`, `eslint-plugin-react-hooks`, `react-refresh`, the
+  vitest plugin over `tests/`, and `perfectionist/sort-imports` for import order.
+  `eslint-config-prettier` is applied last, so **the linter owns correctness and
+  prettier owns formatting** - never add a formatting rule to the eslint config.
+- **There is no warn tier on the frontend.** The `lint` script runs
+  `eslint . --max-warnings 0`, so a warning fails the build exactly like an error.
+  Without it the plugins' own severities would leave roughly 45 rules advisory -
+  including the XSS, `target="_blank"` and leaked-timer rules, `exhaustive-deps`,
+  `vitest/no-disabled-tests`, and `reportUnusedDisableDirectives` (so stale
+  suppressions would never be reported). Demote a rule deliberately in
+  `eslint.config.ts` if you disagree with it; do not let the flag go.
 - **Suppressions carry a reason.** Match the existing style: an inline comment
   next to the pragma saying why, as with the two
   `# pyright: ignore[reportUnusedFunction]` in
-  `backend/src/expense_tracker/__init__.py`.
+  `backend/src/expense_tracker/__init__.py`. On the frontend that means an
+  `// eslint-disable-next-line <rule>` with the reason on the line above or beside
+  it - a bare disable is not acceptable.

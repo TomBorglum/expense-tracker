@@ -74,6 +74,12 @@ format-check = { cmd = "ruff format --check", cwd = "backend" }
 web-install = { cmd = "pnpm install --frozen-lockfile", cwd = "frontend" }
 web-build = { cmd = "pnpm run build", cwd = "frontend" }
 web-check = { cmd = "pnpm run check", cwd = "frontend" }
+# eslint, the frontend counterpart to `lint`/`fix`. Type-aware, so it needs the same
+# tsconfigs `web-check` uses and costs about as much. Zed's built-in eslint language
+# server is pointed at frontend/node_modules by .zed/settings.json, so the editor
+# reports the same findings this task fails on.
+web-lint = { cmd = "pnpm run lint", cwd = "frontend" }
+web-lint-fix = { cmd = "pnpm run lint-fix", cwd = "frontend" }
 # vitest + coverage; writes coverage/frontend/lcov.info at the repo root for the
 # SonarCloud scan, mirroring how `test` writes coverage.xml for Python.
 web-test = { cmd = "pnpm run test", cwd = "frontend" }
