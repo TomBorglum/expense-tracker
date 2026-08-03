@@ -58,18 +58,23 @@ Break one of these and CI goes red on an otherwise correct change.
 
 - **The committed bundle.** `backend/src/expense_tracker/static/` is vite output
   and **is committed**, so the wheel is self-contained and the `prod` environment
-  needs no Node. Any change under `frontend/` or to
-  `backend/src/expense_tracker/greeting.json` must be followed by
+  needs no Node. Any change under `frontend/` must be followed by
   `pixi run web-build` with the result committed - `pixi run web-verify` fails
   otherwise. Rationale in [`README.md`](README.md#frontend).
-- **No API surface.** The app exposes one route (`/`) and no OpenAPI, `/docs` or
-  `/redoc`; see `create_app()` in `backend/src/expense_tracker/__init__.py`. The
-  greeting is baked into the bundle at build time, so there is nothing to serve.
-  `backend/tests/test_app.py` asserts their absence - adding a `/api/greeting`
-  endpoint or re-enabling the docs routes fails the suite **by design**.
-- **Two places, one value.** The `@data` alias is declared in both
-  `frontend/vite.config.ts` (bundler) and `frontend/tsconfig.app.json` (types).
-  The `frontend/src/main.tsx` coverage exclusion is declared in both
+- **No OpenAPI.** The app exposes `/` (the shell), `GET /api/greeting` (JSON) and
+  the `/static` mount, and nothing else; see `create_app()` in
+  `backend/src/expense_tracker/__init__.py`. One hand-written route does not earn a
+  generated document, so `docs_url`, `redoc_url` and `openapi_url` stay `None` and
+  `test_openapi_docs_are_disabled` in `backend/tests/test_app.py` keeps them that
+  way. Re-enabling the docs routes, or growing `/api` into a namespace, fails the
+  suite **by design**.
+- **Two places, one value.** The greeting payload is written by hand at both ends:
+  `backend/src/expense_tracker/__init__.py` builds it, and
+  `frontend/src/api/greeting.ts` declares the matching type, guard and path. There
+  is no schema generating either from the other, so change them together.
+  The `@` alias (`frontend/src`) is declared in both `frontend/vite.config.ts`
+  (bundler) and `frontend/tsconfig.app.json` (types) - vite does not read tsconfig
+  `paths`. The `frontend/src/main.tsx` coverage exclusion is declared in both
   `frontend/vite.config.ts` and `sonar-project.properties`. Change each pair
   together.
 - **`frontend/package.json` must not gain a `packageManager` field**, and
@@ -77,6 +82,12 @@ Break one of these and CI goes red on an otherwise correct change.
   bypass the pnpm pin in `pixi.toml`; both would break Dependabot's lockfile
   parsing. See [`README.md`](README.md#package-manager) and
   `.github/dependabot.yml`.
+- **`frontend/pnpm-workspace.yaml` must not gain a `minimumReleaseAge` exemption.**
+  It exists only to answer `allowBuilds` (pnpm 11 no longer reads the `pnpm` field
+  in `package.json`, and an unanswered install script makes `pixi run web-install`
+  exit non-zero). Exempting a version would disable the 24-hour supply-chain guard
+  for precisely the least-vetted release; pick a version that already clears the
+  window instead.
 
 ## Quality gates
 

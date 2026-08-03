@@ -70,7 +70,7 @@ format-check = { cmd = "ruff format --check", cwd = "backend" }
 
 # Frontend (vite + React + Tailwind v4). The build output in
 # backend/src/expense_tracker/static/ is committed, so `web-verify` is the gate that
-# keeps it in step with frontend/ and greeting.json.
+# keeps it in step with frontend/.
 web-install = { cmd = "pnpm install --frozen-lockfile", cwd = "frontend" }
 web-build = { cmd = "pnpm run build", cwd = "frontend" }
 web-check = { cmd = "pnpm run check", cwd = "frontend" }

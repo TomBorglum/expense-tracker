@@ -1,0 +1,16 @@
+# pnpm settings. This file exists only for `allowBuilds` below: pnpm 11 stopped
+# reading the "pnpm" field in package.json, so pnpm-workspace.yaml is the one place
+# the setting can live. pnpm scaffolds the file itself when a dependency ships an
+# install script, leaving the value as a placeholder for a human to decide.
+#
+# It must NOT gain a `minimumReleaseAge` exemption. That guard is what stops this
+# repo's exact pins from installing a package published in the last 24 hours; see the
+# "Package manager" section of ../README.md. Prefer picking a release that already
+# clears the window.
+
+allowBuilds:
+  # msw's install script only copies the browser service worker (mockServiceWorker.js)
+  # into a public directory. The tests use msw/node, which needs none of it, so the
+  # script is denied rather than left undecided -- pnpm exits non-zero while a build
+  # script is unanswered, which fails `pixi run web-install` in CI.
+  msw: false

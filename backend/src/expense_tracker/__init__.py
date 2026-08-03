@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import cast
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import RequestResponseEndpoint
 
@@ -44,15 +44,15 @@ def _load_greeting() -> str:
     return payload["greeting"]
 
 
-# Single source of truth for the greeting: vite imports this same file at build time
-# (see the "@data" alias in vite.config.ts), so the page and the app cannot disagree.
+# Single source of truth for the greeting. It reaches the page over the API below, so
+# this file is the one place the wording is written down.
 GREETING = _load_greeting()
 
 
 def create_app() -> FastAPI:
-    # No OpenAPI schema and no docs routes: the app exposes no API, so /docs, /redoc
-    # and /openapi.json would be public surface describing nothing. The app reads no
-    # configuration -- the greeting is baked into the bundle at build time.
+    # No OpenAPI schema and no docs routes. One hand-written JSON route does not earn
+    # a generated document, and /docs, /redoc and /openapi.json would be public surface
+    # advertising it. The app still reads no configuration of any kind.
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     # Wraps the whole ASGI app, so the static mount below gets the headers too.
@@ -65,12 +65,23 @@ def create_app() -> FastAPI:
             response.headers.setdefault(header, value)
         return response
 
-    # The only public route. Everything else the page needs is a static asset served
-    # by the /static mount below; the greeting is baked into the bundle at build time,
-    # so no API endpoint is exposed.
+    # Serves the shell. The page it boots fetches the greeting from /api/greeting; the
+    # rest of what it needs is a static asset served by the /static mount below.
     @app.get("/")
     async def index() -> FileResponse:  # pyright: ignore[reportUnusedFunction]  # registered via decorator
         return FileResponse(STATIC_DIR / "index.html")
+
+    # The whole API. The payload is built by hand rather than derived from a
+    # response_model: with openapi_url=None there is no schema to publish, so the shape
+    # is declared here and mirrored by hand in frontend/src/api/greeting.ts. Change the
+    # two together. The page reaches this over the CSP's connect-src 'self'.
+    @app.get("/api/greeting")
+    async def greeting() -> JSONResponse:  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        # no-store because the wording ships inside the wheel: a cached copy would
+        # outlive the deploy that changed it.
+        return JSONResponse(
+            {"greeting": GREETING}, headers={"Cache-Control": "no-store"}
+        )
 
     # vite emits asset URLs under this exact prefix (see `base` in vite.config.ts),
     # so the mount path must not change.

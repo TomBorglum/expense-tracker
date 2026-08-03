@@ -29,10 +29,12 @@ updates:
   #     its comment there gives the other reason to keep it out of package.json.
   #   - The lockfile must stay at lockfileVersion 9.0, which Dependabot does parse.
   #
-  # Bumps to vite, @vitejs/plugin-react, tailwindcss, @tailwindcss/vite, react or
-  # react-dom change the committed bundle in backend/src/expense_tracker/static/, so
-  # `pixi run web-verify` fails on those PRs until `pixi run web-build` output is
-  # committed to the Dependabot branch.
+  # Bumps to vite, @vitejs/plugin-react, tailwindcss, @tailwindcss/vite, react,
+  # react-dom or @tanstack/react-query change the committed bundle in
+  # backend/src/expense_tracker/static/, so `pixi run web-verify` fails on those PRs
+  # until `pixi run web-build` output is committed to the Dependabot branch. msw is
+  # test-only and does not reach the bundle, but a major bump needs its allowBuilds
+  # entry in frontend/pnpm-workspace.yaml rechecked.
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:

@@ -16,20 +16,23 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      // greeting.json is owned by the Python package; alias it so the import path
-      // does not have to climb out of frontend/.
-      "@data": fileURLToPath(
-        new URL("../backend/src/expense_tracker", import.meta.url),
-      ),
+      // Lets tests reach into src/ without climbing (../../src/api/greeting). Declared
+      // again as "paths" in tsconfig.app.json for the type checker - vite does not read
+      // tsconfig paths, so the two must be changed together.
+      //
+      // A bare "@" key is safe next to scoped packages: vite matches an alias only on
+      // an exact hit or the key followed by "/", so "@/api/greeting" rewrites and
+      // "@tanstack/react-query" does not.
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
   server: {
-    fs: {
-      // vite derives its serving allow-list from the nearest package.json, which is
-      // now frontend/ - so greeting.json over in the Python package would be denied.
-      // Only the dev server and vitest enforce this; `vite build` does not, so
-      // without this line the build passes and only `pixi run web-test` fails.
-      allow: [fileURLToPath(new URL("../", import.meta.url))],
+    proxy: {
+      // `pnpm dev` serves the page from vite's own port while the API runs on
+      // uvicorn's 8000, so the fetch would otherwise be cross-origin. The built bundle
+      // is served by FastAPI itself, so this matters only in dev - run `pixi run
+      // serve` alongside it.
+      "/api": "http://localhost:8000",
     },
   },
   build: {
@@ -47,6 +50,9 @@ export default defineConfig({
     root: fileURLToPath(new URL("../", import.meta.url)),
     environment: "jsdom",
     include: ["frontend/tests/**/*.test.{ts,tsx}"],
+    // Starts the MSW server and unmounts React between tests. Repo-root relative like
+    // everything else in this block, because test.root is pinned above.
+    setupFiles: ["frontend/tests/setup.ts"],
     coverage: {
       provider: "v8",
       // lcov is what SonarCloud ingests; text keeps the summary visible in CI logs.
