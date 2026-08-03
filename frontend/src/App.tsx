@@ -1,13 +1,47 @@
-// The greeting is owned by the Python package and baked in at build time, so the
-// page needs no API call and the backend exposes no endpoint for it.
-import greeting from "@data/greeting.json";
+import { useQuery } from "@tanstack/react-query";
+
+import { greetingQueryOptions } from "./api/greeting";
+
+// The greeting is owned by the Python package and served from /api/greeting, so the
+// page fetches it at runtime instead of shipping its own copy of the wording.
+function GreetingMessage() {
+  // Not destructured: useQuery returns a discriminated union, and reading through the
+  // result is what narrows `data` to a Greeting in the success branch below.
+  const query = useQuery(greetingQueryOptions);
+
+  if (query.isPending) {
+    return (
+      <p
+        role="status"
+        className="text-4xl font-semibold tracking-tight text-slate-400 dark:text-slate-500"
+      >
+        Loading...
+      </p>
+    );
+  }
+
+  if (query.isError) {
+    return (
+      <p
+        role="alert"
+        className="text-4xl font-semibold tracking-tight text-red-700 dark:text-red-400"
+      >
+        Could not load the greeting.
+      </p>
+    );
+  }
+
+  return (
+    <h1 className="text-4xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+      {query.data.greeting}
+    </h1>
+  );
+}
 
 export default function App() {
   return (
     <main className="flex min-h-full items-center justify-center bg-slate-50 px-6 dark:bg-slate-900">
-      <h1 className="text-4xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-        {greeting.greeting}
-      </h1>
+      <GreetingMessage />
     </main>
   );
 }

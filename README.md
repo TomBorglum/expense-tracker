@@ -47,7 +47,19 @@ pixi run web-build    # build the frontend into backend/src/expense_tracker/stat
 pixi run serve        # start the dev server on http://localhost:8000
 ```
 
-Visit http://localhost:8000/ and you should see `Hello, World!`.
+Visit http://localhost:8000/ and you should see `Hello, World!`, fetched from the API
+once the page has booted.
+
+## Routes
+
+| Route | What it serves |
+| --- | --- |
+| `GET /` | The page shell (`static/index.html`) |
+| `GET /api/greeting` | `{"greeting": "Hello, World!"}`, read from `greeting.json` |
+| `/static/*` | The committed vite bundle |
+
+That is the whole surface. There is no OpenAPI schema and no `/docs` or `/redoc`; see
+[Configuration](#configuration).
 
 ## Frontend
 
@@ -57,21 +69,26 @@ in CSS via `frontend/src/styles/app.css` - there is no `tailwind.config.js`).
 `backend/src/expense_tracker/static/` is **generated output and is committed**, so the
 wheel is self-contained and the lean `prod` environment never needs Node. Vite writes
 there directly rather than into a `frontend/dist/`. Rebuild it with `pixi run
-web-build` and commit the result whenever you change `frontend/` or
-`backend/src/expense_tracker/greeting.json`; `pixi run web-verify` (also run in CI)
-fails if the committed bundle has drifted.
+web-build` and commit the result whenever you change `frontend/`; `pixi run web-verify`
+(also run in CI) fails if the committed bundle has drifted.
 
-The greeting is baked into the bundle at build time from
-`backend/src/expense_tracker/greeting.json`, which the backend reads too. That one file
-is the single source of truth, and it is why the app exposes no greeting API - the
-rendered page is the only public surface. React imports it through the `@data` alias,
-defined once in `frontend/vite.config.ts` for the bundler and once in
-`frontend/tsconfig.app.json` for the type checker; both must point at the same place.
+`backend/src/expense_tracker/greeting.json` is the single source of truth for the
+greeting, and only Python reads it: the backend serves it from `GET /api/greeting` and
+the page fetches it at runtime with [TanStack Query](https://tanstack.com/query), in
+`frontend/src/api/greeting.ts`. Nothing generates a client from a schema -
+`create_app()` publishes no OpenAPI document - so the payload is written out by hand on
+both sides and the two declarations must be changed together. The bundle ships the
+request path, not the wording, which is why editing `greeting.json` alone no longer
+requires a rebuild.
 
 For frontend-only work, `pnpm dev` from `frontend/` gives you vite's dev server with
-hot reload.
+hot reload. Run `pixi run serve` alongside it: vite serves the page from its own port,
+so `frontend/vite.config.ts` proxies `/api` through to uvicorn on 8000.
 
-Frontend tests use vitest and live in `frontend/tests/`. `frontend/src/main.tsx` is
+Frontend tests use vitest and live in `frontend/tests/`. The backend is stubbed with
+[MSW](https://mswjs.io); `frontend/tests/setup.ts` starts the server with
+`onUnhandledRequest: "error"`, so a request no handler covers fails the test instead of
+quietly reaching the network. `frontend/src/main.tsx` is
 excluded from coverage in both `frontend/vite.config.ts` and
 `sonar-project.properties` - it only wires React to the DOM. Note that
 `frontend/vite.config.ts` pins vitest's root back up to the repo root (`new
@@ -83,7 +100,7 @@ uncovered - silently, with a green build.
 ### Package manager
 
 Dependencies are installed with **pnpm**, whose version is pinned in `pixi.toml`
-alongside Node. Two deliberate choices worth knowing:
+alongside Node. Three deliberate choices worth knowing:
 
 - **There is no `packageManager` field in `frontend/package.json`, and there must not
   be.**
@@ -96,8 +113,14 @@ alongside Node. Two deliberate choices worth knowing:
   fall back to an older release - it will instead ask you to exempt the version in a
   `pnpm-workspace.yaml`. **Prefer picking the newest release that already clears the
   window over adding an exemption**, which would disable the guard for precisely the
-  freshest, least-vetted package. There is deliberately no `pnpm-workspace.yaml` in
-  this repo.
+  freshest, least-vetted package. `frontend/pnpm-workspace.yaml` exists **only** to
+  answer `allowBuilds` (below) and must not gain a `minimumReleaseAge` exemption.
+- **Install scripts are answered explicitly.** pnpm 11 exits non-zero while a
+  dependency's install script is neither allowed nor denied, which would fail
+  `pixi run web-install` in CI. The decision lives in `frontend/pnpm-workspace.yaml`
+  under `allowBuilds` - pnpm 11 stopped reading the `pnpm` field in `package.json`, so
+  that file is the only place it can go. `msw` is denied there: its script only copies
+  the browser service worker, and the tests use `msw/node`.
 
 ## Editor setup (Zed)
 
@@ -191,11 +214,12 @@ then the SonarCloud scan.
 
 ## Configuration
 
-There is none: the app reads no environment variables and no config files. The
-greeting is baked into the bundle at build time, so the only inputs are the committed
-static files. FastAPI's OpenAPI schema and its `/docs` and `/redoc` UIs are switched
-off in `create_app()` - the app exposes no API for them to describe, and the rendered
-page is meant to be the only public surface.
+There is none: the app reads no environment variables and no config files. The only
+inputs are the committed static files and `greeting.json`, both of which ship inside
+the wheel. FastAPI's OpenAPI schema and its `/docs` and `/redoc` UIs are switched off
+in `create_app()` - one hand-written JSON route does not earn a generated document, and
+the schema would be public surface advertising it. `backend/tests/test_app.py` asserts
+they stay off.
 
 ## Contributing
 

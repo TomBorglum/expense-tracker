@@ -19,15 +19,7 @@
     "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "isolatedModules": true,
-    "skipLibCheck": true,
-    // Lets App.tsx import greeting.json with a real type.
-    "resolveJsonModule": true,
-
-    // No baseUrl: it is deprecated in TypeScript 6, and paths already resolve
-    // relative to this file.
-    "paths": {
-      "@data/*": ["../backend/src/expense_tracker/*"]
-    }
+    "skipLibCheck": true
   },
   "include": ["src", "tests"]
 }

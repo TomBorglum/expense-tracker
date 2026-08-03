@@ -16,13 +16,15 @@ def test_index_serves_built_page() -> None:
     assert re.search(r'href="/static/assets/index-[^"]+\.css"', body)
 
 
-def test_built_bundle_contains_greeting() -> None:
-    # greeting.json is the single source of truth: the app reads it at import time and
-    # vite bakes it into the bundle. If the committed build is stale relative to
-    # greeting.json, this fails -- which is the point.
+def test_built_bundle_calls_the_greeting_endpoint() -> None:
+    # The wording is no longer shared with the bundle, so the request path is what the
+    # two stacks have to agree on. Both write it down by hand; this pins them together
+    # and fails if the committed build is stale relative to src/api/greeting.ts.
     bundles = list((STATIC_DIR / "assets").glob("index-*.js"))
     assert bundles, "no built JS bundle found; run `pixi run web-build`"
-    assert any(GREETING in bundle.read_text(encoding="utf-8") for bundle in bundles)
+    assert any(
+        "/api/greeting" in bundle.read_text(encoding="utf-8") for bundle in bundles
+    )
 
 
 def test_stylesheet_contains_tailwind_utilities() -> None:
@@ -57,17 +59,33 @@ def test_static_assets_get_security_headers() -> None:
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
-def test_greeting_is_not_exposed_by_an_api() -> None:
-    # The greeting is baked in at build time on purpose: the page is the only public
-    # surface, so there must be no endpoint serving it.
-    client = TestClient(create_app())
-    assert client.get("/api/hello").status_code == 404
-    assert client.get("/api/greeting").status_code == 404
+def test_greeting_endpoint_returns_json() -> None:
+    # The hand-built payload. greeting.json stays the single source of truth, so the
+    # body is asserted against GREETING rather than a literal.
+    response = TestClient(create_app()).get("/api/greeting")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json() == {"greeting": GREETING}
+    # The wording ships inside the wheel, so a cached copy would outlive its deploy.
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_greeting_endpoint_gets_security_headers() -> None:
+    # Same middleware, but worth pinning separately: the page fetches this route, so it
+    # is the one place connect-src 'self' has to hold.
+    response = TestClient(create_app()).get("/api/greeting")
+    assert "connect-src 'self'" in response.headers["Content-Security-Policy"]
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_unknown_api_routes_404() -> None:
+    # /api is one route, not a namespace to grow into by accident.
+    assert TestClient(create_app()).get("/api/hello").status_code == 404
 
 
 def test_openapi_docs_are_disabled() -> None:
-    # FastAPI publishes an OpenAPI schema and two docs UIs by default. The app has no
-    # API to describe, so create_app() turns them off and they must stay off.
+    # FastAPI publishes an OpenAPI schema and two docs UIs by default. One hand-written
+    # route does not earn them, so create_app() turns them off and they must stay off.
     client = TestClient(create_app())
     assert client.get("/openapi.json").status_code == 404
     assert client.get("/docs").status_code == 404
