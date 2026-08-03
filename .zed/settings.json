@@ -16,6 +16,11 @@
 //   format_on_save   - left to your user settings. Formatting is applied by
 //                      `pixi run web-format` and gated in CI by web-format-check.
 //   formatter        - Zed's default "auto" already picks the pinned prettier.
+//   code_actions_on_format.source.fixAll.eslint
+//                    - would let eslint rewrite the buffer on save, and Zed runs the
+//                      formatter AFTER the code action, so prettier would overwrite
+//                      whatever eslint just fixed. Prettier stays the only thing that
+//                      formats; apply eslint's fixes with `pixi run web-lint-fix`.
 //   language_servers - ["!typescript-language-server", "vtsls", "..."] is already
 //                      Zed's default for TSX/TypeScript/JavaScript.
 //   load_direnv      - "direct" is already Zed's default; that is what puts pixi's
@@ -34,6 +39,23 @@
   },
 
   "lsp": {
+    "eslint": {
+      "settings": {
+        // Same anti-drift job as the binary.path pins below, done differently.
+        // Zed's eslint support is its own bundled vscode-eslint server, so there
+        // is no binary to repoint - what has to be pinned is the eslint MODULE
+        // that server require()s at runtime, because that is what supplies the
+        // rules, their severities and the version. Left to Zed's own resolution
+        // this can land on the worktree root, which has no node_modules now that
+        // the frontend owns its dependencies, and the server then falls back to a
+        // global eslint or reports nothing at all.
+        "nodePath": "frontend/node_modules",
+        // Resolve eslint.config.ts and relative ignores from frontend/, where they
+        // live. Replaces Zed's default workingDirectory { "mode": "auto" } with
+        // something that does not depend on inference.
+        "workingDirectories": ["frontend"]
+      }
+    },
     "tailwindcss-language-server": {
       "binary": {
         // Pinned by frontend/package.json. Without this, Zed installs

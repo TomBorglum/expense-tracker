@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 
 import { GREETING_PATH } from "@/api/greeting";
 import App from "@/App";
+
 import { MOCK_GREETING } from "./msw/handlers";
 import { server } from "./msw/server";
 
