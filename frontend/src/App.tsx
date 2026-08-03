@@ -10,13 +10,13 @@ function GreetingMessage() {
   const query = useQuery(greetingQueryOptions);
 
   if (query.isPending) {
+    // <output> rather than role="status" on a <p>: it carries that role implicitly, so
+    // spelling it out would be recreating semantics HTML already has (sonar S6819).
+    // The error branch keeps its role - no element implies role="alert".
     return (
-      <p
-        role="status"
-        className="text-4xl font-semibold tracking-tight text-slate-400 dark:text-slate-500"
-      >
+      <output className="text-4xl font-semibold tracking-tight text-slate-400 dark:text-slate-500">
         Loading...
-      </p>
+      </output>
     );
   }
 
