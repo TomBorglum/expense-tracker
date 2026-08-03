@@ -19,7 +19,15 @@
     "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "isolatedModules": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+
+    // The type-checker half of the "@" alias; the bundler half is resolve.alias in
+    // vite.config.ts, which vite needs because it does not read these. Change both
+    // together. No baseUrl: it is deprecated in TypeScript 6, and paths already
+    // resolve relative to this file.
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src", "tests"]
 }

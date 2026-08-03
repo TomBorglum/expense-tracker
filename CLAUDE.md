@@ -72,7 +72,9 @@ Break one of these and CI goes red on an otherwise correct change.
   `backend/src/expense_tracker/__init__.py` builds it, and
   `frontend/src/api/greeting.ts` declares the matching type, guard and path. There
   is no schema generating either from the other, so change them together.
-  The `frontend/src/main.tsx` coverage exclusion is declared in both
+  The `@` alias (`frontend/src`) is declared in both `frontend/vite.config.ts`
+  (bundler) and `frontend/tsconfig.app.json` (types) - vite does not read tsconfig
+  `paths`. The `frontend/src/main.tsx` coverage exclusion is declared in both
   `frontend/vite.config.ts` and `sonar-project.properties`. Change each pair
   together.
 - **`frontend/package.json` must not gain a `packageManager` field**, and

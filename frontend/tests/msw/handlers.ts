@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw";
 
-import { GREETING_PATH } from "../../src/api/greeting";
+import { GREETING_PATH } from "@/api/greeting";
 
 // The stub payload, written out by hand the same way the backend writes the real one.
 // Deliberately not the wording in greeting.json: a passing test then proves the text

@@ -14,6 +14,18 @@ export default defineConfig({
   // URLs must carry that prefix.
   base: "/static/",
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      // Lets tests reach into src/ without climbing (../../src/api/greeting). Declared
+      // again as "paths" in tsconfig.app.json for the type checker - vite does not read
+      // tsconfig paths, so the two must be changed together.
+      //
+      // A bare "@" key is safe next to scoped packages: vite matches an alias only on
+      // an exact hit or the key followed by "/", so "@/api/greeting" rewrites and
+      // "@tanstack/react-query" does not.
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   server: {
     proxy: {
       // `pnpm dev` serves the page from vite's own port while the API runs on

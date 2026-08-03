@@ -85,6 +85,13 @@ For frontend-only work, `pnpm dev` from `frontend/` gives you vite's dev server 
 hot reload. Run `pixi run serve` alongside it: vite serves the page from its own port,
 so `frontend/vite.config.ts` proxies `/api` through to uvicorn on 8000.
 
+Tests reach into the app through the `@` alias (`@/api/greeting` rather than
+`../../src/api/greeting`). It is declared twice - `resolve.alias` in
+`frontend/vite.config.ts` for the bundler and `paths` in `frontend/tsconfig.app.json`
+for the type checker, because vite does not read tsconfig `paths` - so both must point
+at the same place. Imports *within* `src/` stay relative; the alias is there for
+crossing into it from `tests/`.
+
 Frontend tests use vitest and live in `frontend/tests/`. The backend is stubbed with
 [MSW](https://mswjs.io); `frontend/tests/setup.ts` starts the server with
 `onUnhandledRequest: "error"`, so a request no handler covers fails the test instead of
