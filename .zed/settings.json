@@ -10,9 +10,10 @@
 //     (paths here are relative to the worktree root, not to this file). Run
 //     `pixi run web-install` first, or the paths do not exist yet and the language
 //     servers will not start.
-//   - Backend: the CONFIG drifted, and the fix is not in this file. basedpyright's
-//     settings moved to pyrightconfig.json at the worktree root, where the language
-//     server finds them unaided. See the note above the "lsp" block.
+//   - Backend: the CONFIG drifts too. basedpyright's settings live in
+//     backend/pyproject.toml, one level below the worktree root the server searches,
+//     so it has to be pointed at them - otherwise it applies each developer's own
+//     editor settings instead. See the basedpyright block.
 //
 // Before concluding a pin is broken: over a remote/WSL backend Zed's Server Info
 // panel shows "Binary: Unknown" for vtsls even when it is working correctly. See
@@ -44,13 +45,43 @@
     "JSONC": { "tab_size": 2 }
   },
 
-  // No "basedpyright" entry, on purpose. Its settings live in pyrightconfig.json at
-  // the worktree root, which is exactly where the language server looks on its own -
-  // so the editor needs no help finding them, here or in any other editor. Pointing
-  // at backend/pyproject.toml through basedpyright.analysis.configFilePath was tried
-  // twice and does not work: a directory is rejected outright ("Config file ... could
-  // not be read"), and a file path is ignored.
   "lsp": {
+    "basedpyright": {
+      "binary": {
+        // Pinned by pixi.toml, for the same reason as the frontend servers below:
+        // otherwise Zed runs whatever basedpyright it resolves on its own, which is
+        // not the version CI enforces. It matters here beyond version drift -
+        // configFilePath's support for a directory is documented for THIS version,
+        // and an older server is the likeliest reason an earlier attempt at the
+        // setting failed with "Config file ... could not be read".
+        //
+        // Run `direnv allow` (or `pixi install`) before opening the project, or this
+        // path does not exist yet and the server will not start.
+        "path": ".pixi/envs/default/bin/basedpyright-langserver",
+        "arguments": ["--stdio"],
+        "ignore_system_version": true
+      },
+      "settings": {
+        "basedpyright.analysis": {
+          // All Python config lives in backend/pyproject.toml, next to ruff's and
+          // pytest's. A language server searches only its worktree root and never
+          // descends into backend/, so it has to be told where to look; this is the
+          // one thing the editor needs, and no settings are duplicated here.
+          //
+          // Why it is not cosmetic: basedpyright ignores a developer's personal
+          // typeCheckingMode ONLY when it finds a project config. Finding none, it
+          // applies the editor's own settings instead - so anyone with a mode set in
+          // their global Zed config got that rather than this repo's "strict", and
+          // no amount of project configuration could override it. This line is what
+          // makes backend/pyproject.toml authoritative.
+          //
+          // A directory is what the setting documents ("path to the directory or file
+          // containing the configuration"). Relative to the worktree root, like the
+          // paths below; Zed does not expand VS Code's ${workspaceFolder}.
+          "configFilePath": "backend"
+        }
+      }
+    },
     "eslint": {
       "settings": {
         // Same anti-drift job as the binary.path pins below, done differently.

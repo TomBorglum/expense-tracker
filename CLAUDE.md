@@ -117,12 +117,14 @@ Break one of these and CI goes red on an otherwise correct change.
 
 - **Python:** basedpyright in `strict` mode and ruff with
   `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]` - both in `backend/pyproject.toml`.
-  The root `pyrightconfig.json` is **only** `{"extends": "backend/pyproject.toml"}` and
-  must stay that way; a setting added there would override what it points at. It exists
-  because a language server searches its worktree root and never descends into
-  `backend/` - and basedpyright ignores a developer's personal `typeCheckingMode` *only
-  when it finds a project config*, so without it each contributor's own editor setting
-  wins. This is also why `typecheck` is the one `pixi` task with no `cwd`.
+  There is **no config file at the repo root** and no Python setting duplicated in the
+  editor config. Editors are pointed at the directory instead, via
+  `basedpyright.analysis.configFilePath` in `.zed/settings.json` - a language server
+  searches only its worktree root and never descends into `backend/`. Keep that line:
+  basedpyright ignores a developer's personal `typeCheckingMode` *only when it finds a
+  project config*, so without it each contributor's own editor setting wins over this
+  repo's `strict`. `.zed/settings.json` also pins the server binary to the pixi env, for
+  the same reason the frontend servers are pinned.
 - **Frontend:** `tsc -b` against a `strict` tsconfig, prettier, and eslint 10 in
   `frontend/eslint.config.ts` - typescript-eslint `strictTypeChecked` +
   `stylisticTypeChecked` (type-aware, via `parserOptions.projectService`), ESLint

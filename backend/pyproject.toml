@@ -25,8 +25,10 @@ addopts = "--strict-markers --strict-config --cov=expense_tracker --cov-report=x
 
 [tool.basedpyright]
 typeCheckingMode = "strict"
-# Both paths are relative to THIS file, so they mean backend/src and backend/tests even
-# when the run starts at the repo root - which it does, because pyrightconfig.json there
-# extends this section so the editor's language server can find it. See that file.
+# Relative to this file, so backend/src and backend/tests.
 include = ["src", "tests"]
 extraPaths = ["src"]
+# Editors do not find this section on their own: a language server searches its worktree
+# root, which is one level up, and does not descend into here. `.zed/settings.json`
+# points it at this directory - see the basedpyright block there for why that matters
+# more than it sounds.

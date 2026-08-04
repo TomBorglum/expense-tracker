@@ -17,7 +17,6 @@ out of scope for now.
 expense-tracker/
   pixi.toml, pixi.lock          # environments and every `pixi run` task, both stacks
   sonar-project.properties      # one Sonar project spanning both languages
-  pyrightconfig.json            # 3-line pointer to backend/pyproject.toml (editors)
   backend/
     pyproject.toml              # hatchling, ruff, pytest, basedpyright
     src/expense_tracker/        # create_app() factory, greeting.json
@@ -197,40 +196,30 @@ alongside Node. Three deliberate choices worth knowing:
 stacks drift for different reasons, so they are fixed differently: the frontend
 servers drift in **version**, basedpyright drifts in **config**.
 
-**basedpyright needs no editor setting.** Its settings live in
-`backend/pyproject.toml` alongside ruff's and pytest's, where Python config belongs. A
-three-line `pyrightconfig.json` at the repo root does nothing but point at them:
+**basedpyright is pinned and pointed at `backend/`.** All Python config lives in
+`backend/pyproject.toml` next to ruff's and pytest's; nothing is duplicated in the
+editor config and there is no config file at the repo root. `.zed/settings.json` does
+exactly two things for it:
 
-```json
-{ "extends": "backend/pyproject.toml" }
-```
+- **Pins the server** to `.pixi/envs/default/bin/basedpyright-langserver`, the same
+  anti-drift job done for the frontend servers below. Run `direnv allow` before opening
+  the project or the path does not exist yet.
+- **Sets `basedpyright.analysis.configFilePath` to `backend`**, because a language
+  server searches only its worktree root and never descends into subdirectories.
 
-That file exists because a language server searches its *worktree root* for a config
-and does not descend into subdirectories - it would never see `backend/pyproject.toml`
-on its own. And the consequence is bigger than a missed setting: basedpyright ignores a
-developer's personal `typeCheckingMode` **only when it finds a project config**. Finding
-none, it applies the editor's own settings instead, so anyone whose global Zed or VS
-Code config sets a mode got that rather than this repo's `strict` - and no amount of
-editor configuration could reconcile the two. The root pointer is what makes the
-repo's settings authoritative for everyone.
-
-`extends` accepts a `.json` or a `.toml`, and relative paths inside the extended file
-resolve against *that* file's location, which is why `include = ["src", "tests"]` means
-`backend/src` and `backend/tests`. Do not put settings in the root file: anything there
-overrides what it points at, recreating the split it exists to prevent.
-
-Two consequences worth knowing:
-
-- **`pixi run typecheck` is the only task with no `cwd`.** It runs from the repo root so
-  CI reads the same config the editor does.
-- **Zed's `basedpyright.analysis.configFilePath` is not the answer**, despite looking
-  like it: a directory is rejected outright (`Config file "..." could not be read`) and
-  a file path is ignored.
+The second is not cosmetic. basedpyright ignores a developer's personal
+`typeCheckingMode` **only when it finds a project config**; finding none, it applies the
+editor's own settings instead. So without that line, anyone with a mode set in their
+global Zed or VS Code config gets that rather than this repo's `strict` - typically
+`recommended`, a *different* rule set enabling `reportUnusedCallResult`, `reportAny`,
+`reportImplicitOverride` and `failOnWarnings`. The editor then flags code CI is happy
+with, and no project setting can override it. That one line is what makes
+`backend/pyproject.toml` authoritative for everyone.
 
 To confirm the editor and CI agree, flip `typeCheckingMode` to `recommended` in
 `backend/pyproject.toml` and run `pixi run typecheck`: the `reportUnusedCallResult`
-warning on `response.headers.setdefault(...)` in `create_app()` reappears. Set it back
-to `strict` and it clears.
+warning on `response.headers.setdefault(...)` in `create_app()` reappears, and the
+editor should report it too. Set it back to `strict` and both clear.
 
 **The frontend servers are pinned to `frontend/node_modules`.** Those paths
 are relative to the worktree root, and the `vtsls` entry also spells out a `tsdk` -
