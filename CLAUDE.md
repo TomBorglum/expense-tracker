@@ -115,16 +115,14 @@ Break one of these and CI goes red on an otherwise correct change.
 
 ## Quality gates
 
-- **Python:** ruff with `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]` in
-  `backend/pyproject.toml`, and basedpyright in `strict` mode in **`pyrightconfig.json`
-  at the repo root** - not in `backend/pyproject.toml`, and not duplicated there.
-  A language server only searches its worktree root for a config, and basedpyright
-  ignores a developer's personal `typeCheckingMode` **only when it finds one**. With the
-  settings under `backend/` it found none, so each contributor's own editor setting won
-  - `recommended` for anyone who set it, a *different* rule set (`reportUnusedCallResult`,
-  `reportAny`, `failOnWarnings`). `pyrightconfig.json` also takes precedence over
-  `pyproject.toml`, so a `[tool.basedpyright]` block would be dead config that reads as
-  live. This is why `typecheck` is the one `pixi` task with no `cwd`.
+- **Python:** basedpyright in `strict` mode and ruff with
+  `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]` - both in `backend/pyproject.toml`.
+  The root `pyrightconfig.json` is **only** `{"extends": "backend/pyproject.toml"}` and
+  must stay that way; a setting added there would override what it points at. It exists
+  because a language server searches its worktree root and never descends into
+  `backend/` - and basedpyright ignores a developer's personal `typeCheckingMode` *only
+  when it finds a project config*, so without it each contributor's own editor setting
+  wins. This is also why `typecheck` is the one `pixi` task with no `cwd`.
 - **Frontend:** `tsc -b` against a `strict` tsconfig, prettier, and eslint 10 in
   `frontend/eslint.config.ts` - typescript-eslint `strictTypeChecked` +
   `stylisticTypeChecked` (type-aware, via `parserOptions.projectService`), ESLint

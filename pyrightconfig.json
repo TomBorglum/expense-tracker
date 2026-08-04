@@ -1,41 +1,20 @@
-// basedpyright's settings, at the repo root rather than in backend/pyproject.toml.
+// A pointer, not a config. Every basedpyright setting lives in
+// backend/pyproject.toml next to ruff's and pytest's; this file exists only so the
+// editor can find them.
 //
-// A language server searches its worktree root for a config and does not look into
-// subdirectories, so with the settings one level down in backend/ it found none. That
-// is what made the difference: basedpyright ignores a user's own typeCheckingMode ONLY
-// when a pyrightconfig.json or a pyproject.toml with a [tool.basedpyright] section is
-// found. With neither, the editor's settings win - and a developer whose global Zed or
-// VS Code config sets "recommended" got that instead of this repo's "strict".
+// A language server searches its worktree root for a config and does not descend into
+// subdirectories, so it never sees backend/pyproject.toml. That matters more than it
+// sounds: basedpyright ignores a developer's personal typeCheckingMode ONLY when it
+// finds a project config. Finding none, it applies the editor's own settings instead -
+// so anyone whose global Zed or VS Code config sets a mode got that rather than this
+// repo's "strict", and no editor configuration could reconcile the two.
 //
-// "recommended" is a DIFFERENT rule set, not a smaller one: it enables
-// reportUnusedCallResult, reportAny, reportImplicitOverride and more, and sets
-// failOnWarnings. The editor then reported code CI is happy with, such as the discarded
-// return of response.headers.setdefault() in create_app().
+// "extends" accepts a .json or a .toml, and relative paths inside the extended file
+// resolve against that file's own location - which is why include = ["src", "tests"]
+// in backend/pyproject.toml means backend/src and backend/tests, not the repo root.
 //
-// So this file is not only about where the settings live, it is what makes them
-// authoritative over whatever each contributor has set globally.
-//
-// Pointing the server at the old location through Zed's
-// basedpyright.analysis.configFilePath was tried twice and does not work - a directory
-// is rejected ("Config file ... could not be read") and a file path is ignored - so the
-// config moved to where every editor already looks. Nothing editor-specific is needed
-// now, in Zed or anywhere else.
-//
-// pyrightconfig.json takes precedence over pyproject.toml, so [tool.basedpyright] was
-// REMOVED from backend/pyproject.toml rather than left behind, where it would have been
-// dead config that still read as live. ruff and pytest stay there; the type checker is
-// the one tool an editor runs continuously against the whole worktree, which is what
-// makes it the exception.
-//
-// `pixi run typecheck` runs from the repo root with no cwd, so CI and the editor read
-// this same file. Comments are fine here: basedpyright parses this as JSONC.
+// Do not add settings here. Anything in this file would override the values it points
+// at, which is exactly the split-brain this arrangement exists to prevent.
 {
-  // Only the backend is Python. The frontend is checked by tsc.
-  "include": ["backend/src", "backend/tests"],
-
-  "typeCheckingMode": "strict",
-
-  // The package lives under src/, so tests importing expense_tracker resolve without
-  // relying on the editable install being present.
-  "extraPaths": ["backend/src"]
+  "extends": "backend/pyproject.toml"
 }

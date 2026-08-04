@@ -17,9 +17,9 @@ out of scope for now.
 expense-tracker/
   pixi.toml, pixi.lock          # environments and every `pixi run` task, both stacks
   sonar-project.properties      # one Sonar project spanning both languages
-  pyrightconfig.json            # basedpyright; at the root so editors find it
+  pyrightconfig.json            # 3-line pointer to backend/pyproject.toml (editors)
   backend/
-    pyproject.toml              # hatchling, ruff, pytest
+    pyproject.toml              # hatchling, ruff, pytest, basedpyright
     src/expense_tracker/        # create_app() factory, greeting.json
     tests/
   frontend/
@@ -197,40 +197,40 @@ alongside Node. Three deliberate choices worth knowing:
 stacks drift for different reasons, so they are fixed differently: the frontend
 servers drift in **version**, basedpyright drifts in **config**.
 
-**basedpyright needs no editor setting.** Its settings live in `pyrightconfig.json`
-at the **repo root**, not in `backend/pyproject.toml`, because that is the only place a
-language server looks: it searches its worktree root and does not descend into
-subdirectories.
+**basedpyright needs no editor setting.** Its settings live in
+`backend/pyproject.toml` alongside ruff's and pytest's, where Python config belongs. A
+three-line `pyrightconfig.json` at the repo root does nothing but point at them:
 
-That location is what makes the settings *authoritative*. basedpyright ignores a
-developer's own `typeCheckingMode` only when it finds a `pyrightconfig.json` or a
-`pyproject.toml` with a `[tool.basedpyright]` section; with neither, **the editor's
-settings win**. So while the config sat under `backend/`, anyone whose global Zed or VS
-Code config set `recommended` got that instead of this repo's `strict` - a *different*
-rule set rather than a smaller one, enabling `reportUnusedCallResult`, `reportAny`,
-`reportImplicitOverride` and `failOnWarnings`. The editor flagged code CI is happy with,
-and no amount of editor configuration could reconcile the two.
+```json
+{ "extends": "backend/pyproject.toml" }
+```
 
-Zed's `basedpyright.analysis.configFilePath` looks like the fix and is not: a directory
-is rejected outright (`Config file "..." could not be read`) and a file path is ignored.
-A root config removes the need for any editor-specific setting, in Zed or anywhere else,
-and holds regardless of what each contributor has set globally.
+That file exists because a language server searches its *worktree root* for a config
+and does not descend into subdirectories - it would never see `backend/pyproject.toml`
+on its own. And the consequence is bigger than a missed setting: basedpyright ignores a
+developer's personal `typeCheckingMode` **only when it finds a project config**. Finding
+none, it applies the editor's own settings instead, so anyone whose global Zed or VS
+Code config sets a mode got that rather than this repo's `strict` - and no amount of
+editor configuration could reconcile the two. The root pointer is what makes the
+repo's settings authoritative for everyone.
+
+`extends` accepts a `.json` or a `.toml`, and relative paths inside the extended file
+resolve against *that* file's location, which is why `include = ["src", "tests"]` means
+`backend/src` and `backend/tests`. Do not put settings in the root file: anything there
+overrides what it points at, recreating the split it exists to prevent.
 
 Two consequences worth knowing:
 
-- **`pyrightconfig.json` takes precedence over `pyproject.toml`**, so
-  `[tool.basedpyright]` was *removed* from `backend/pyproject.toml`. Putting it back
-  would create dead config that still reads as live. ruff and pytest stay there - the
-  type checker is the one tool an editor runs continuously against the whole worktree,
-  which is what makes it the exception to each stack owning its own tooling.
 - **`pixi run typecheck` is the only task with no `cwd`.** It runs from the repo root so
-  that CI and the editor read the same file. Running it from `backend/` would find no
-  config and silently fall back to `recommended`.
+  CI reads the same config the editor does.
+- **Zed's `basedpyright.analysis.configFilePath` is not the answer**, despite looking
+  like it: a directory is rejected outright (`Config file "..." could not be read`) and
+  a file path is ignored.
 
-To confirm the editor and CI agree, flip `typeCheckingMode` to `recommended` and run
-`pixi run typecheck`: the `reportUnusedCallResult` warning on
-`response.headers.setdefault(...)` in `create_app()` reappears. Set it back to `strict`
-and it clears.
+To confirm the editor and CI agree, flip `typeCheckingMode` to `recommended` in
+`backend/pyproject.toml` and run `pixi run typecheck`: the `reportUnusedCallResult`
+warning on `response.headers.setdefault(...)` in `create_app()` reappears. Set it back
+to `strict` and it clears.
 
 **The frontend servers are pinned to `frontend/node_modules`.** Those paths
 are relative to the worktree root, and the `vtsls` entry also spells out a `tsdk` -

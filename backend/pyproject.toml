@@ -23,7 +23,10 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 testpaths = ["tests"]
 addopts = "--strict-markers --strict-config --cov=expense_tracker --cov-report=xml --cov-report=term-missing"
 
-# No [tool.basedpyright] here on purpose. It lives in pyrightconfig.json at the repo
-# root, which is the only place an editor's language server looks - see the comment in
-# that file. pyrightconfig.json also takes precedence over this one, so a block here
-# would be dead config that still read as live.
+[tool.basedpyright]
+typeCheckingMode = "strict"
+# Both paths are relative to THIS file, so they mean backend/src and backend/tests even
+# when the run starts at the repo root - which it does, because pyrightconfig.json there
+# extends this section so the editor's language server can find it. See that file.
+include = ["src", "tests"]
+extraPaths = ["src"]
