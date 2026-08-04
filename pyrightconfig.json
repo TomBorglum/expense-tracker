@@ -1,12 +1,19 @@
 // basedpyright's settings, at the repo root rather than in backend/pyproject.toml.
 //
 // A language server searches its worktree root for a config and does not look into
-// subdirectories. With the settings one level down in backend/, it found nothing and
-// silently fell back to basedpyright's default typeCheckingMode - which is
-// "recommended", a DIFFERENT rule set from the "strict" this repo wants, not a smaller
-// one: it enables reportUnusedCallResult, reportAny, reportImplicitOverride and more,
-// and sets failOnWarnings. The editor then reported code CI is happy with, such as the
-// discarded return of response.headers.setdefault() in create_app().
+// subdirectories, so with the settings one level down in backend/ it found none. That
+// is what made the difference: basedpyright ignores a user's own typeCheckingMode ONLY
+// when a pyrightconfig.json or a pyproject.toml with a [tool.basedpyright] section is
+// found. With neither, the editor's settings win - and a developer whose global Zed or
+// VS Code config sets "recommended" got that instead of this repo's "strict".
+//
+// "recommended" is a DIFFERENT rule set, not a smaller one: it enables
+// reportUnusedCallResult, reportAny, reportImplicitOverride and more, and sets
+// failOnWarnings. The editor then reported code CI is happy with, such as the discarded
+// return of response.headers.setdefault() in create_app().
+//
+// So this file is not only about where the settings live, it is what makes them
+// authoritative over whatever each contributor has set globally.
 //
 // Pointing the server at the old location through Zed's
 // basedpyright.analysis.configFilePath was tried twice and does not work - a directory

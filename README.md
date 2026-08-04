@@ -200,16 +200,21 @@ servers drift in **version**, basedpyright drifts in **config**.
 **basedpyright needs no editor setting.** Its settings live in `pyrightconfig.json`
 at the **repo root**, not in `backend/pyproject.toml`, because that is the only place a
 language server looks: it searches its worktree root and does not descend into
-subdirectories. With the settings one level down, basedpyright found no config and fell
-back to its own default `typeCheckingMode` - which is `recommended`, a *different* rule
-set from `strict` rather than a smaller one. It enables `reportUnusedCallResult`,
-`reportAny`, `reportImplicitOverride` and more, and sets `failOnWarnings`, so the editor
-reported code CI is happy with and there was no way to satisfy both.
+subdirectories.
+
+That location is what makes the settings *authoritative*. basedpyright ignores a
+developer's own `typeCheckingMode` only when it finds a `pyrightconfig.json` or a
+`pyproject.toml` with a `[tool.basedpyright]` section; with neither, **the editor's
+settings win**. So while the config sat under `backend/`, anyone whose global Zed or VS
+Code config set `recommended` got that instead of this repo's `strict` - a *different*
+rule set rather than a smaller one, enabling `reportUnusedCallResult`, `reportAny`,
+`reportImplicitOverride` and `failOnWarnings`. The editor flagged code CI is happy with,
+and no amount of editor configuration could reconcile the two.
 
 Zed's `basedpyright.analysis.configFilePath` looks like the fix and is not: a directory
 is rejected outright (`Config file "..." could not be read`) and a file path is ignored.
-Moving the config to the root removes the need for any editor-specific setting, in Zed
-or anywhere else.
+A root config removes the need for any editor-specific setting, in Zed or anywhere else,
+and holds regardless of what each contributor has set globally.
 
 Two consequences worth knowing:
 

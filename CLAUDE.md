@@ -118,9 +118,10 @@ Break one of these and CI goes red on an otherwise correct change.
 - **Python:** ruff with `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]` in
   `backend/pyproject.toml`, and basedpyright in `strict` mode in **`pyrightconfig.json`
   at the repo root** - not in `backend/pyproject.toml`, and not duplicated there.
-  A language server only searches its worktree root for a config, so settings kept
-  under `backend/` were silently ignored in the editor, which then fell back to
-  basedpyright's default `recommended` (a *different* rule set: `reportUnusedCallResult`,
+  A language server only searches its worktree root for a config, and basedpyright
+  ignores a developer's personal `typeCheckingMode` **only when it finds one**. With the
+  settings under `backend/` it found none, so each contributor's own editor setting won
+  - `recommended` for anyone who set it, a *different* rule set (`reportUnusedCallResult`,
   `reportAny`, `failOnWarnings`). `pyrightconfig.json` also takes precedence over
   `pyproject.toml`, so a `[tool.basedpyright]` block would be dead config that reads as
   live. This is why `typecheck` is the one `pixi` task with no `cwd`.
