@@ -141,9 +141,18 @@ root the language server searches for a config. Finding none, it falls back to
 basedpyright's own default mode - which is `recommended`, not `strict`, and is a
 *different* rule set rather than a smaller one: it enables `reportUnusedCallResult`,
 `reportAny`, `reportImplicitOverride` and more, and sets `failOnWarnings`. The editor
-then flags code CI is happy with, with no way to satisfy both. The
-`basedpyright.analysis.configFilePath` setting resolves it. You can see the same drift
-from the command line:
+then flags code CI is happy with, with no way to satisfy both.
+
+`basedpyright.analysis.configFilePath` resolves it, and it must name the config
+**file**, not the directory holding it. The CLI's `--project` accepts either, but the
+language server reads the path directly and fails with `Config file "..." could not be
+read` when handed a directory. basedpyright's own VS Code and Neovim examples show a
+directory - they assume a `pyrightconfig.json`, whereas the settings here live in
+`pyproject.toml`. Those examples also build an absolute path via `${workspaceFolder}`
+or `vim.fn.getcwd()`; Zed expands neither, and resolves the path from the worktree root
+instead, which is what makes a committed relative path work here.
+
+You can see the underlying drift from the command line:
 
 ```sh
 pixi run basedpyright backend/src/expense_tracker/__init__.py   # 1 warning, exit 1

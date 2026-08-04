@@ -61,9 +61,18 @@
           // response.headers.setdefault() in create_app() - and there is no way to
           // satisfy both. Same anti-drift job as the frontend pins below.
           //
-          // Directory, not a file path; relative to the worktree root like the
-          // paths below. Zed does not expand VS Code's ${workspaceFolder}.
-          "configFilePath": "backend"
+          // Must be the config FILE, not the directory holding it. The CLI's
+          // --project accepts either, but the language server reads this path
+          // directly and fails with
+          //   Config file "<worktree>/backend" could not be read.
+          // when given a directory. basedpyright's own docs show a directory
+          // because their examples assume a pyrightconfig.json; the settings here
+          // live in pyproject.toml, so it has to be named.
+          //
+          // Relative to the worktree root, like the paths below. Zed resolves it
+          // from there; it does not expand VS Code's ${workspaceFolder}, which is
+          // what basedpyright's VS Code and Neovim examples both rely on.
+          "configFilePath": "backend/pyproject.toml"
         }
       }
     },
