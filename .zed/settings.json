@@ -1,12 +1,18 @@
 // Project settings for Zed. Deliberately minimal: it carries only what is specific
 // to THIS repo, so it never overrides a preference set in your user settings.
 //
-// The one thing it must do is stop Zed drifting from the versions in
-// frontend/package.json. Zed's built-in Tailwind and TypeScript adapters otherwise
-// install their own npm "latest" copies under ~/.local/share/zed/; the binary.path
-// overrides below point them at ./frontend/node_modules instead (paths here are
-// relative to the worktree root, not to this file). Run `pixi run web-install`
-// first, or the paths do not exist yet and the language servers will not start.
+// The one thing it must do is stop the editor drifting from what CI enforces. That
+// takes two different fixes, because the two stacks drift for different reasons:
+//
+//   - Frontend: the VERSION drifts. Zed's built-in Tailwind and TypeScript adapters
+//     install their own npm "latest" copies under ~/.local/share/zed/; the
+//     binary.path overrides below point them at ./frontend/node_modules instead
+//     (paths here are relative to the worktree root, not to this file). Run
+//     `pixi run web-install` first, or the paths do not exist yet and the language
+//     servers will not start.
+//   - Backend: the CONFIG drifts. basedpyright's settings live in
+//     backend/pyproject.toml, one level below the worktree root the server searches,
+//     so it silently falls back to its own defaults. See the basedpyright block.
 //
 // Before concluding a pin is broken: over a remote/WSL backend Zed's Server Info
 // panel shows "Binary: Unknown" for vtsls even when it is working correctly. See
@@ -39,6 +45,28 @@
   },
 
   "lsp": {
+    "basedpyright": {
+      "settings": {
+        "basedpyright.analysis": {
+          // Points the language server at backend/pyproject.toml, where
+          // [tool.basedpyright] sets typeCheckingMode "strict". Without this the
+          // server looks for a config at the worktree root, finds none (there is no
+          // pyproject.toml there - the backend owns its own), and falls back to
+          // basedpyright's DEFAULT mode, which is "recommended", not "strict".
+          //
+          // That is not a smaller rule set, it is a different one: recommended turns
+          // on reportUnusedCallResult, reportAny, reportImplicitOverride and others
+          // that strict leaves off, and sets failOnWarnings. The editor then flags
+          // code CI is happy with - e.g. the discarded return of
+          // response.headers.setdefault() in create_app() - and there is no way to
+          // satisfy both. Same anti-drift job as the frontend pins below.
+          //
+          // Directory, not a file path; relative to the worktree root like the
+          // paths below. Zed does not expand VS Code's ${workspaceFolder}.
+          "configFilePath": "backend"
+        }
+      }
+    },
     "eslint": {
       "settings": {
         // Same anti-drift job as the binary.path pins below, done differently.
