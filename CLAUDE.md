@@ -49,40 +49,58 @@ order (cheapest first, so it fails fast):
 ```sh
 pixi run lint && pixi run format-check && pixi run typecheck && pixi run test &&
 pixi run web-install && pixi run web-format-check && pixi run web-check &&
-pixi run web-lint && pixi run web-test && pixi run web-verify
+pixi run web-lint && pixi run web-test && pixi run web-build
 ```
+
+The two halves are independent - the backend gates never touch `frontend/` and the
+frontend gates never touch `backend/` - so when you have changed only one stack, only
+that stack's gates can fail.
 
 ## Build invariants
 
 Break one of these and CI goes red on an otherwise correct change.
 
-- **The committed bundle.** `backend/src/expense_tracker/static/` is vite output
-  and **is committed**, so the wheel is self-contained and the `prod` environment
-  needs no Node. Any change under `frontend/` must be followed by
-  `pixi run web-build` with the result committed - `pixi run web-verify` fails
-  otherwise. Rationale in [`README.md`](README.md#frontend).
-- **No OpenAPI.** The app exposes `/` (the shell), `GET /api/greeting` (JSON) and
-  the `/static` mount, and nothing else; see `create_app()` in
-  `backend/src/expense_tracker/__init__.py`. One hand-written route does not earn a
-  generated document, so `docs_url`, `redoc_url` and `openapi_url` stay `None` and
-  `test_openapi_docs_are_disabled` in `backend/tests/test_app.py` keeps them that
-  way. Re-enabling the docs routes, or growing `/api` into a namespace, fails the
-  suite **by design**.
+- **The backend serves no frontend.** It is a REST API: `GET /api/greeting` and
+  nothing else. There is no `/` route, no `StaticFiles` mount and no build artifact
+  under `backend/`. `test_root_is_not_served` and `test_static_files_are_not_served`
+  in `backend/tests/test_app.py` keep it that way. The frontend builds to
+  `frontend/dist/`, which is **gitignored** and consumed by nobody in this repo -
+  packaging the two into one deployable is out of scope.
+- **No OpenAPI.** The app exposes `GET /api/greeting` and nothing else; see
+  `create_app()` in `backend/src/expense_tracker/__init__.py`. One hand-written route
+  does not earn a generated document, so `docs_url`, `redoc_url` and `openapi_url`
+  stay `None` and `test_openapi_docs_are_disabled` keeps them that way. Re-enabling
+  the docs routes, or growing `/api` into a namespace, fails the suite **by design**.
+- **CORS is open, and that is a dev-time posture.** `create_app()` adds
+  `CORSMiddleware` with `allow_origins=["*"]` and **`allow_credentials=False`**. The
+  two cannot be combined - the CORS spec forbids it and browsers reject the pair - so
+  the day the API grows cookies or an `Authorization` header, the wildcard is what
+  has to become a real origin list. `test_cors_does_not_allow_credentials` pins it.
+  It is registered **after** the security-headers middleware, which makes it the
+  outermost of the two and is what lets it answer a preflight itself.
 - **Two places, one value.** The greeting payload is written by hand at both ends:
   `backend/src/expense_tracker/__init__.py` builds it, and
-  `frontend/src/api/greeting.ts` declares the matching type, guard and path. There
-  is no schema generating either from the other, so change them together.
-  The `@` alias (`frontend/src`) is declared in both `frontend/vite.config.ts`
+  `frontend/src/api/greeting.ts` declares the matching type, guard and path. There is
+  no schema generating either from the other, and nothing checks the agreement now
+  that the stacks build separately - so change them together. Three more pairs:
+  the `@` alias (`frontend/src`) is declared in both `frontend/vite.config.ts`
   (bundler) and `frontend/tsconfig.app.json` (types) - vite does not read tsconfig
-  `paths`. The `frontend/src/main.tsx` coverage exclusion is declared in both
-  `frontend/vite.config.ts` and `sonar-project.properties`. Change each pair
-  together.
+  `paths`; the `frontend/src/main.tsx` coverage exclusion is declared in both
+  `frontend/vite.config.ts` and `sonar-project.properties`; and `VITE_API_BASE_URL`
+  is set in `frontend/.env` and typed in `frontend/src/vite-env.d.ts`.
+- **The API origin lives in bare `frontend/.env`, not `.env.development`.** vite
+  loads `.env` in *every* mode, including the `test` mode vitest runs in, and MSW
+  binds its handlers to the URL built from it. `frontend/vite.config.ts` also pins
+  `envDir` to `frontend/`, because the `test` block moves vite's `root` to the repo
+  root and `envDir` would otherwise follow it and find no `.env`.
 - **Every linted file needs a tsconfig that owns it.** eslint runs type-aware via
   `parserOptions.projectService`, so a `.ts`/`.tsx` file outside every tsconfig's
   `include` fails to lint rather than being skipped. `src/` and `tests/` come from
   `tsconfig.app.json`; `vite.config.ts` and `eslint.config.ts` are listed in
   `tsconfig.node.json`. A new file at the `frontend/` root has to be added there
-  too.
+  too. For the same reason `frontend/eslint.config.ts` opens with
+  `globalIgnores(["dist"])` - eslint only skips `node_modules` on its own, and the
+  emitted bundle is JS no tsconfig includes.
 - **`frontend/package.json` must not gain a `packageManager` field**, and
   `frontend/pnpm-lock.yaml` must stay at `lockfileVersion: 9.0`. The first would
   bypass the pnpm pin in `pixi.toml`; both would break Dependabot's lockfile
@@ -97,9 +115,21 @@ Break one of these and CI goes red on an otherwise correct change.
 
 ## Quality gates
 
-- **Python:** basedpyright in `strict` mode, and ruff with
-  `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]` - both configured in
-  `backend/pyproject.toml`.
+- **Python:** basedpyright in `recommended` mode and ruff with
+  `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]` - both in `backend/pyproject.toml`.
+  There is **no config file at the repo root** and **no Python setting duplicated in the
+  editor config** - `.zed/settings.json` pins the server *binary* to the pixi env and
+  nothing else. Editors need no pointer to the config: Zed reads
+  `backend/pyproject.toml` as the project manifest and sends `backend/` as the LSP
+  workspace folder, which is what the server resolves its config against. That matters
+  because basedpyright ignores a developer's personal `typeCheckingMode` *only when it
+  finds a project config* - finding this one is what makes the repo's setting win over
+  a contributor's own.
+- **There is no warn tier on the backend either.** `recommended` is a superset of
+  pyright's `strict` that adds the based-only rules and sets `failOnWarnings`, so a
+  warning fails `pixi run typecheck` like an error. It is why line 52 of
+  `backend/src/expense_tracker/__init__.py` reads `_ = response.headers.setdefault(...)`:
+  `reportUnusedCallResult` wants a discarded return value said out loud.
 - **Frontend:** `tsc -b` against a `strict` tsconfig, prettier, and eslint 10 in
   `frontend/eslint.config.ts` - typescript-eslint `strictTypeChecked` +
   `stylisticTypeChecked` (type-aware, via `parserOptions.projectService`), ESLint

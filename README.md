@@ -1,10 +1,17 @@
 # expense-tracker
 
-A small FastAPI application serving a React + Tailwind CSS v4 frontend.
+A FastAPI REST API and a React + Tailwind CSS v4 single-page app, as two independent
+applications.
 
-`backend/` and `frontend/` are siblings, each owning its own tooling and tests. The
-root holds only what spans both: pixi orchestrates the two toolchains, and one
-SonarCloud project covers both languages.
+`backend/` and `frontend/` are siblings, each owning its own tooling, tests and build.
+Neither can see the other: the backend serves JSON and ships no frontend assets, the
+frontend builds to its own `dist/` and reaches the API cross-origin over CORS. Each
+can be built, tested and linted with the other's directory missing entirely. The root
+holds only what spans both: pixi orchestrates the two toolchains, and one SonarCloud
+project covers both languages.
+
+Locally that means two processes. Packaging them into a single deployable artifact is
+out of scope for now.
 
 ```
 expense-tracker/
@@ -12,11 +19,13 @@ expense-tracker/
   sonar-project.properties      # one Sonar project spanning both languages
   backend/
     pyproject.toml              # hatchling, ruff, pytest, basedpyright
-    src/expense_tracker/        # create_app() factory, greeting.json, committed bundle
+    src/expense_tracker/        # create_app() factory, greeting.json
     tests/
   frontend/
     package.json, tsconfig*.json, vite.config.ts, eslint.config.ts, .prettierrc.json
+    .env                        # VITE_API_BASE_URL - where the API lives
     index.html, src/, tests/
+    dist/                       # vite output, gitignored
 ```
 
 ## Prerequisites
@@ -43,47 +52,95 @@ expense-tracker/
 ```sh
 cd expense-tracker    # direnv provisions the environment on entry
 pixi run web-install  # install frontend dependencies (pnpm)
-pixi run web-build    # build the frontend into backend/src/expense_tracker/static/
-pixi run serve        # start the dev server on http://localhost:8000
 ```
 
-Visit http://localhost:8000/ and you should see `Hello, World!`, fetched from the API
-once the page has booted.
+Then start both, in two terminals:
+
+```sh
+pixi run serve        # the REST API on http://localhost:8000
+pixi run web-dev      # the SPA on http://localhost:5173
+```
+
+Visit http://localhost:5173 and you should see `Hello, World!`. The page fetches it
+from `http://localhost:8000/api/greeting` - a genuine cross-origin request, which
+works only because the API allows it (see [CORS](#cors)).
+
+The API alone is enough for backend work; the SPA alone runs too, it just renders its
+error state until something answers on 8000.
 
 ## Routes
 
+The backend is a REST API and serves nothing else:
+
 | Route | What it serves |
 | --- | --- |
-| `GET /` | The page shell (`static/index.html`) |
 | `GET /api/greeting` | `{"greeting": "Hello, World!"}`, read from `greeting.json` |
-| `/static/*` | The committed vite bundle |
 
-That is the whole surface. There is no OpenAPI schema and no `/docs` or `/redoc`; see
-[Configuration](#configuration).
+That is the whole surface. There is no page route and no static mount - the frontend
+is a separate app - and no OpenAPI schema, `/docs` or `/redoc`; see
+[Configuration](#configuration). `backend/tests/test_app.py` asserts that `/` and
+`/static/*` return 404, so the coupling cannot come back by accident.
+
+## CORS
+
+`create_app()` adds `CORSMiddleware` with `allow_origins=["*"]`, because the SPA is
+served from its own origin and every call it makes is therefore cross-origin.
+
+`allow_credentials` is **`False`** and has to stay that way while the origin is a
+wildcard: the CORS spec forbids the combination and browsers reject it. This API sends
+no cookies and reads no `Authorization` header, so nothing is lost. When that changes,
+replace the wildcard with a real origin list - not the other way round.
+
+The middleware is registered *after* the security-headers middleware, which makes it
+the outermost of the two; that is what lets it answer a preflight `OPTIONS` itself,
+rather than passing it to a router that has no such route.
 
 ## Frontend
 
 The frontend is a React 19 SPA built by vite, styled with Tailwind CSS v4 (configured
 in CSS via `frontend/src/styles/app.css` - there is no `tailwind.config.js`).
 
-`backend/src/expense_tracker/static/` is **generated output and is committed**, so the
-wheel is self-contained and the lean `prod` environment never needs Node. Vite writes
-there directly rather than into a `frontend/dist/`. Rebuild it with `pixi run
-web-build` and commit the result whenever you change `frontend/`; `pixi run web-verify`
-(also run in CI) fails if the committed bundle has drifted.
+`pixi run web-build` writes to `frontend/dist/`, vite's default. It is **gitignored**
+and nothing in this repo consumes it - the backend ships no frontend assets, and
+packaging the two together is out of scope. CI runs the build as a gate (tsc and
+vitest never exercise the bundler), but keeps nothing from it.
 
 `backend/src/expense_tracker/greeting.json` is the single source of truth for the
 greeting, and only Python reads it: the backend serves it from `GET /api/greeting` and
 the page fetches it at runtime with [TanStack Query](https://tanstack.com/query), in
 `frontend/src/api/greeting.ts`. Nothing generates a client from a schema -
 `create_app()` publishes no OpenAPI document - so the payload is written out by hand on
-both sides and the two declarations must be changed together. The bundle ships the
-request path, not the wording, which is why editing `greeting.json` alone no longer
-requires a rebuild.
+both sides and the two declarations must be changed together. Nothing checks that
+agreement automatically now that the two build separately; a mismatch shows up as a
+404 or a failed shape guard at runtime.
 
-For frontend-only work, `pnpm dev` from `frontend/` gives you vite's dev server with
-hot reload. Run `pixi run serve` alongside it: vite serves the page from its own port,
-so `frontend/vite.config.ts` proxies `/api` through to uvicorn on 8000.
+### Where the API lives
+
+`frontend/.env` holds `VITE_API_BASE_URL`, and `frontend/src/api/greeting.ts` resolves
+every request path against it. That one variable is the frontend's only knowledge of
+the backend - there is deliberately no vite proxy, so the dev-time request is a real
+cross-origin call and exercises the same CORS path a deployed one would. Override it
+in `frontend/.env.local` (gitignored) to point at a backend elsewhere.
+
+Two details worth knowing:
+
+- It lives in bare `.env`, not `.env.development`, because vite loads `.env` in
+  *every* mode - including the `test` mode vitest runs in, where MSW needs the same
+  value to bind its handlers to.
+- `frontend/vite.config.ts` pins `envDir` to `frontend/`. Without it, the `test`
+  block's repo-root `root` would drag env-file lookup up there too and leave the
+  suite with no base URL.
+
+It is typed in `frontend/src/vite-env.d.ts`, which also sets
+`ViteTypeOptions.strictImportMetaEnv` - that drops vite's `any` index signature on
+`ImportMetaEnv`, so a mistyped `import.meta.env.VITE_*` is a type error rather than a
+silent `undefined`.
+
+The flip side of `.env` loading in every mode is that `pixi run web-build` **bakes
+`http://localhost:8000` into the bundle**. That is fine today - the build exists as a
+CI gate and nothing deploys it - but a real deployment needs the value supplied for
+the production mode, via a `.env.production` or a `VITE_API_BASE_URL` set in the build
+environment. vite inlines it at build time; there is no runtime lookup to override.
 
 Tests reach into the app through the `@` alias (`@/api/greeting` rather than
 `../../src/api/greeting`). It is declared twice - `resolve.alias` in
@@ -95,7 +152,11 @@ crossing into it from `tests/`.
 Frontend tests use vitest and live in `frontend/tests/`. The backend is stubbed with
 [MSW](https://mswjs.io); `frontend/tests/setup.ts` starts the server with
 `onUnhandledRequest: "error"`, so a request no handler covers fails the test instead of
-quietly reaching the network. `frontend/src/main.tsx` is
+quietly reaching the network. That setting does real work here: handlers bind to the
+absolute `GREETING_URL` exported by `frontend/src/api/greeting.ts`, because a
+path-only pattern would resolve against jsdom's origin rather than the API's and never
+match. A base-URL mismatch therefore fails a test rather than escaping to the network.
+`frontend/src/main.tsx` is
 excluded from coverage in both `frontend/vite.config.ts` and
 `sonar-project.properties` - it only wires React to the DOM. Note that
 `frontend/vite.config.ts` pins vitest's root back up to the repo root (`new
@@ -131,36 +192,36 @@ alongside Node. Three deliberate choices worth knowing:
 
 ## Editor setup (Zed)
 
-`.zed/settings.json` exists so Zed **reports** exactly what CI enforces. The two
-stacks drift for different reasons, so they are fixed differently: the frontend
-servers drift in **version**, basedpyright drifts in **config**.
+`.zed/settings.json` exists so Zed **reports** exactly what CI enforces. Every entry in
+it does the same single job: pin a language server to the **version** this repo pins.
+None of them configures a linter or a type checker - each stack's own config file
+already does that, and duplicating it in the editor is how the two drift apart.
 
-**basedpyright is pointed at `backend/`.** Its settings live in
-`backend/pyproject.toml` (`typeCheckingMode = "strict"`), one level below the worktree
-root the language server searches for a config. Finding none, it falls back to
-basedpyright's own default mode - which is `recommended`, not `strict`, and is a
-*different* rule set rather than a smaller one: it enables `reportUnusedCallResult`,
-`reportAny`, `reportImplicitOverride` and more, and sets `failOnWarnings`. The editor
-then flags code CI is happy with, with no way to satisfy both.
+**basedpyright is pinned, and nothing more.** All Python config lives in
+`backend/pyproject.toml` next to ruff's and pytest's; nothing is duplicated in the
+editor config and there is no config file at the repo root. `.zed/settings.json` pins
+the server to `.pixi/envs/default/bin/basedpyright-langserver` - run `direnv allow`
+before opening the project or the path does not exist yet. Left unpinned, Zed resolves
+the binary off `PATH`, which is the pixi one whenever direnv has loaded and whatever Zed
+installs for itself when it has not.
 
-`basedpyright.analysis.configFilePath` resolves it, and it must name the config
-**file**, not the directory holding it. The CLI's `--project` accepts either, but the
-language server reads the path directly and fails with `Config file "..." could not be
-read` when handed a directory. basedpyright's own VS Code and Neovim examples show a
-directory - they assume a `pyrightconfig.json`, whereas the settings here live in
-`pyproject.toml`. Those examples also build an absolute path via `${workspaceFolder}`
-or `vim.fn.getcwd()`; Zed expands neither, and resolves the path from the worktree root
-instead, which is what makes a committed relative path work here.
+**The config needs no pointer.** Zed reads `backend/pyproject.toml` as the project
+manifest and sends `backend/` as the LSP `workspaceFolders` entry, and that - not the
+deprecated `rootUri`, which is the worktree root - is what basedpyright resolves its
+config against. So the server finds `[tool.basedpyright]` on its own.
 
-You can see the underlying drift from the command line:
+That is worth knowing rather than assuming, because basedpyright ignores a developer's
+personal `typeCheckingMode` **only when it finds a project config**. Finding none, it
+applies the editor's own settings, and no project setting can override them. Finding
+this one, the repo wins for everyone. It also means a global
+`"typeCheckingMode"` in your user settings is simply inert here - Zed sends it, the
+server discards it.
 
-```sh
-pixi run basedpyright backend/src/expense_tracker/__init__.py   # 1 warning, exit 1
-pixi run typecheck                                              # 0 diagnostics, exit 0
-```
-
-The only difference is that `typecheck` runs with `cwd = "backend"`, so it finds the
-config.
+**If your editor ever disagrees with CI about Python**, that resolution is the first
+thing to check, since it is editor behaviour this repo cannot pin. Zed runs its language
+servers on the remote host over WSL, where the client's LSP log panel shows nothing, so
+the way to see it is to point `binary.path` at a shim that tees stdio to a file and read
+the `initialize` request. `pixi run typecheck` remains the authority either way.
 
 **The frontend servers are pinned to `frontend/node_modules`.** Those paths
 are relative to the worktree root, and the `vtsls` entry also spells out a `tsdk` -
@@ -245,35 +306,38 @@ Two related things that also look like faults but are not:
 
 | Command | What it does |
 | --- | --- |
-| `pixi run serve` | Run the uvicorn dev server on port 8000 (with reloader) |
+| `pixi run serve` | Run the API on uvicorn, port 8000 (with reloader) |
 | `pixi run test` | Run the test suite with coverage |
 | `pixi run lint` | Lint with ruff |
 | `pixi run fix` | Auto-fix lint issues |
 | `pixi run format` | Format with ruff |
 | `pixi run format-check` | Check formatting without writing changes |
-| `pixi run typecheck` | Type-check with basedpyright (strict) |
+| `pixi run typecheck` | Type-check with basedpyright (recommended) |
 | `pixi run web-install` | Install frontend dependencies (`pnpm install --frozen-lockfile`) |
-| `pixi run web-build` | Build the frontend into `backend/src/expense_tracker/static/` |
+| `pixi run web-dev` | Run vite's dev server on port 5173 (hot reload) |
+| `pixi run web-build` | Build the frontend into `frontend/dist/` |
 | `pixi run web-check` | Type-check the frontend with tsc |
 | `pixi run web-lint` | Lint the frontend with eslint (type-aware, `--max-warnings 0`) |
 | `pixi run web-lint-fix` | Auto-fix frontend lint issues |
 | `pixi run web-test` | Run the frontend tests (vitest) with coverage |
 | `pixi run web-format` | Format the frontend with prettier |
 | `pixi run web-format-check` | Check frontend formatting without writing changes |
-| `pixi run web-verify` | Rebuild and fail if the committed bundle has drifted |
 
 Every task sets its own working directory in `pixi.toml` (`backend/` or `frontend/`),
-so `pixi run <task>` behaves the same wherever you invoke it from.
+so `pixi run <task>` behaves the same wherever you invoke it from. No task crosses
+between the two directories.
 
 CI runs `lint`, `format-check`, `typecheck`, `test`, `web-install`,
-`web-format-check`, `web-check`, `web-lint`, `web-test`, and `web-verify` on every pull
+`web-format-check`, `web-check`, `web-lint`, `web-test`, and `web-build` on every pull
 request, then the SonarCloud scan.
 
 ## Configuration
 
-There is none: the app reads no environment variables and no config files. The only
-inputs are the committed static files and `greeting.json`, both of which ship inside
-the wheel. FastAPI's OpenAPI schema and its `/docs` and `/redoc` UIs are switched off
+The backend has none: it reads no environment variables and no config files. Its only
+input is `greeting.json`, which ships inside the wheel. (The frontend has exactly one,
+`VITE_API_BASE_URL` - see [Where the API lives](#where-the-api-lives).)
+
+FastAPI's OpenAPI schema and its `/docs` and `/redoc` UIs are switched off
 in `create_app()` - one hand-written JSON route does not earn a generated document, and
 the schema would be public surface advertising it. `backend/tests/test_app.py` asserts
 they stay off.

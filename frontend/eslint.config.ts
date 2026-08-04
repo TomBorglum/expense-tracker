@@ -8,7 +8,7 @@ import prettier from "eslint-config-prettier/flat";
 import perfectionist from "eslint-plugin-perfectionist";
 import reactHooks from "eslint-plugin-react-hooks";
 import { reactRefresh } from "eslint-plugin-react-refresh";
-import { defineConfig } from "eslint/config";
+import { defineConfig, globalIgnores } from "eslint/config";
 import tseslint from "typescript-eslint";
 
 // Authored as .ts (loaded through the pinned jiti) and listed in tsconfig.node.json,
@@ -16,6 +16,11 @@ import tseslint from "typescript-eslint";
 // built-in eslint language server is pointed at frontend/node_modules by
 // .zed/settings.json, so the editor reports exactly what `pnpm run lint` enforces.
 export default defineConfig(
+  // eslint only ignores node_modules by default, so the vite build output has to be
+  // named. Not cosmetic: dist/ holds emitted JS that no tsconfig includes, and the
+  // type-aware config below fails outright on a file it cannot get a program for.
+  globalIgnores(["dist"]),
+
   // Type-aware base for every TS/TSX file. projectService lets the TypeScript project
   // service pick the right tsconfig per file - tsconfig.app.json for src/ and tests/,
   // tsconfig.node.json for vite.config.ts and this file - so the solution-style split
