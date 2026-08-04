@@ -115,9 +115,15 @@ Break one of these and CI goes red on an otherwise correct change.
 
 ## Quality gates
 
-- **Python:** basedpyright in `strict` mode, and ruff with
-  `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]` - both configured in
-  `backend/pyproject.toml`.
+- **Python:** ruff with `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]` in
+  `backend/pyproject.toml`, and basedpyright in `strict` mode in **`pyrightconfig.json`
+  at the repo root** - not in `backend/pyproject.toml`, and not duplicated there.
+  A language server only searches its worktree root for a config, so settings kept
+  under `backend/` were silently ignored in the editor, which then fell back to
+  basedpyright's default `recommended` (a *different* rule set: `reportUnusedCallResult`,
+  `reportAny`, `failOnWarnings`). `pyrightconfig.json` also takes precedence over
+  `pyproject.toml`, so a `[tool.basedpyright]` block would be dead config that reads as
+  live. This is why `typecheck` is the one `pixi` task with no `cwd`.
 - **Frontend:** `tsc -b` against a `strict` tsconfig, prettier, and eslint 10 in
   `frontend/eslint.config.ts` - typescript-eslint `strictTypeChecked` +
   `stylisticTypeChecked` (type-aware, via `parserOptions.projectService`), ESLint

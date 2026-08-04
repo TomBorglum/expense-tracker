@@ -1,0 +1,34 @@
+// basedpyright's settings, at the repo root rather than in backend/pyproject.toml.
+//
+// A language server searches its worktree root for a config and does not look into
+// subdirectories. With the settings one level down in backend/, it found nothing and
+// silently fell back to basedpyright's default typeCheckingMode - which is
+// "recommended", a DIFFERENT rule set from the "strict" this repo wants, not a smaller
+// one: it enables reportUnusedCallResult, reportAny, reportImplicitOverride and more,
+// and sets failOnWarnings. The editor then reported code CI is happy with, such as the
+// discarded return of response.headers.setdefault() in create_app().
+//
+// Pointing the server at the old location through Zed's
+// basedpyright.analysis.configFilePath was tried twice and does not work - a directory
+// is rejected ("Config file ... could not be read") and a file path is ignored - so the
+// config moved to where every editor already looks. Nothing editor-specific is needed
+// now, in Zed or anywhere else.
+//
+// pyrightconfig.json takes precedence over pyproject.toml, so [tool.basedpyright] was
+// REMOVED from backend/pyproject.toml rather than left behind, where it would have been
+// dead config that still read as live. ruff and pytest stay there; the type checker is
+// the one tool an editor runs continuously against the whole worktree, which is what
+// makes it the exception.
+//
+// `pixi run typecheck` runs from the repo root with no cwd, so CI and the editor read
+// this same file. Comments are fine here: basedpyright parses this as JSONC.
+{
+  // Only the backend is Python. The frontend is checked by tsc.
+  "include": ["backend/src", "backend/tests"],
+
+  "typeCheckingMode": "strict",
+
+  // The package lives under src/, so tests importing expense_tracker resolve without
+  // relying on the editable install being present.
+  "extraPaths": ["backend/src"]
+}

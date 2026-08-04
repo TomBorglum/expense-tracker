@@ -23,6 +23,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 testpaths = ["tests"]
 addopts = "--strict-markers --strict-config --cov=expense_tracker --cov-report=xml --cov-report=term-missing"
 
-[tool.basedpyright]
-typeCheckingMode = "strict"
-extraPaths = ["src"]
+# No [tool.basedpyright] here on purpose. It lives in pyrightconfig.json at the repo
+# root, which is the only place an editor's language server looks - see the comment in
+# that file. pyrightconfig.json also takes precedence over this one, so a block here
+# would be dead config that still read as live.

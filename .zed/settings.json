@@ -10,9 +10,9 @@
 //     (paths here are relative to the worktree root, not to this file). Run
 //     `pixi run web-install` first, or the paths do not exist yet and the language
 //     servers will not start.
-//   - Backend: the CONFIG drifts. basedpyright's settings live in
-//     backend/pyproject.toml, one level below the worktree root the server searches,
-//     so it silently falls back to its own defaults. See the basedpyright block.
+//   - Backend: the CONFIG drifted, and the fix is not in this file. basedpyright's
+//     settings moved to pyrightconfig.json at the worktree root, where the language
+//     server finds them unaided. See the note above the "lsp" block.
 //
 // Before concluding a pin is broken: over a remote/WSL backend Zed's Server Info
 // panel shows "Binary: Unknown" for vtsls even when it is working correctly. See
@@ -44,38 +44,13 @@
     "JSONC": { "tab_size": 2 }
   },
 
+  // No "basedpyright" entry, on purpose. Its settings live in pyrightconfig.json at
+  // the worktree root, which is exactly where the language server looks on its own -
+  // so the editor needs no help finding them, here or in any other editor. Pointing
+  // at backend/pyproject.toml through basedpyright.analysis.configFilePath was tried
+  // twice and does not work: a directory is rejected outright ("Config file ... could
+  // not be read"), and a file path is ignored.
   "lsp": {
-    "basedpyright": {
-      "settings": {
-        "basedpyright.analysis": {
-          // Points the language server at backend/pyproject.toml, where
-          // [tool.basedpyright] sets typeCheckingMode "strict". Without this the
-          // server looks for a config at the worktree root, finds none (there is no
-          // pyproject.toml there - the backend owns its own), and falls back to
-          // basedpyright's DEFAULT mode, which is "recommended", not "strict".
-          //
-          // That is not a smaller rule set, it is a different one: recommended turns
-          // on reportUnusedCallResult, reportAny, reportImplicitOverride and others
-          // that strict leaves off, and sets failOnWarnings. The editor then flags
-          // code CI is happy with - e.g. the discarded return of
-          // response.headers.setdefault() in create_app() - and there is no way to
-          // satisfy both. Same anti-drift job as the frontend pins below.
-          //
-          // Must be the config FILE, not the directory holding it. The CLI's
-          // --project accepts either, but the language server reads this path
-          // directly and fails with
-          //   Config file "<worktree>/backend" could not be read.
-          // when given a directory. basedpyright's own docs show a directory
-          // because their examples assume a pyrightconfig.json; the settings here
-          // live in pyproject.toml, so it has to be named.
-          //
-          // Relative to the worktree root, like the paths below. Zed resolves it
-          // from there; it does not expand VS Code's ${workspaceFolder}, which is
-          // what basedpyright's VS Code and Neovim examples both rely on.
-          "configFilePath": "backend/pyproject.toml"
-        }
-      }
-    },
     "eslint": {
       "settings": {
         // Same anti-drift job as the binary.path pins below, done differently.

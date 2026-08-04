@@ -64,7 +64,11 @@ pnpm = "==11.18.0"
 serve = "uvicorn expense_tracker:create_app --factory --reload --reload-dir backend/src"
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 test = { cmd = "pytest", cwd = "backend" }
-typecheck = { cmd = "basedpyright", cwd = "backend" }
+# The one task with no cwd, deliberately. basedpyright reads pyrightconfig.json at the
+# repo root, which is also the only place an editor's language server looks for it -
+# running from backend/ would find no config and silently fall back to a different
+# rule set. See the comment in pyrightconfig.json.
+typecheck = "basedpyright"
 lint = { cmd = "ruff check", cwd = "backend" }
 fix = { cmd = "ruff check --fix", cwd = "backend" }
 format = { cmd = "ruff format", cwd = "backend" }

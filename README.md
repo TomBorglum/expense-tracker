@@ -17,8 +17,9 @@ out of scope for now.
 expense-tracker/
   pixi.toml, pixi.lock          # environments and every `pixi run` task, both stacks
   sonar-project.properties      # one Sonar project spanning both languages
+  pyrightconfig.json            # basedpyright; at the root so editors find it
   backend/
-    pyproject.toml              # hatchling, ruff, pytest, basedpyright
+    pyproject.toml              # hatchling, ruff, pytest
     src/expense_tracker/        # create_app() factory, greeting.json
     tests/
   frontend/
@@ -196,32 +197,35 @@ alongside Node. Three deliberate choices worth knowing:
 stacks drift for different reasons, so they are fixed differently: the frontend
 servers drift in **version**, basedpyright drifts in **config**.
 
-**basedpyright is pointed at `backend/`.** Its settings live in
-`backend/pyproject.toml` (`typeCheckingMode = "strict"`), one level below the worktree
-root the language server searches for a config. Finding none, it falls back to
-basedpyright's own default mode - which is `recommended`, not `strict`, and is a
-*different* rule set rather than a smaller one: it enables `reportUnusedCallResult`,
-`reportAny`, `reportImplicitOverride` and more, and sets `failOnWarnings`. The editor
-then flags code CI is happy with, with no way to satisfy both.
+**basedpyright needs no editor setting.** Its settings live in `pyrightconfig.json`
+at the **repo root**, not in `backend/pyproject.toml`, because that is the only place a
+language server looks: it searches its worktree root and does not descend into
+subdirectories. With the settings one level down, basedpyright found no config and fell
+back to its own default `typeCheckingMode` - which is `recommended`, a *different* rule
+set from `strict` rather than a smaller one. It enables `reportUnusedCallResult`,
+`reportAny`, `reportImplicitOverride` and more, and sets `failOnWarnings`, so the editor
+reported code CI is happy with and there was no way to satisfy both.
 
-`basedpyright.analysis.configFilePath` resolves it, and it must name the config
-**file**, not the directory holding it. The CLI's `--project` accepts either, but the
-language server reads the path directly and fails with `Config file "..." could not be
-read` when handed a directory. basedpyright's own VS Code and Neovim examples show a
-directory - they assume a `pyrightconfig.json`, whereas the settings here live in
-`pyproject.toml`. Those examples also build an absolute path via `${workspaceFolder}`
-or `vim.fn.getcwd()`; Zed expands neither, and resolves the path from the worktree root
-instead, which is what makes a committed relative path work here.
+Zed's `basedpyright.analysis.configFilePath` looks like the fix and is not: a directory
+is rejected outright (`Config file "..." could not be read`) and a file path is ignored.
+Moving the config to the root removes the need for any editor-specific setting, in Zed
+or anywhere else.
 
-You can see the underlying drift from the command line:
+Two consequences worth knowing:
 
-```sh
-pixi run basedpyright backend/src/expense_tracker/__init__.py   # 1 warning, exit 1
-pixi run typecheck                                              # 0 diagnostics, exit 0
-```
+- **`pyrightconfig.json` takes precedence over `pyproject.toml`**, so
+  `[tool.basedpyright]` was *removed* from `backend/pyproject.toml`. Putting it back
+  would create dead config that still reads as live. ruff and pytest stay there - the
+  type checker is the one tool an editor runs continuously against the whole worktree,
+  which is what makes it the exception to each stack owning its own tooling.
+- **`pixi run typecheck` is the only task with no `cwd`.** It runs from the repo root so
+  that CI and the editor read the same file. Running it from `backend/` would find no
+  config and silently fall back to `recommended`.
 
-The only difference is that `typecheck` runs with `cwd = "backend"`, so it finds the
-config.
+To confirm the editor and CI agree, flip `typeCheckingMode` to `recommended` and run
+`pixi run typecheck`: the `reportUnusedCallResult` warning on
+`response.headers.setdefault(...)` in `create_app()` reappears. Set it back to `strict`
+and it clears.
 
 **The frontend servers are pinned to `frontend/node_modules`.** Those paths
 are relative to the worktree root, and the `vtsls` entry also spells out a `tsdk` -
