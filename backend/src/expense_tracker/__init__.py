@@ -3,36 +3,22 @@ from pathlib import Path
 from typing import cast
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import RequestResponseEndpoint
 
 _PACKAGE_DIR = Path(__file__).parent
-# Built by `pixi run web-build` (vite) and committed, so the wheel is self-contained
-# and the lean prod environment never needs Node. Public so the tests can locate the
-# bundle without going through the app object.
-STATIC_DIR = _PACKAGE_DIR / "static"
 _GREETING_FILE = _PACKAGE_DIR / "greeting.json"
 
-# Security headers applied to every response. The page loads only its own bundled
-# script and stylesheet -- vite emits them as external files, never inline -- so the
-# policy needs no 'unsafe-inline' escape hatch.
+# Security headers applied to every response. This app serves JSON and nothing else,
+# so the page-oriented directives a browser shell would need (script-src, style-src,
+# connect-src, COOP) have nothing to describe here. What is left says "this response
+# is not a document and must not be treated as one".
 _SECURITY_HEADERS = {
-    "Content-Security-Policy": (
-        "default-src 'none'; "
-        "script-src 'self'; "
-        "style-src 'self'; "
-        "img-src 'self' data:; "
-        "font-src 'self'; "
-        "connect-src 'self'; "
-        "base-uri 'none'; "
-        "form-action 'self'; "
-        "frame-ancestors 'none'"
-    ),
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "X-Frame-Options": "DENY",
-    "Cross-Origin-Opener-Policy": "same-origin",
 }
 
 
@@ -44,8 +30,8 @@ def _load_greeting() -> str:
     return payload["greeting"]
 
 
-# Single source of truth for the greeting. It reaches the page over the API below, so
-# this file is the one place the wording is written down.
+# Single source of truth for the greeting. It reaches any client over the API below,
+# so this file is the one place the wording is written down.
 GREETING = _load_greeting()
 
 
@@ -55,7 +41,8 @@ def create_app() -> FastAPI:
     # advertising it. The app still reads no configuration of any kind.
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
-    # Wraps the whole ASGI app, so the static mount below gets the headers too.
+    # Wraps the whole ASGI app. Registered before the CORS middleware below, which
+    # makes it the inner of the two -- see the ordering note there.
     @app.middleware("http")
     async def add_security_headers(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
         request: Request, call_next: RequestResponseEndpoint
@@ -65,16 +52,10 @@ def create_app() -> FastAPI:
             response.headers.setdefault(header, value)
         return response
 
-    # Serves the shell. The page it boots fetches the greeting from /api/greeting; the
-    # rest of what it needs is a static asset served by the /static mount below.
-    @app.get("/")
-    async def index() -> FileResponse:  # pyright: ignore[reportUnusedFunction]  # registered via decorator
-        return FileResponse(STATIC_DIR / "index.html")
-
     # The whole API. The payload is built by hand rather than derived from a
     # response_model: with openapi_url=None there is no schema to publish, so the shape
     # is declared here and mirrored by hand in frontend/src/api/greeting.ts. Change the
-    # two together. The page reaches this over the CSP's connect-src 'self'.
+    # two together.
     @app.get("/api/greeting")
     async def greeting() -> JSONResponse:  # pyright: ignore[reportUnusedFunction]  # registered via decorator
         # no-store because the wording ships inside the wheel: a cached copy would
@@ -83,8 +64,23 @@ def create_app() -> FastAPI:
             {"greeting": GREETING}, headers={"Cache-Control": "no-store"}
         )
 
-    # vite emits asset URLs under this exact prefix (see `base` in vite.config.ts),
-    # so the mount path must not change.
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    # Added last, so it is the outermost middleware: that is what lets it answer a
+    # preflight itself instead of passing OPTIONS down to a router that has no such
+    # route. The consequence is that a preflight response carries the CORS headers but
+    # not the ones above, which is correct -- there is no body to protect.
+    #
+    # Open to every origin because the frontend is a separate app served from its own
+    # dev server (vite on 5173), and packaging the two into one deployable is out of
+    # scope. This is a deliberate dev-time posture, not a default to ship: the day the
+    # API grows cookies or an Authorization header, the wildcard is what has to be
+    # replaced with a real origin list, because it cannot be combined with
+    # allow_credentials=True -- the CORS spec forbids the pair and browsers reject it.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     return app

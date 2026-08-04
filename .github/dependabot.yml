@@ -29,11 +29,9 @@ updates:
   #     its comment there gives the other reason to keep it out of package.json.
   #   - The lockfile must stay at lockfileVersion 9.0, which Dependabot does parse.
   #
-  # Bumps to vite, @vitejs/plugin-react, tailwindcss, @tailwindcss/vite, react,
-  # react-dom or @tanstack/react-query change the committed bundle in
-  # backend/src/expense_tracker/static/, so `pixi run web-verify` fails on those PRs
-  # until `pixi run web-build` output is committed to the Dependabot branch. msw is
-  # test-only and does not reach the bundle, but a major bump needs its allowBuilds
+  # No build output is committed here, so a bump to vite, react or tailwind needs
+  # nothing added to the Dependabot branch - CI's `pixi run web-build` is what proves
+  # the bundler still runs. msw is test-only, but a major bump needs its allowBuilds
   # entry in frontend/pnpm-workspace.yaml rechecked.
   - package-ecosystem: "npm"
     directory: "/frontend"
@@ -89,11 +87,11 @@ updates:
       #
       # The blocks follow npm's ordinary runtime/build-time convention - react,
       # react-dom, tailwindcss and @tailwindcss/vite are runtime, the rest is
-      # tooling. Deliberately not a "does it change the committed bundle" split:
-      # vite and @vitejs/plugin-react do change it and are still "chore", because a
-      # minifier-output diff is nothing a user can act on. Splitting this way costs
-      # nothing here - package.json is private and nothing installs it from a
-      # registry, so the two blocks carry no packaging meaning of their own.
+      # tooling. vite and @vitejs/plugin-react are "chore" despite shaping the
+      # output, because a bundler bump is nothing a user of the app can act on.
+      # Splitting this way costs nothing here - package.json is private and nothing
+      # installs it from a registry, so the two blocks carry no packaging meaning of
+      # their own.
       #
       # Per release-please-config.json, "deps" is a visible changelog section and
       # cuts a release; "chore" is hidden and does not.

@@ -1,62 +1,10 @@
-import re
-
 from starlette.testclient import TestClient
 
-from expense_tracker import GREETING, STATIC_DIR, create_app
+from expense_tracker import GREETING, create_app
 
-
-def test_index_serves_built_page() -> None:
-    client = TestClient(create_app())
-    response = client.get("/")
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/html")
-    body = response.text
-    # vite emits the bundle as external files under the /static/ base.
-    assert re.search(r'src="/static/assets/index-[^"]+\.js"', body)
-    assert re.search(r'href="/static/assets/index-[^"]+\.css"', body)
-
-
-def test_built_bundle_calls_the_greeting_endpoint() -> None:
-    # The wording is no longer shared with the bundle, so the request path is what the
-    # two stacks have to agree on. Both write it down by hand; this pins them together
-    # and fails if the committed build is stale relative to src/api/greeting.ts.
-    bundles = list((STATIC_DIR / "assets").glob("index-*.js"))
-    assert bundles, "no built JS bundle found; run `pixi run web-build`"
-    assert any(
-        "/api/greeting" in bundle.read_text(encoding="utf-8") for bundle in bundles
-    )
-
-
-def test_stylesheet_contains_tailwind_utilities() -> None:
-    stylesheets = list((STATIC_DIR / "assets").glob("index-*.css"))
-    assert stylesheets, "no built stylesheet found; run `pixi run web-build`"
-    css = "\n".join(sheet.read_text(encoding="utf-8") for sheet in stylesheets)
-    # A class used by App.tsx, proving Tailwind actually scanned the sources.
-    assert "tracking-tight" in css
-
-
-def test_security_headers_present() -> None:
-    response = TestClient(create_app()).get("/")
-    csp = response.headers["Content-Security-Policy"]
-    assert "default-src 'none'" in csp
-    # The page has no inline script or style, so the policy must not need to allow any.
-    assert "unsafe-inline" not in csp
-    assert response.headers["X-Content-Type-Options"] == "nosniff"
-    assert response.headers["X-Frame-Options"] == "DENY"
-    assert response.headers["Referrer-Policy"] == "no-referrer"
-
-
-def test_static_assets_get_security_headers() -> None:
-    # The headers come from middleware wrapping the whole app, so the /static mount
-    # must be covered too -- the CSP is what keeps the bundle from loading anything
-    # it did not ship with.
-    client = TestClient(create_app())
-    bundles = list((STATIC_DIR / "assets").glob("index-*.js"))
-    assert bundles, "no built JS bundle found; run `pixi run web-build`"
-    response = client.get(f"/static/assets/{bundles[0].name}")
-    assert response.status_code == 200
-    assert "default-src 'none'" in response.headers["Content-Security-Policy"]
-    assert response.headers["X-Content-Type-Options"] == "nosniff"
+# The origin a browser would send. Any value works against a wildcard policy; a
+# realistic one keeps the assertions readable.
+_ORIGIN = "http://localhost:5173"
 
 
 def test_greeting_endpoint_returns_json() -> None:
@@ -70,12 +18,56 @@ def test_greeting_endpoint_returns_json() -> None:
     assert response.headers["Cache-Control"] == "no-store"
 
 
-def test_greeting_endpoint_gets_security_headers() -> None:
-    # Same middleware, but worth pinning separately: the page fetches this route, so it
-    # is the one place connect-src 'self' has to hold.
+def test_security_headers_present() -> None:
     response = TestClient(create_app()).get("/api/greeting")
-    assert "connect-src 'self'" in response.headers["Content-Security-Policy"]
+    csp = response.headers["Content-Security-Policy"]
+    # The API serves no document, so the policy grants nothing at all.
+    assert "default-src 'none'" in csp
+    assert "frame-ancestors 'none'" in csp
     assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+
+
+def test_cors_allows_any_origin() -> None:
+    # The frontend is a separate app on its own origin, so every real call is
+    # cross-origin and this header is what makes the response readable to it.
+    client = TestClient(create_app())
+    response = client.get("/api/greeting", headers={"Origin": _ORIGIN})
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == "*"
+
+
+def test_cors_preflight_is_answered() -> None:
+    # Answered by the CORS middleware itself rather than the router, which has no
+    # OPTIONS route -- the reason it is registered last and so sits outermost.
+    response = TestClient(create_app()).options(
+        "/api/greeting",
+        headers={"Origin": _ORIGIN, "Access-Control-Request-Method": "GET"},
+    )
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Allow-Origin"] == "*"
+    assert "GET" in response.headers["Access-Control-Allow-Methods"]
+
+
+def test_cors_does_not_allow_credentials() -> None:
+    # The spec forbids credentials alongside a wildcard origin. Pinned because the
+    # combination is easy to add by habit and browsers reject it silently.
+    client = TestClient(create_app())
+    response = client.get("/api/greeting", headers={"Origin": _ORIGIN})
+    assert "Access-Control-Allow-Credentials" not in response.headers
+
+
+def test_root_is_not_served() -> None:
+    # This backend is a REST API. It served a page shell once; nothing here should
+    # ever grow a route that returns HTML again.
+    assert TestClient(create_app()).get("/").status_code == 404
+
+
+def test_static_files_are_not_served() -> None:
+    # The vite bundle used to be mounted here and shipped inside the wheel. The
+    # frontend owns its own build output now, so there is no mount to hit.
+    assert TestClient(create_app()).get("/static/assets/index.js").status_code == 404
 
 
 def test_unknown_api_routes_404() -> None:

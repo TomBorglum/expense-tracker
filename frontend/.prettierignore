@@ -1,12 +1,12 @@
 # Prettier runs from this directory (the "format" script in package.json passes "."),
 # so only paths that can appear under frontend/ need listing. Everything at the repo
 # root - pixi.lock, coverage/, .zed/, .claude/, .mcp.json, the release-please files,
-# the workflow YAML - is out of prettier's reach by construction now, and the vite
-# build output lands in the Python package under backend/.
+# the workflow YAML - is out of prettier's reach by construction.
 
 # Generated or vendored
 node_modules/
 pnpm-lock.yaml
+dist/
 
 # Hand-formatted prose we do not want reflowed
 *.md

@@ -6,13 +6,18 @@ import react from "@vitejs/plugin-react";
 // serves both `vite build` and `vitest run`.
 import { defineConfig } from "vitest/config";
 
-// The build output goes straight into the Python package so hatchling ships it in
-// the wheel and the lean prod pixi environment never needs Node. vite's root is
-// this file's directory (frontend/), so the paths below are relative to that.
+// A standalone SPA: it builds to frontend/dist/ (vite's default, gitignored) and
+// knows nothing about the backend beyond VITE_API_BASE_URL, which src/api/greeting.ts
+// reads. vite's root is this file's directory (frontend/), so the paths below are
+// relative to that -- except inside the `test` block, which is pinned to the repo
+// root for the reason given there.
 export default defineConfig({
-  // The backend mounts the package's static/ folder at /static/, so emitted asset
-  // URLs must carry that prefix.
-  base: "/static/",
+  // Pinned to this directory rather than left to default. envDir defaults to the
+  // config's `root`, and the `test` block below moves that to the repo root - which
+  // would send vitest looking for .env one level up and leave VITE_API_BASE_URL
+  // undefined in the suite. `vite build` is unaffected either way; this is what keeps
+  // the two agreeing.
+  envDir: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -26,21 +31,10 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
-  server: {
-    proxy: {
-      // `pnpm dev` serves the page from vite's own port while the API runs on
-      // uvicorn's 8000, so the fetch would otherwise be cross-origin. The built bundle
-      // is served by FastAPI itself, so this matters only in dev - run `pixi run
-      // serve` alongside it.
-      "/api": "http://localhost:8000",
-    },
-  },
-  build: {
-    outDir: "../backend/src/expense_tracker/static",
-    // outDir sits outside vite's root, so vite needs explicit permission to clear it.
-    emptyOutDir: true,
-    assetsDir: "assets",
-  },
+  // No `server.proxy` and no `build.outDir` on purpose. A proxy would hardcode the
+  // backend's port here and hide the fact that the call is cross-origin; the API
+  // origin belongs in .env instead, where it is configurable and the browser really
+  // does perform a CORS request against it. The build output is vite's default dist/.
   test: {
     // Pin vitest to the repo root (the ../ climb out of frontend/), unlike vite's
     // root above. Otherwise lcov records paths like "src/App.tsx", which SonarCloud
@@ -59,9 +53,14 @@ export default defineConfig({
       reporter: ["text", "lcov"],
       reportsDirectory: "coverage/frontend",
       include: ["frontend/src/**/*.{ts,tsx}"],
-      // Bootstrap only: wires React to the DOM and has no logic worth asserting.
-      // Also listed in sonar.coverage.exclusions so both tools agree.
-      exclude: ["frontend/src/main.tsx"],
+      exclude: [
+        // Bootstrap only: wires React to the DOM and has no logic worth asserting.
+        // Also listed in sonar.coverage.exclusions so both tools agree.
+        "frontend/src/main.tsx",
+        // Type declarations erase to nothing, so they would report as covered files
+        // with no executable lines and pad the lcov Sonar reads.
+        "frontend/src/**/*.d.ts",
+      ],
     },
   },
 });

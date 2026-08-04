@@ -35,8 +35,8 @@ jobs:
       - run: pixi run format-check
       - run: pixi run typecheck
       - run: pixi run test # writes coverage.xml for the scan below
-      # Frontend gates. web-verify rebuilds and fails if the committed bundle in
-      # backend/src/expense_tracker/static/ has drifted from frontend/.
+      # Frontend gates. Independent of the Python ones above - the two stacks share
+      # no build artifact, so neither group can break the other.
       - run: pixi run web-install
       - run: pixi run web-format-check
       - run: pixi run web-check
@@ -44,7 +44,11 @@ jobs:
       # priciest of the static gates and a plain type error should surface first.
       - run: pixi run web-lint
       - run: pixi run web-test # writes coverage/frontend/lcov.info for the scan below
-      - run: pixi run web-verify
+      # Last of the frontend gates, and the only one that runs vite itself: tsc and
+      # vitest between them never exercise the bundler, so without this a build-time
+      # failure would only surface on someone's machine. It replaces web-verify, which
+      # ran the build for a different reason (drift against the committed bundle).
+      - run: pixi run web-build
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with
       # sonar.scanner.skipJreProvisioning below.

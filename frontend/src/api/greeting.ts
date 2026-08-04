@@ -8,10 +8,18 @@ export interface Greeting {
   greeting: string;
 }
 
-// The one string both stacks have to agree on. backend/tests/test_app.py greps the
-// committed bundle for it, so a rename here fails the Python suite until the bundle is
-// rebuilt and the route renamed too.
+// The path both stacks have to agree on. Nothing checks that agreement automatically
+// now that the two build independently - a rename here needs the same rename in the
+// backend's route, and the failure shows up as a 404 at runtime.
 export const GREETING_PATH = "/api/greeting";
+
+// Resolved once against the configured API origin. Exported because the mocks have to
+// match this exact absolute URL: msw resolves a path-only handler against the document
+// location, which under jsdom is not the API's origin, so such a handler would simply
+// never fire. msw ships no baseURL option by design and recommends a shared constant
+// built this way instead.
+export const GREETING_URL = new URL(GREETING_PATH, import.meta.env.VITE_API_BASE_URL)
+  .href;
 
 function isGreeting(payload: unknown): payload is Greeting {
   return (
@@ -23,10 +31,10 @@ function isGreeting(payload: unknown): payload is Greeting {
 }
 
 export async function fetchGreeting(signal?: AbortSignal): Promise<Greeting> {
-  // Resolved against the origin rather than passed as a bare path: the page and the
-  // API are same-origin in the browser, and under vitest this runs on Node's fetch,
-  // which rejects a URL with no host.
-  const response = await fetch(new URL(GREETING_PATH, window.location.origin), {
+  // The API is a separate app on its own origin, so this is a genuine cross-origin
+  // request and only succeeds because the backend allows it (CORSMiddleware in
+  // create_app).
+  const response = await fetch(GREETING_URL, {
     headers: { Accept: "application/json" },
     signal,
   });
