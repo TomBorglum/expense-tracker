@@ -131,8 +131,29 @@ alongside Node. Three deliberate choices worth knowing:
 
 ## Editor setup (Zed)
 
-`.zed/settings.json` pins the Tailwind and TypeScript language servers to the copies
-in `frontend/node_modules`, so Zed **reports** exactly what CI enforces. Those paths
+`.zed/settings.json` exists so Zed **reports** exactly what CI enforces. The two
+stacks drift for different reasons, so they are fixed differently: the frontend
+servers drift in **version**, basedpyright drifts in **config**.
+
+**basedpyright is pointed at `backend/`.** Its settings live in
+`backend/pyproject.toml` (`typeCheckingMode = "strict"`), one level below the worktree
+root the language server searches for a config. Finding none, it falls back to
+basedpyright's own default mode - which is `recommended`, not `strict`, and is a
+*different* rule set rather than a smaller one: it enables `reportUnusedCallResult`,
+`reportAny`, `reportImplicitOverride` and more, and sets `failOnWarnings`. The editor
+then flags code CI is happy with, with no way to satisfy both. The
+`basedpyright.analysis.configFilePath` setting resolves it. You can see the same drift
+from the command line:
+
+```sh
+pixi run basedpyright backend/src/expense_tracker/__init__.py   # 1 warning, exit 1
+pixi run typecheck                                              # 0 diagnostics, exit 0
+```
+
+The only difference is that `typecheck` runs with `cwd = "backend"`, so it finds the
+config.
+
+**The frontend servers are pinned to `frontend/node_modules`.** Those paths
 are relative to the worktree root, and the `vtsls` entry also spells out a `tsdk` -
 Zed's implicit lookup only checks `<worktree>/node_modules/typescript/lib`, which does
 not exist now that the frontend owns its dependencies. Zed would otherwise
