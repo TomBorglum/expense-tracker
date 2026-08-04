@@ -192,34 +192,36 @@ alongside Node. Three deliberate choices worth knowing:
 
 ## Editor setup (Zed)
 
-`.zed/settings.json` exists so Zed **reports** exactly what CI enforces. The two
-stacks drift for different reasons, so they are fixed differently: the frontend
-servers drift in **version**, basedpyright drifts in **config**.
+`.zed/settings.json` exists so Zed **reports** exactly what CI enforces. Every entry in
+it does the same single job: pin a language server to the **version** this repo pins.
+None of them configures a linter or a type checker - each stack's own config file
+already does that, and duplicating it in the editor is how the two drift apart.
 
-**basedpyright is pinned and pointed at `backend/`.** All Python config lives in
+**basedpyright is pinned, and nothing more.** All Python config lives in
 `backend/pyproject.toml` next to ruff's and pytest's; nothing is duplicated in the
-editor config and there is no config file at the repo root. `.zed/settings.json` does
-exactly two things for it:
+editor config and there is no config file at the repo root. `.zed/settings.json` pins
+the server to `.pixi/envs/default/bin/basedpyright-langserver` - run `direnv allow`
+before opening the project or the path does not exist yet. Left unpinned, Zed resolves
+the binary off `PATH`, which is the pixi one whenever direnv has loaded and whatever Zed
+installs for itself when it has not.
 
-- **Pins the server** to `.pixi/envs/default/bin/basedpyright-langserver`, the same
-  anti-drift job done for the frontend servers below. Run `direnv allow` before opening
-  the project or the path does not exist yet.
-- **Sets `basedpyright.analysis.configFilePath` to `backend`**, because a language
-  server searches only its worktree root and never descends into subdirectories.
+**The config needs no pointer.** Zed reads `backend/pyproject.toml` as the project
+manifest and sends `backend/` as the LSP `workspaceFolders` entry, and that - not the
+deprecated `rootUri`, which is the worktree root - is what basedpyright resolves its
+config against. So the server finds `[tool.basedpyright]` on its own.
 
-The second is not cosmetic. basedpyright ignores a developer's personal
-`typeCheckingMode` **only when it finds a project config**; finding none, it applies the
-editor's own settings instead. So without that line, anyone with a mode set in their
-global Zed or VS Code config gets that rather than this repo's `strict` - typically
-`recommended`, a *different* rule set enabling `reportUnusedCallResult`, `reportAny`,
-`reportImplicitOverride` and `failOnWarnings`. The editor then flags code CI is happy
-with, and no project setting can override it. That one line is what makes
-`backend/pyproject.toml` authoritative for everyone.
+That is worth knowing rather than assuming, because basedpyright ignores a developer's
+personal `typeCheckingMode` **only when it finds a project config**. Finding none, it
+applies the editor's own settings, and no project setting can override them. Finding
+this one, the repo wins for everyone. It also means a global
+`"typeCheckingMode"` in your user settings is simply inert here - Zed sends it, the
+server discards it.
 
-To confirm the editor and CI agree, flip `typeCheckingMode` to `recommended` in
-`backend/pyproject.toml` and run `pixi run typecheck`: the `reportUnusedCallResult`
-warning on `response.headers.setdefault(...)` in `create_app()` reappears, and the
-editor should report it too. Set it back to `strict` and both clear.
+**If your editor ever disagrees with CI about Python**, that resolution is the first
+thing to check, since it is editor behaviour this repo cannot pin. Zed runs its language
+servers on the remote host over WSL, where the client's LSP log panel shows nothing, so
+the way to see it is to point `binary.path` at a shim that tees stdio to a file and read
+the `initialize` request. `pixi run typecheck` remains the authority either way.
 
 **The frontend servers are pinned to `frontend/node_modules`.** Those paths
 are relative to the worktree root, and the `vtsls` entry also spells out a `tsdk` -
@@ -310,7 +312,7 @@ Two related things that also look like faults but are not:
 | `pixi run fix` | Auto-fix lint issues |
 | `pixi run format` | Format with ruff |
 | `pixi run format-check` | Check formatting without writing changes |
-| `pixi run typecheck` | Type-check with basedpyright (strict) |
+| `pixi run typecheck` | Type-check with basedpyright (recommended) |
 | `pixi run web-install` | Install frontend dependencies (`pnpm install --frozen-lockfile`) |
 | `pixi run web-dev` | Run vite's dev server on port 5173 (hot reload) |
 | `pixi run web-build` | Build the frontend into `frontend/dist/` |

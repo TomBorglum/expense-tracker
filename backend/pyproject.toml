@@ -24,11 +24,16 @@ testpaths = ["tests"]
 addopts = "--strict-markers --strict-config --cov=expense_tracker --cov-report=xml --cov-report=term-missing"
 
 [tool.basedpyright]
-typeCheckingMode = "strict"
+# basedpyright's own default, and a superset of pyright's `strict`: it adds the
+# based-only rules (reportUnusedCallResult, reportAny, reportImplicitOverride) and sets
+# failOnWarnings, so a warning fails `pixi run typecheck` exactly like an error - the
+# same no-warn-tier posture the frontend gets from `eslint --max-warnings 0`.
+typeCheckingMode = "recommended"
 # Relative to this file, so backend/src and backend/tests.
 include = ["src", "tests"]
 extraPaths = ["src"]
-# Editors do not find this section on their own: a language server searches its worktree
-# root, which is one level up, and does not descend into here. `.zed/settings.json`
-# points it at this directory - see the basedpyright block there for why that matters
-# more than it sounds.
+# Authoritative for editors too, not just `pixi run typecheck`. Zed sends this directory
+# as the LSP workspace folder (it reads pyproject.toml as the project manifest), so the
+# language server resolves this section without being pointed at it - and basedpyright
+# ignores a developer's personal typeCheckingMode whenever it finds a project config,
+# which makes this file the one that wins. See "Editor setup (Zed)" in README.md.

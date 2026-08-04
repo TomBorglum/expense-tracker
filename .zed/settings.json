@@ -1,19 +1,17 @@
 // Project settings for Zed. Deliberately minimal: it carries only what is specific
 // to THIS repo, so it never overrides a preference set in your user settings.
 //
-// The one thing it must do is stop the editor drifting from what CI enforces. That
-// takes two different fixes, because the two stacks drift for different reasons:
+// The one thing it must do is stop the editor drifting from what CI enforces, and for
+// every server here that means one thing: the VERSION. Nothing below configures a
+// linter or a type checker; each stack's own config file already does that.
 //
-//   - Frontend: the VERSION drifts. Zed's built-in Tailwind and TypeScript adapters
-//     install their own npm "latest" copies under ~/.local/share/zed/; the
-//     binary.path overrides below point them at ./frontend/node_modules instead
-//     (paths here are relative to the worktree root, not to this file). Run
-//     `pixi run web-install` first, or the paths do not exist yet and the language
-//     servers will not start.
-//   - Backend: the CONFIG drifts too. basedpyright's settings live in
-//     backend/pyproject.toml, one level below the worktree root the server searches,
-//     so it has to be pointed at them - otherwise it applies each developer's own
-//     editor settings instead. See the basedpyright block.
+//   - Frontend: Zed's built-in Tailwind and TypeScript adapters install their own npm
+//     "latest" copies under ~/.local/share/zed/; the binary.path overrides below point
+//     them at ./frontend/node_modules instead (paths here are relative to the worktree
+//     root, not to this file). Run `pixi run web-install` first, or the paths do not
+//     exist yet and the language servers will not start.
+//   - Backend: basedpyright is pinned to the pixi env for the same reason. Its CONFIG
+//     needs no help here - see the note in the basedpyright block.
 //
 // Before concluding a pin is broken: over a remote/WSL backend Zed's Server Info
 // panel shows "Binary: Unknown" for vtsls even when it is working correctly. See
@@ -47,39 +45,28 @@
 
   "lsp": {
     "basedpyright": {
+      // Deliberately no basedpyright.analysis settings, and in particular no
+      // configFilePath. Zed detects backend/pyproject.toml as the project manifest and
+      // sends backend/ as the LSP workspace folder, which is what the server resolves
+      // its config against - so it finds [tool.basedpyright] unaided, and a personal
+      // typeCheckingMode in anyone's user settings is ignored in its favour. (rootUri
+      // IS the worktree root, but it is deprecated and loses to workspaceFolders.)
+      //
+      // That is Zed's behaviour, not a guarantee this repo can make. If your editor
+      // ever disagrees with CI about Python, check that first: capture the server's
+      // initialize request, or just trust `pixi run typecheck`, which is the authority.
+      // See "Editor setup (Zed)" in README.md.
       "binary": {
-        // Pinned by pixi.toml, for the same reason as the frontend servers below:
-        // otherwise Zed runs whatever basedpyright it resolves on its own, which is
-        // not the version CI enforces. It matters here beyond version drift -
-        // configFilePath's support for a directory is documented for THIS version,
-        // and an older server is the likeliest reason an earlier attempt at the
-        // setting failed with "Config file ... could not be read".
+        // Pinned by pixi.toml, for the same reason as the frontend servers below.
+        // Without it Zed resolves basedpyright-langserver off PATH - which is the pixi
+        // one whenever direnv has loaded, and whatever Zed installs for itself when it
+        // has not.
         //
         // Run `direnv allow` (or `pixi install`) before opening the project, or this
         // path does not exist yet and the server will not start.
         "path": ".pixi/envs/default/bin/basedpyright-langserver",
         "arguments": ["--stdio"],
         "ignore_system_version": true
-      },
-      "settings": {
-        "basedpyright.analysis": {
-          // All Python config lives in backend/pyproject.toml, next to ruff's and
-          // pytest's. A language server searches only its worktree root and never
-          // descends into backend/, so it has to be told where to look; this is the
-          // one thing the editor needs, and no settings are duplicated here.
-          //
-          // Why it is not cosmetic: basedpyright ignores a developer's personal
-          // typeCheckingMode ONLY when it finds a project config. Finding none, it
-          // applies the editor's own settings instead - so anyone with a mode set in
-          // their global Zed config got that rather than this repo's "strict", and
-          // no amount of project configuration could override it. This line is what
-          // makes backend/pyproject.toml authoritative.
-          //
-          // A directory is what the setting documents ("path to the directory or file
-          // containing the configuration"). Relative to the worktree root, like the
-          // paths below; Zed does not expand VS Code's ${workspaceFolder}.
-          "configFilePath": "backend"
-        }
       }
     },
     "eslint": {

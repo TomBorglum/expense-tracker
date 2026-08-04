@@ -115,16 +115,21 @@ Break one of these and CI goes red on an otherwise correct change.
 
 ## Quality gates
 
-- **Python:** basedpyright in `strict` mode and ruff with
+- **Python:** basedpyright in `recommended` mode and ruff with
   `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]` - both in `backend/pyproject.toml`.
-  There is **no config file at the repo root** and no Python setting duplicated in the
-  editor config. Editors are pointed at the directory instead, via
-  `basedpyright.analysis.configFilePath` in `.zed/settings.json` - a language server
-  searches only its worktree root and never descends into `backend/`. Keep that line:
-  basedpyright ignores a developer's personal `typeCheckingMode` *only when it finds a
-  project config*, so without it each contributor's own editor setting wins over this
-  repo's `strict`. `.zed/settings.json` also pins the server binary to the pixi env, for
-  the same reason the frontend servers are pinned.
+  There is **no config file at the repo root** and **no Python setting duplicated in the
+  editor config** - `.zed/settings.json` pins the server *binary* to the pixi env and
+  nothing else. Editors need no pointer to the config: Zed reads
+  `backend/pyproject.toml` as the project manifest and sends `backend/` as the LSP
+  workspace folder, which is what the server resolves its config against. That matters
+  because basedpyright ignores a developer's personal `typeCheckingMode` *only when it
+  finds a project config* - finding this one is what makes the repo's setting win over
+  a contributor's own.
+- **There is no warn tier on the backend either.** `recommended` is a superset of
+  pyright's `strict` that adds the based-only rules and sets `failOnWarnings`, so a
+  warning fails `pixi run typecheck` like an error. It is why line 52 of
+  `backend/src/expense_tracker/__init__.py` reads `_ = response.headers.setdefault(...)`:
+  `reportUnusedCallResult` wants a discarded return value said out loud.
 - **Frontend:** `tsc -b` against a `strict` tsconfig, prettier, and eslint 10 in
   `frontend/eslint.config.ts` - typescript-eslint `strictTypeChecked` +
   `stylisticTypeChecked` (type-aware, via `parserOptions.projectService`), ESLint

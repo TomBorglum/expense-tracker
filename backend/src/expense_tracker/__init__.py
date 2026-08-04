@@ -49,7 +49,10 @@ def create_app() -> FastAPI:
     ) -> Response:
         response = await call_next(request)
         for header, value in _SECURITY_HEADERS.items():
-            response.headers.setdefault(header, value)
+            # `_ =` because setdefault returns the header's existing value and we have
+            # no use for it; recommended mode's reportUnusedCallResult wants that said
+            # out loud rather than left to the reader.
+            _ = response.headers.setdefault(header, value)
         return response
 
     # The whole API. The payload is built by hand rather than derived from a
