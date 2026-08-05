@@ -1,3 +1,11 @@
+# Environments and dependencies only. This manifest declares no tasks, deliberately:
+# each stack owns its commands in the file that already owns how its tools behave - the
+# poe tasks in backend/pyproject.toml, the "scripts" block in frontend/package.json. A
+# forwarding task here would add a name to look up and nothing else. Invoke either stack
+# from the repo root with `poe -C backend <task>` or `pnpm -C frontend run <script>`; the
+# full table is in README.md. pixi's job is to put both toolchains on PATH, which .envrc
+# does on directory entry and CI's setup-direnv does per job.
+
 [workspace]
 name = "expense-tracker"
 channels = ["conda-forge"]
@@ -20,8 +28,6 @@ uvicorn = "==0.52.0"
 [pypi-dependencies]
 expense-tracker = { path = "backend", editable = true }
 
-# Dev task(s) live with the dev tooling in the "test" feature; see below.
-
 # Test-only dependencies, isolated in the "test" feature so the lean
 # prod environment can exclude them.
 [feature.test.dependencies]
@@ -34,6 +40,11 @@ pytest-cov = "==7.0.0"
 httpx2 = "==2.9.1"
 basedpyright = "==1.39.8"
 ruff = "==0.15.21"
+# The backend's task runner, reading [tool.poe.tasks] from backend/pyproject.toml. Python
+# ships no equivalent of package.json's "scripts", so this is what lets the backend own
+# its commands the way the frontend already does. Test feature, not [dependencies]: the
+# prod environment runs the app, it does not lint or test it.
+poethepoet = "==0.41.0"
 # Runs the frontend toolchain (vite/tailwind) and the language servers Zed is pinned
 # to. Kept in the test feature, which is what keeps the prod environment Node-free:
 # the backend ships no frontend assets and wants Node for nothing.
@@ -43,57 +54,8 @@ nodejs = "==26.5.0"
 # fetch its own version and bypass this pin. pixi is the single source of truth.
 pnpm = "==11.18.0"
 
-# Test task lives with the test feature: present in default (which includes
-# the test feature), absent from prod.
-#
-# Each stack's tooling reads its config from its own directory - ruff, pytest and
-# basedpyright from backend/pyproject.toml, the pnpm scripts from
-# frontend/package.json - so the tasks below carry an explicit `cwd` rather than
-# relying on where `pixi run` happened to be invoked.
-[feature.test.tasks]
-# The REST API with the reloader, on uvicorn's default port 8000. It serves JSON and
-# nothing else - the page comes from `web-dev` on vite's own port, and CORS is what
-# lets the two talk. --factory is what lets create_app be the target. In the test
-# feature so the lean prod env cannot launch the reloader. Runs from the repo root -
-# no cwd and no PYTHONPATH needed, because the app is installed editable.
-# --reload-dir is not optional: without it uvicorn watches the whole working
-# directory, and its stat reloader rglobs for *.py and stats every hit four times a
-# second -- which here means walking .pixi/ and node_modules/ to find 1891 files when
-# the only one that can ever matter is backend/src/expense_tracker/__init__.py.
-serve = "uvicorn expense_tracker:create_app --factory --reload --reload-dir backend/src"
-# Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
-test = { cmd = "pytest", cwd = "backend" }
-typecheck = { cmd = "basedpyright", cwd = "backend" }
-lint = { cmd = "ruff check", cwd = "backend" }
-fix = { cmd = "ruff check --fix", cwd = "backend" }
-format = { cmd = "ruff format", cwd = "backend" }
-format-check = { cmd = "ruff format --check", cwd = "backend" }
-
-# Frontend (vite + React + Tailwind v4). A standalone SPA: it builds to
-# frontend/dist/, which is gitignored and shipped by nothing here, and reaches the API
-# over CORS at the origin in frontend/.env. Nothing in this group touches backend/.
-web-install = { cmd = "pnpm install --frozen-lockfile", cwd = "frontend" }
-web-build = { cmd = "pnpm run build", cwd = "frontend" }
-# vite's dev server, the counterpart to `serve`. The two run side by side: this one
-# serves the page, `serve` answers its fetches from another origin.
-web-dev = { cmd = "pnpm run dev", cwd = "frontend" }
-web-check = { cmd = "pnpm run check", cwd = "frontend" }
-# eslint, the frontend counterpart to `lint`/`fix`. Type-aware, so it needs the same
-# tsconfigs `web-check` uses and costs about as much. Zed's built-in eslint language
-# server is pointed at frontend/node_modules by .zed/settings.json, so the editor
-# reports the same findings this task fails on.
-web-lint = { cmd = "pnpm run lint", cwd = "frontend" }
-web-lint-fix = { cmd = "pnpm run lint-fix", cwd = "frontend" }
-# vitest + coverage; writes coverage/frontend/lcov.info at the repo root for the
-# SonarCloud scan, mirroring how `test` writes coverage.xml for Python.
-web-test = { cmd = "pnpm run test", cwd = "frontend" }
-web-format = { cmd = "pnpm run format", cwd = "frontend" }
-# The formatting gate. .zed/settings.json deliberately does not enable format_on_save,
-# so formatting is applied by web-format and checked here rather than by the editor.
-web-format-check = { cmd = "pnpm run format-check", cwd = "frontend" }
-
 # Two environments on one solve-group:
-# - default: runtime + test tooling -> editor, local dev, CI, `pixi run test`
+# - default: runtime + test tooling -> editor, local dev, CI, both stacks' task runners
 # - prod:    runtime only (default feature) -> the API and nothing else
 # Same solve-group keeps python pinned identically across both. prod is Node-free by
 # construction now that the backend ships no frontend assets.

@@ -30,7 +30,7 @@ updates:
   #   - The lockfile must stay at lockfileVersion 9.0, which Dependabot does parse.
   #
   # No build output is committed here, so a bump to vite, react or tailwind needs
-  # nothing added to the Dependabot branch - CI's `pixi run web-build` is what proves
+  # nothing added to the Dependabot branch - CI's frontend `build` gate is what proves
   # the bundler still runs. msw is test-only, but a major bump needs its allowBuilds
   # entry in frontend/pnpm-workspace.yaml rechecked.
   - package-ecosystem: "npm"

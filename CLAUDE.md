@@ -33,17 +33,30 @@ hand-edit versions, git tags, or `CHANGELOG.md`.**
 
 ## Commands
 
-`pixi run <task>` is the single interface to both stacks and the same commands CI
-runs. Every task declares its own `cwd`, so it behaves identically wherever you invoke
-it. Full table in [`README.md`](README.md#development-tasks).
+**Each stack owns its commands, in the manifest that already owns how its tools
+behave.** The backend's are poe tasks in `backend/pyproject.toml`; the frontend's are
+the `scripts` block in `frontend/package.json`. `pixi.toml` declares **no** tasks - it
+provides the environment, and a forwarding task there would only add a name to look up.
+Add a new command to the stack that runs it, never to `pixi.toml`.
+
+Both runners take `-C`, so everything runs from the repo root with no `cd`, and `-C`
+also sets the working directory:
+
+```sh
+poe -C backend <task>          # poe -C backend with no task lists them
+pnpm -C frontend run <script>  # pnpm -C frontend run lists them
+```
+
+Full table in [`README.md`](README.md#development-tasks).
 
 Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in order
 (cheapest first, so it fails fast):
 
 ```sh
-pixi run lint && pixi run format-check && pixi run typecheck && pixi run test &&
-pixi run web-install && pixi run web-format-check && pixi run web-check &&
-pixi run web-lint && pixi run web-test && pixi run web-build
+poe -C backend lint && poe -C backend format-check && poe -C backend typecheck &&
+poe -C backend test && pnpm -C frontend install --frozen-lockfile &&
+pnpm -C frontend run format-check && pnpm -C frontend run check &&
+pnpm -C frontend run lint && pnpm -C frontend run test && pnpm -C frontend run build
 ```
 
 The two halves are independent, so a change to one stack can only fail that stack's

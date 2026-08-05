@@ -11,6 +11,38 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/expense_tracker"]
 
+# Every backend command, defined here rather than in pixi.toml: this file already owns
+# how each tool behaves (the ruff select list, pytest's addopts, basedpyright's mode), so
+# it owns how each is invoked too. pixi provides the environment and nothing else. The
+# frontend counterpart is the "scripts" block in frontend/package.json.
+#
+# Run from anywhere with `poe -C backend <task>`; -C also becomes the task's working
+# directory, so the paths below are relative to backend/.
+[tool.poe]
+# The environment is already active: direnv's use_pixi puts .pixi/envs/default/bin on
+# PATH locally, and CI's setup-direnv puts it on $GITHUB_PATH. "simple" stops poe hunting
+# for a poetry/uv project or a .venv that does not exist here. Nothing can silently run
+# the wrong interpreter - poe itself only exists inside the pixi environment, so if `poe`
+# resolves at all, that environment's pytest and ruff are already first on PATH.
+executor = "simple"
+
+[tool.poe.tasks]
+# The REST API with the reloader, on uvicorn's default port 8000. It serves JSON and
+# nothing else - the page comes from `pnpm -C frontend run dev` on vite's own port, and
+# CORS is what lets the two talk. --factory is what lets create_app be the target.
+# --reload-dir is not optional: without it uvicorn watches the whole working directory,
+# and its stat reloader rglobs for *.py and stats every hit four times a second - which
+# here means walking .pixi/ and node_modules/ to find 1891 files when the only one that
+# can ever matter is src/expense_tracker/__init__.py.
+serve = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
+# Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
+test = "pytest"
+typecheck = "basedpyright"
+lint = "ruff check"
+lint-fix = "ruff check --fix"
+format = "ruff format"
+format-check = "ruff format --check"
+
 [tool.ruff.lint]
 # Widen beyond ruff's default E/F: import sorting (I), pyupgrade (UP),
 # bugbear (B), simplify (SIM), and Ruff-native rules (RUF). Target version is
@@ -26,14 +58,15 @@ addopts = "--strict-markers --strict-config --cov=expense_tracker --cov-report=x
 [tool.basedpyright]
 # basedpyright's own default, and a superset of pyright's `strict`: it adds the
 # based-only rules (reportUnusedCallResult, reportAny, reportImplicitOverride) and sets
-# failOnWarnings, so a warning fails `pixi run typecheck` exactly like an error - the
-# same no-warn-tier posture the frontend gets from `eslint --max-warnings 0`.
+# failOnWarnings, so a warning fails `poe -C backend typecheck` exactly like an error -
+# the same no-warn-tier posture the frontend gets from `eslint --max-warnings 0`.
 typeCheckingMode = "recommended"
 # Relative to this file, so backend/src and backend/tests.
 include = ["src", "tests"]
 extraPaths = ["src"]
-# Authoritative for editors too, not just `pixi run typecheck`. Zed sends this directory
-# as the LSP workspace folder (it reads pyproject.toml as the project manifest), so the
-# language server resolves this section without being pointed at it - and basedpyright
-# ignores a developer's personal typeCheckingMode whenever it finds a project config,
-# which makes this file the one that wins. See "Editor setup (Zed)" in README.md.
+# Authoritative for editors too, not just `poe -C backend typecheck`. Zed sends this
+# directory as the LSP workspace folder (it reads pyproject.toml as the project
+# manifest), so the language server resolves this section without being pointed at it -
+# and basedpyright ignores a developer's personal typeCheckingMode whenever it finds a
+# project config, which makes this file the one that wins. See "Editor setup (Zed)" in
+# README.md.
