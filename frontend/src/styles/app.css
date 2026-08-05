@@ -4,8 +4,8 @@
    that actually render: index.html and the components under src/. Left automatic,
    Tailwind takes its base from the nearest package.json - frontend/ - and mines
    every file there for class names, config files included. A word like "relative"
-   or "block" in a vite.config.ts comment then emits a real utility, which changes
-   the committed bundle and fails `pixi run web-verify` for no reason. */
+   or "block" in a vite.config.ts comment then emits a real utility, padding the
+   build output with rules nothing on the page ever uses. */
 @import "tailwindcss" source(none);
 @source "../../index.html";
 @source "../";

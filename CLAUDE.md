@@ -33,17 +33,32 @@ hand-edit versions, git tags, or `CHANGELOG.md`.**
 
 ## Commands
 
-`pixi run <task>` is the single interface to both stacks and the same commands CI
-runs. Every task declares its own `cwd`, so it behaves identically wherever you invoke
-it. Full table in [`README.md`](README.md#development-tasks).
+**Commands live in two layers, and adding one means editing both.**
+
+1. **The stack that runs it defines it**, in the manifest that already owns how its
+   tools behave: poe tasks in `backend/pyproject.toml`, the `scripts` block in
+   `frontend/package.json`. This is where the command body goes.
+2. **`pixi.toml` forwards to it**, one prefixed one-liner per command, so `pixi run`
+   stays the single entry point spanning both stacks.
+
+`pixi run <task>` is what CI calls and what you should reach for. Every task declares
+its own `cwd`, so it behaves identically wherever you invoke it. Full table in
+[`README.md`](README.md#development-tasks).
+
+**The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Never
+put a command body there; that is what would make the layer a place definitions hide.
+Both stacks also stay runnable on their own terms (`cd backend && poe test`,
+`cd frontend && pnpm build`), which is what keeps each directory a standalone project.
 
 Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in order
 (cheapest first, so it fails fast):
 
 ```sh
-pixi run lint && pixi run format-check && pixi run typecheck && pixi run test &&
-pixi run web-install && pixi run web-format-check && pixi run web-check &&
-pixi run web-lint && pixi run web-test && pixi run web-build
+pixi run backend-lint && pixi run backend-format-check &&
+pixi run backend-typecheck && pixi run backend-test &&
+pixi run frontend-install && pixi run frontend-format-check &&
+pixi run frontend-typecheck && pixi run frontend-lint && pixi run frontend-test &&
+pixi run frontend-build
 ```
 
 The two halves are independent, so a change to one stack can only fail that stack's

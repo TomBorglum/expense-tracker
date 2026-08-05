@@ -15,11 +15,12 @@ out of scope for now.
 
 ```
 expense-tracker/
-  pixi.toml, pixi.lock          # environments and every `pixi run` task, both stacks
+  pixi.toml, pixi.lock          # environments, dependencies, and one `pixi run` task
+                                #   per command, each forwarding to the stack below
   sonar-project.properties      # one Sonar project spanning both languages
   .github/                      # CI, release-please, dependabot
   backend/
-    pyproject.toml              # hatchling, ruff, pytest, basedpyright
+    pyproject.toml              # hatchling, ruff, pytest, basedpyright, poe tasks
     src/expense_tracker/        # create_app() factory, the whole API
     tests/
   frontend/
@@ -51,15 +52,15 @@ reports the directives as unknown commands.
 ## Quickstart
 
 ```sh
-cd expense-tracker    # direnv provisions the environment on entry
-pixi run web-install  # install frontend dependencies (pnpm)
+cd expense-tracker         # direnv provisions the environment on entry
+pixi run frontend-install  # install frontend dependencies (pnpm)
 ```
 
 Then start both, in two terminals:
 
 ```sh
-pixi run serve        # the REST API on http://localhost:8000
-pixi run web-dev      # the SPA on http://localhost:5173
+pixi run backend-dev   # the REST API on http://localhost:8000
+pixi run frontend-dev  # the SPA on http://localhost:5173
 ```
 
 Visit http://localhost:5173 and you should see `Hello, World!`, fetched from
@@ -100,7 +101,7 @@ than passing it to a router with no such route.
 A React 19 SPA built by vite and styled with Tailwind CSS v4, configured in CSS via
 `frontend/src/styles/app.css` - there is no `tailwind.config.js`.
 
-`pixi run web-build` writes to `frontend/dist/`, vite's default. It is **gitignored**
+`pixi run frontend-build` writes to `frontend/dist/`, vite's default. It is **gitignored**
 and nothing in this repo consumes it. CI runs the build as a gate because tsc and
 vitest never exercise the bundler, but keeps nothing from it.
 
@@ -152,7 +153,7 @@ It is typed in `frontend/src/vite-env.d.ts`, which also sets
 `ImportMetaEnv`, so a mistyped `import.meta.env.VITE_*` is a type error rather than a
 silent `undefined`.
 
-The flip side of `.env` loading in every mode is that `pixi run web-build` **bakes
+The flip side of `.env` loading in every mode is that `pixi run frontend-build` **bakes
 `http://localhost:8000` into the bundle**. That is fine today, since the build exists
 as a CI gate and nothing deploys it, but a real deployment needs the value supplied for
 the production mode via a `.env.production` or a `VITE_API_BASE_URL` in the build
@@ -174,7 +175,7 @@ alongside Node. Three deliberate choices:
   guard for precisely the least-vetted package.
 - **Install scripts are answered explicitly.** pnpm 11 exits non-zero while a
   dependency's install script is neither allowed nor denied, which would fail
-  `pixi run web-install` in CI. The decision lives in `frontend/pnpm-workspace.yaml`
+  `pixi run frontend-install` in CI. The decision lives in `frontend/pnpm-workspace.yaml`
   under `allowBuilds`, the only place pnpm 11 still reads it. `msw` is denied there:
   its script only copies the browser service worker, and the tests use `msw/node`.
 
@@ -187,12 +188,12 @@ duplicating it in the editor is how the two drift apart. Read the file itself fo
 per-server reasoning.
 
 Preconditions: run `direnv allow` (for the basedpyright path under `.pixi/`) and
-`pixi run web-install` (for the frontend servers under `frontend/node_modules/`), or
-those paths do not exist yet and the servers will not start.
+`pixi run frontend-install` (for the frontend servers under `frontend/node_modules/`),
+or those paths do not exist yet and the servers will not start.
 
 Formatting is not configured here: `format_on_save` is left to your own Zed settings.
-Formatting is applied by `pixi run web-format` and gated in CI by
-`pixi run web-format-check`, the same way `ruff format` works on the Python side.
+Formatting is applied by `pixi run frontend-format` and gated in CI by
+`pixi run frontend-format-check`, the same way `ruff format` works on the Python side.
 
 To confirm the declared pins match what is installed:
 
@@ -221,36 +222,62 @@ Two things that look like faults but are not: over a remote/WSL backend, Server 
 reports `Binary: Unknown` and `Version: Unknown` for `vtsls` however healthy it is, and
 the per-server Logs tab is usually empty because most servers never send
 `window/logMessage`. Use the `ps` command above instead. If your editor ever disagrees
-with CI, `pixi run typecheck` and `pixi run web-lint` are the authority.
+with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the authority.
 
 ## Development tasks
 
-| Command | What it does |
-| --- | --- |
-| `pixi run serve` | Run the API on uvicorn, port 8000 (with reloader) |
-| `pixi run test` | Run the test suite with coverage |
-| `pixi run lint` | Lint with ruff |
-| `pixi run fix` | Auto-fix lint issues |
-| `pixi run format` | Format with ruff |
-| `pixi run format-check` | Check formatting without writing changes |
-| `pixi run typecheck` | Type-check with basedpyright (recommended) |
-| `pixi run web-install` | Install frontend dependencies (`pnpm install --frozen-lockfile`) |
-| `pixi run web-dev` | Run vite's dev server on port 5173 (hot reload) |
-| `pixi run web-build` | Build the frontend into `frontend/dist/` |
-| `pixi run web-check` | Type-check the frontend with tsc |
-| `pixi run web-lint` | Lint the frontend with eslint (type-aware, `--max-warnings 0`) |
-| `pixi run web-lint-fix` | Auto-fix frontend lint issues |
-| `pixi run web-test` | Run the frontend tests (vitest) with coverage |
-| `pixi run web-format` | Format the frontend with prettier |
-| `pixi run web-format-check` | Check frontend formatting without writing changes |
+`pixi run <task>` is the entry point, and the same command CI runs.
 
-Every task sets its own working directory in `pixi.toml` (`backend/` or `frontend/`),
-so `pixi run <task>` behaves the same wherever you invoke it from. No task crosses
-between the two directories.
+| Command | Delegates to | What it does |
+| --- | --- | --- |
+| `pixi run backend-dev` | `poe dev` | Run the API on uvicorn, port 8000 (with reloader) |
+| `pixi run backend-test` | `poe test` | Run the test suite with coverage |
+| `pixi run backend-lint` | `poe lint` | Lint with ruff |
+| `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues |
+| `pixi run backend-format` | `poe format` | Format with ruff |
+| `pixi run backend-format-check` | `poe format-check` | Check formatting without writing changes |
+| `pixi run backend-typecheck` | `poe typecheck` | Type-check with basedpyright (recommended) |
+| `pixi run frontend-install` | `pnpm install` | Install frontend dependencies (`--frozen-lockfile`) |
+| `pixi run frontend-dev` | `pnpm run dev` | Run vite's dev server on port 5173 (hot reload) |
+| `pixi run frontend-build` | `pnpm run build` | Build the frontend into `frontend/dist/` |
+| `pixi run frontend-typecheck` | `pnpm run typecheck` | Type-check the frontend with tsc |
+| `pixi run frontend-lint` | `pnpm run lint` | Lint the frontend with eslint (type-aware, `--max-warnings 0`) |
+| `pixi run frontend-lint-fix` | `pnpm run lint-fix` | Auto-fix frontend lint issues |
+| `pixi run frontend-test` | `pnpm run test` | Run the frontend tests (vitest) with coverage |
+| `pixi run frontend-format` | `pnpm run format` | Format the frontend with prettier |
+| `pixi run frontend-format-check` | `pnpm run format-check` | Check frontend formatting without writing changes |
 
-CI runs `lint`, `format-check`, `typecheck`, `test`, `web-install`, `web-format-check`,
-`web-check`, `web-lint`, `web-test` and `web-build` on every pull request, then the
-SonarCloud scan.
+Every task sets its own working directory in `pixi.toml` (`backend/` or `frontend/`), so
+`pixi run <task>` behaves the same wherever you invoke it from. No task crosses between
+the two directories. `pixi task list` prints this table's first column.
+
+CI runs every gate above except the two `dev` tasks, the two `-fix` variants and
+`backend-format` on each pull request, then the SonarCloud scan.
+
+### Where commands are defined
+
+The middle column is not decoration - **`pixi.toml` defines no commands, it only
+forwards.** Each stack owns its own, in the manifest that already owns how its tools
+behave:
+
+- **Backend:** `[tool.poe.tasks]` in `backend/pyproject.toml`, beside the ruff, pytest
+  and basedpyright config they invoke. Python has no built-in task runner, so
+  [poethepoet](https://poethepoet.natn.io) supplies one.
+- **Frontend:** the `scripts` block in `frontend/package.json`, where a Node developer
+  expects it.
+
+Two layers rather than one buys both properties at once: `pixi run` is a single
+discoverable index across two ecosystems, and each directory stays a standalone project
+you can run natively.
+
+```sh
+cd backend  && poe test    # poe with no task lists the backend's
+cd frontend && pnpm test   # pnpm run lists the frontend's
+```
+
+The cost is that adding a command means two edits - define it in the stack's manifest,
+then forward it from `pixi.toml`. Put the command body in the stack, never in the
+forwarder.
 
 ## Configuration
 
