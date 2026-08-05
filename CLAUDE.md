@@ -57,7 +57,7 @@ Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in o
 pixi run backend-lint && pixi run backend-format-check &&
 pixi run backend-typecheck && pixi run backend-test &&
 pixi run frontend-install && pixi run frontend-format-check &&
-pixi run frontend-check && pixi run frontend-lint && pixi run frontend-test &&
+pixi run frontend-typecheck && pixi run frontend-lint && pixi run frontend-test &&
 pixi run frontend-build
 ```
 

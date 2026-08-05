@@ -29,13 +29,13 @@ executor = "simple"
 
 [tool.poe.tasks]
 # The REST API with the reloader, on uvicorn's default port 8000. It serves JSON and
-# nothing else - the page comes from `pixi run frontend-dev` on vite's own port, and
-# CORS is what lets the two talk. --factory is what lets create_app be the target.
+# nothing else - the page comes from `pixi run frontend-dev`, its counterpart on vite's
+# own port, and CORS is what lets the two talk. --factory lets create_app be the target.
 # --reload-dir is not optional: without it uvicorn watches the whole working directory,
 # and its stat reloader rglobs for *.py and stats every hit four times a second - which
 # here means walking .pixi/ and node_modules/ to find 1891 files when the only one that
 # can ever matter is src/expense_tracker/__init__.py.
-serve = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
+dev = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 test = "pytest"
 typecheck = "basedpyright"

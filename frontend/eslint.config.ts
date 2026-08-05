@@ -12,7 +12,7 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import tseslint from "typescript-eslint";
 
 // Authored as .ts (loaded through the pinned jiti) and listed in tsconfig.node.json,
-// so `pnpm run check` type-checks this file like any other. Zed reads it too: its
+// so `pnpm run typecheck` type-checks this file like any other. Zed reads it too: its
 // built-in eslint language server is pointed at frontend/node_modules by
 // .zed/settings.json, so the editor reports exactly what `pnpm run lint` enforces.
 export default defineConfig(

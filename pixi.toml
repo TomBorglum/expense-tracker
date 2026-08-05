@@ -69,7 +69,7 @@ pnpm = "==11.18.0"
 [feature.test.tasks]
 # Backend -> [tool.poe.tasks] in backend/pyproject.toml. With cwd=backend, poe finds that
 # file unaided, so the forwarder needs no -C.
-backend-serve = { cmd = "poe serve", cwd = "backend" }
+backend-dev = { cmd = "poe dev", cwd = "backend" }
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 backend-test = { cmd = "poe test", cwd = "backend" }
 backend-typecheck = { cmd = "poe typecheck", cwd = "backend" }
@@ -81,13 +81,13 @@ backend-format-check = { cmd = "poe format-check", cwd = "backend" }
 # Frontend -> the "scripts" block in frontend/package.json. `install` is a pnpm built-in
 # rather than a script, which is why it alone takes no `run`.
 frontend-install = { cmd = "pnpm install --frozen-lockfile", cwd = "frontend" }
-# vite's dev server, the counterpart to backend-serve. The two run side by side: this one
-# serves the page, backend-serve answers its fetches from another origin.
+# vite's dev server, the counterpart to backend-dev. The two run side by side: this one
+# serves the page, backend-dev answers its fetches from another origin.
 frontend-dev = { cmd = "pnpm run dev", cwd = "frontend" }
 frontend-build = { cmd = "pnpm run build", cwd = "frontend" }
-frontend-check = { cmd = "pnpm run check", cwd = "frontend" }
+frontend-typecheck = { cmd = "pnpm run typecheck", cwd = "frontend" }
 # eslint, the frontend counterpart to backend-lint. Type-aware, so it needs the same
-# tsconfigs frontend-check uses and costs about as much.
+# tsconfigs frontend-typecheck uses and costs about as much.
 frontend-lint = { cmd = "pnpm run lint", cwd = "frontend" }
 frontend-lint-fix = { cmd = "pnpm run lint-fix", cwd = "frontend" }
 # vitest + coverage; writes coverage/frontend/lcov.info at the repo root for the

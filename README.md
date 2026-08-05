@@ -59,8 +59,8 @@ pixi run frontend-install  # install frontend dependencies (pnpm)
 Then start both, in two terminals:
 
 ```sh
-pixi run backend-serve  # the REST API on http://localhost:8000
-pixi run frontend-dev   # the SPA on http://localhost:5173
+pixi run backend-dev   # the REST API on http://localhost:8000
+pixi run frontend-dev  # the SPA on http://localhost:5173
 ```
 
 Visit http://localhost:5173 and you should see `Hello, World!`, fetched from
@@ -230,7 +230,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 
 | Command | Delegates to | What it does |
 | --- | --- | --- |
-| `pixi run backend-serve` | `poe serve` | Run the API on uvicorn, port 8000 (with reloader) |
+| `pixi run backend-dev` | `poe dev` | Run the API on uvicorn, port 8000 (with reloader) |
 | `pixi run backend-test` | `poe test` | Run the test suite with coverage |
 | `pixi run backend-lint` | `poe lint` | Lint with ruff |
 | `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues |
@@ -240,7 +240,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run frontend-install` | `pnpm install` | Install frontend dependencies (`--frozen-lockfile`) |
 | `pixi run frontend-dev` | `pnpm run dev` | Run vite's dev server on port 5173 (hot reload) |
 | `pixi run frontend-build` | `pnpm run build` | Build the frontend into `frontend/dist/` |
-| `pixi run frontend-check` | `pnpm run check` | Type-check the frontend with tsc |
+| `pixi run frontend-typecheck` | `pnpm run typecheck` | Type-check the frontend with tsc |
 | `pixi run frontend-lint` | `pnpm run lint` | Lint the frontend with eslint (type-aware, `--max-warnings 0`) |
 | `pixi run frontend-lint-fix` | `pnpm run lint-fix` | Auto-fix frontend lint issues |
 | `pixi run frontend-test` | `pnpm run test` | Run the frontend tests (vitest) with coverage |
@@ -251,8 +251,8 @@ Every task sets its own working directory in `pixi.toml` (`backend/` or `fronten
 `pixi run <task>` behaves the same wherever you invoke it from. No task crosses between
 the two directories. `pixi task list` prints this table's first column.
 
-CI runs every gate above except `backend-serve`, `frontend-dev`, the two `-fix` variants
-and `backend-format` on each pull request, then the SonarCloud scan.
+CI runs every gate above except the two `dev` tasks, the two `-fix` variants and
+`backend-format` on each pull request, then the SonarCloud scan.
 
 ### Where commands are defined
 

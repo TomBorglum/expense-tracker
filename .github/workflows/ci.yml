@@ -43,8 +43,8 @@ jobs:
       # no build artifact, so neither group can break the other.
       - run: pixi run frontend-install
       - run: pixi run frontend-format-check
-      - run: pixi run frontend-check
-      # After frontend-check: type-aware eslint builds a full TS program, so it is the
+      - run: pixi run frontend-typecheck
+      # After frontend-typecheck: type-aware eslint builds a full TS program, so it is the
       # priciest of the static gates and a plain type error should surface first.
       - run: pixi run frontend-lint
       - run: pixi run frontend-test # writes coverage/frontend/lcov.info for the scan below
