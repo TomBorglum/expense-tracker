@@ -8,8 +8,8 @@ _ORIGIN = "http://localhost:5173"
 
 
 def test_greeting_endpoint_returns_json() -> None:
-    # The hand-built payload. greeting.json stays the single source of truth, so the
-    # body is asserted against GREETING rather than a literal.
+    # The hand-built payload. The GREETING constant stays the single source of truth,
+    # so the body is asserted against it rather than a second copy of the wording.
     response = TestClient(create_app()).get("/api/greeting")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")

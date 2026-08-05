@@ -1,14 +1,7 @@
-import json
-from pathlib import Path
-from typing import cast
-
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import RequestResponseEndpoint
-
-_PACKAGE_DIR = Path(__file__).parent
-_GREETING_FILE = _PACKAGE_DIR / "greeting.json"
 
 # Security headers applied to every response. This app serves JSON and nothing else,
 # so the page-oriented directives a browser shell would need (script-src, style-src,
@@ -22,17 +15,9 @@ _SECURITY_HEADERS = {
 }
 
 
-def _load_greeting() -> str:
-    # json.loads returns Any; cast once here so the module-level constant is typed.
-    payload = cast(
-        dict[str, str], json.loads(_GREETING_FILE.read_text(encoding="utf-8"))
-    )
-    return payload["greeting"]
-
-
 # Single source of truth for the greeting. It reaches any client over the API below,
-# so this file is the one place the wording is written down.
-GREETING = _load_greeting()
+# so this line is the one place the wording is written down.
+GREETING = "Hello, World!"
 
 
 def create_app() -> FastAPI:
