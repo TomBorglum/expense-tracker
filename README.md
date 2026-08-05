@@ -20,7 +20,7 @@ expense-tracker/
   .github/                      # CI, release-please, dependabot
   backend/
     pyproject.toml              # hatchling, ruff, pytest, basedpyright
-    src/expense_tracker/        # create_app() factory, greeting.json
+    src/expense_tracker/        # create_app() factory, the whole API
     tests/
   frontend/
     package.json, pnpm-lock.yaml, pnpm-workspace.yaml
@@ -73,7 +73,7 @@ error state until something answers on 8000.
 
 | Route | What it serves |
 | --- | --- |
-| `GET /api/greeting` | `{"greeting": "Hello, World!"}`, read from `greeting.json` |
+| `GET /api/greeting` | `{"greeting": "Hello, World!"}` |
 
 That is the whole surface. There is no page route and no static mount - the frontend
 is a separate app - and no OpenAPI schema, `/docs` or `/redoc`: one hand-written route
@@ -104,8 +104,8 @@ A React 19 SPA built by vite and styled with Tailwind CSS v4, configured in CSS 
 and nothing in this repo consumes it. CI runs the build as a gate because tsc and
 vitest never exercise the bundler, but keeps nothing from it.
 
-`backend/src/expense_tracker/greeting.json` is the single source of truth for the
-greeting, and only Python reads it: the backend serves it from `GET /api/greeting`, and
+The `GREETING` constant in `backend/src/expense_tracker/__init__.py` is the single
+source of truth for the greeting: the backend serves it from `GET /api/greeting`, and
 the page fetches it at runtime with [TanStack Query](https://tanstack.com/query) in
 `frontend/src/api/greeting.ts`. Nothing generates a client from a schema, so the
 payload is written out by hand on both sides and the two must be changed together; a
@@ -254,9 +254,9 @@ SonarCloud scan.
 
 ## Configuration
 
-The backend has none: it reads no environment variables and no config files. Its only
-input is `greeting.json`, which ships inside the wheel. The frontend has exactly one,
-`VITE_API_BASE_URL` - see [Where the API lives](#where-the-api-lives).
+The backend has none: it reads no environment variables, no config files and no data
+files. The frontend has exactly one, `VITE_API_BASE_URL` - see
+[Where the API lives](#where-the-api-lives).
 
 ## Contributing
 
