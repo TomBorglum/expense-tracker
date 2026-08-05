@@ -27,6 +27,8 @@ packages = ["src/expense_tracker"]
 # resolves at all, that environment's pytest and ruff are already first on PATH.
 executor = "simple"
 
+# Alphabetical, matching the forwarder table in pixi.toml and what `poe` with no task
+# prints. Ordering by workflow instead would leave a new task no obviously right place.
 [tool.poe.tasks]
 # The REST API with the reloader, on uvicorn's default port 8000. It serves JSON and
 # nothing else - the page comes from `pixi run frontend-dev`, its counterpart on vite's
@@ -36,13 +38,13 @@ executor = "simple"
 # here means walking .pixi/ and node_modules/ to find 1891 files when the only one that
 # can ever matter is src/expense_tracker/__init__.py.
 dev = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
+format = "ruff format"
+format-check = "ruff format --check"
+lint = "ruff check"
+lint-fix = "ruff check --fix"
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 test = "pytest"
 typecheck = "basedpyright"
-lint = "ruff check"
-lint-fix = "ruff check --fix"
-format = "ruff format"
-format-check = "ruff format --check"
 
 [tool.ruff.lint]
 # Widen beyond ruff's default E/F: import sorting (I), pyupgrade (UP),
