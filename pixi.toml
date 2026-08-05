@@ -66,37 +66,44 @@ pnpm = "==11.18.0"
 # Each one names a task defined elsewhere and sets the cwd its runner needs; no command
 # body lives here. The prefix is what keeps one flat namespace unambiguous, and the two
 # groups never cross between backend/ and frontend/.
+#
+# ALPHABETICAL, which is also the order `pixi task list` prints - so the file and the
+# listing agree and a new task has exactly one correct place to go. The prefix keeps the
+# two stacks contiguous for free, since every backend- sorts before every frontend-.
+# Nothing here is ordered by workflow or cost; CI decides what runs when, and
+# .github/workflows/ci.yml explains why.
 [feature.test.tasks]
 # Backend -> [tool.poe.tasks] in backend/pyproject.toml. With cwd=backend, poe finds that
 # file unaided, so the forwarder needs no -C.
 backend-dev = { cmd = "poe dev", cwd = "backend" }
+backend-format = { cmd = "poe format", cwd = "backend" }
+backend-format-check = { cmd = "poe format-check", cwd = "backend" }
+backend-lint = { cmd = "poe lint", cwd = "backend" }
+backend-lint-fix = { cmd = "poe lint-fix", cwd = "backend" }
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 backend-test = { cmd = "poe test", cwd = "backend" }
 backend-typecheck = { cmd = "poe typecheck", cwd = "backend" }
-backend-lint = { cmd = "poe lint", cwd = "backend" }
-backend-lint-fix = { cmd = "poe lint-fix", cwd = "backend" }
-backend-format = { cmd = "poe format", cwd = "backend" }
-backend-format-check = { cmd = "poe format-check", cwd = "backend" }
 
 # Frontend -> the "scripts" block in frontend/package.json. `install` is a pnpm built-in
 # rather than a script, which is why it alone takes no `run`.
-frontend-install = { cmd = "pnpm install --frozen-lockfile", cwd = "frontend" }
+frontend-build = { cmd = "pnpm run build", cwd = "frontend" }
 # vite's dev server, the counterpart to backend-dev. The two run side by side: this one
 # serves the page, backend-dev answers its fetches from another origin.
 frontend-dev = { cmd = "pnpm run dev", cwd = "frontend" }
-frontend-build = { cmd = "pnpm run build", cwd = "frontend" }
-frontend-typecheck = { cmd = "pnpm run typecheck", cwd = "frontend" }
-# eslint, the frontend counterpart to backend-lint. Type-aware, so it needs the same
-# tsconfigs frontend-typecheck uses and costs about as much.
+frontend-format = { cmd = "pnpm run format", cwd = "frontend" }
+# The formatting gate. .zed/settings.json deliberately does not enable format_on_save, so
+# formatting is applied by frontend-format and checked here rather than by the editor.
+frontend-format-check = { cmd = "pnpm run format-check", cwd = "frontend" }
+frontend-install = { cmd = "pnpm install --frozen-lockfile", cwd = "frontend" }
+# eslint, the frontend counterpart to backend-lint. Type-aware, so it builds the same
+# full TS program frontend-typecheck does and then runs every rule over it - about twice
+# the cost, which is why CI puts it last of the frontend static gates.
 frontend-lint = { cmd = "pnpm run lint", cwd = "frontend" }
 frontend-lint-fix = { cmd = "pnpm run lint-fix", cwd = "frontend" }
 # vitest + coverage; writes coverage/frontend/lcov.info at the repo root for the
 # SonarCloud scan, mirroring how backend-test writes coverage.xml for Python.
 frontend-test = { cmd = "pnpm run test", cwd = "frontend" }
-frontend-format = { cmd = "pnpm run format", cwd = "frontend" }
-# The formatting gate. .zed/settings.json deliberately does not enable format_on_save, so
-# formatting is applied by frontend-format and checked here rather than by the editor.
-frontend-format-check = { cmd = "pnpm run format-check", cwd = "frontend" }
+frontend-typecheck = { cmd = "pnpm run typecheck", cwd = "frontend" }
 
 # Two environments on one solve-group:
 # - default: runtime + test tooling -> editor, local dev, CI, every task above
