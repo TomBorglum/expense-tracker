@@ -58,6 +58,15 @@ jobs:
       - run: pixi run backend-lint
       - run: pixi run backend-format-check
       - run: pixi run backend-typecheck
+      # The database the greeting is read from. initdb's a cluster into .pgdata/, starts
+      # it on 127.0.0.1:5433 and applies backend/schema.sql - the same one task a
+      # developer runs, which is why there is no `services:` block and no container
+      # here: the server is a conda-forge package in the same lock as everything else.
+      # After the static gates, so a lint or type error still surfaces before anything
+      # gets provisioned - the one place the cheapest-first rule above yields, because
+      # this provisions rather than checks. GitHub sets CI=true, which is what turns a
+      # database that failed to come up into a failure rather than a silent skip.
+      - run: pixi run backend-db-init
       - run: pixi run backend-test # writes coverage.xml for the scan below
       # Frontend gates. Independent of the Python ones above - the two stacks share
       # no build artifact, so neither group can break the other.

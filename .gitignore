@@ -1,6 +1,11 @@
 # Pixi environment
 .pixi/
 
+# The local PostgreSQL cluster: data directory, postgresql.conf and server.log.
+# Created by `pixi run db-init` and thrown away by `pixi run db-reset`. Nothing in here
+# is precious - backend/schema.sql can rebuild all of it.
+.pgdata/
+
 # Python bytecode
 __pycache__/
 *.py[cod]

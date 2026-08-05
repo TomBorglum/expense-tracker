@@ -1,7 +1,11 @@
-from fastapi import FastAPI, Request, Response
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import RequestResponseEndpoint
+
+from .db import lifespan, provide_greeting
 
 # Security headers applied to every response. This app serves JSON and nothing else,
 # so the page-oriented directives a browser shell would need (script-src, style-src,
@@ -15,16 +19,15 @@ _SECURITY_HEADERS = {
 }
 
 
-# Single source of truth for the greeting. It reaches any client over the API below,
-# so this line is the one place the wording is written down.
-GREETING = "Hello, World!"
-
-
 def create_app() -> FastAPI:
     # No OpenAPI schema and no docs routes. One hand-written JSON route does not earn
     # a generated document, and /docs, /redoc and /openapi.json would be public surface
-    # advertising it. The app still reads no configuration of any kind.
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    # advertising it.
+    #
+    # Still a no-arg factory, and still cheap: the lifespan is what opens the
+    # connection pool, so building an app touches no socket and reads no environment.
+    # `uvicorn --factory` and the whole HTTP suite depend on that.
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
     # Wraps the whole ASGI app. Registered before the CORS middleware below, which
     # makes it the inner of the two -- see the ordering note there.
@@ -43,13 +46,19 @@ def create_app() -> FastAPI:
     # The whole API. The payload is built by hand rather than derived from a
     # response_model: with openapi_url=None there is no schema to publish, so the shape
     # is declared here and mirrored by hand in frontend/src/api/greeting.ts. Change the
-    # two together.
+    # two together. Only the shape is duplicated - the wording lives in one row of the
+    # greeting table and is duplicated nowhere.
+    #
+    # Reading it through a dependency rather than inline is what lets the tests below
+    # swap PostgreSQL for a constant; see db.provide_greeting.
     @app.get("/api/greeting")
-    async def greeting() -> JSONResponse:  # pyright: ignore[reportUnusedFunction]  # registered via decorator
-        # no-store because the wording ships inside the wheel: a cached copy would
-        # outlive the deploy that changed it.
+    async def greeting(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        message: Annotated[str, Depends(provide_greeting)],
+    ) -> JSONResponse:
+        # no-store because the wording is now a row somebody can UPDATE: a cached copy
+        # would outlive the change.
         return JSONResponse(
-            {"greeting": GREETING}, headers={"Cache-Control": "no-store"}
+            {"greeting": message}, headers={"Cache-Control": "no-store"}
         )
 
     # Added last, so it is the outermost middleware: that is what lets it answer a
