@@ -33,8 +33,28 @@ jobs:
       # Every step below calls pixi, which forwards to the stack that owns the command
       # (poe in backend/pyproject.toml, pnpm scripts in frontend/package.json). CI knows
       # one entry point, not two.
-      # Cheapest gates first so a lint/type/format failure fails fast, before the
-      # JDK setup and the scan.
+      #
+      # ONE ORDERING RULE, BOTH STACKS: within a stack, static gates run cheapest first,
+      # then the test suite, then anything that builds. A broken change therefore fails on
+      # the fastest gate that can catch it, and everything after it - including the JDK
+      # setup and the scan below - never runs.
+      #
+      # That rule puts lint at opposite ends of the two lists, which is the point worth
+      # knowing rather than a slip. ruff is a native binary matching patterns and is the
+      # CHEAPEST backend gate; frontend eslint is type-aware (projectService +
+      # strictTypeChecked), so it builds the same full TypeScript program tsc does and
+      # then runs every rule over it - the PRICIEST frontend gate, roughly twice the type
+      # checker. Cold, as CI always runs them:
+      #
+      #   backend    lint ~0.2s   format-check ~0.2s   typecheck ~1.1s
+      #   frontend   format-check ~0.8s   typecheck ~1.8s   lint ~3.2s
+      #
+      # (Cold matters for tsc alone: it caches to node_modules/.tmp, and frontend-install
+      # rebuilds that directory every run, so the cache is never there to reuse. Warm, it
+      # is about a third of the figure above.)
+      #
+      # The backend's first two are a coin flip at that scale. It is the LAST position in
+      # each list that carries the weight, and the two disagree for a reason.
       - run: pixi run backend-lint
       - run: pixi run backend-format-check
       - run: pixi run backend-typecheck
@@ -44,8 +64,6 @@ jobs:
       - run: pixi run frontend-install
       - run: pixi run frontend-format-check
       - run: pixi run frontend-typecheck
-      # After frontend-typecheck: type-aware eslint builds a full TS program, so it is the
-      # priciest of the static gates and a plain type error should surface first.
       - run: pixi run frontend-lint
       - run: pixi run frontend-test # writes coverage/frontend/lcov.info for the scan below
       # Last of the frontend gates, and the only one that runs vite itself: tsc and
