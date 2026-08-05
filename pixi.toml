@@ -34,10 +34,9 @@ pytest-cov = "==7.0.0"
 httpx2 = "==2.9.1"
 basedpyright = "==1.39.8"
 ruff = "==0.15.21"
-# Frontend toolchain (vite/tailwind) and the language servers Zed is pinned to.
-# Previously arrived transitively via basedpyright; pinned explicitly since the
-# frontend build depends on it. Stays in the test feature, which is what keeps the
-# prod environment Node-free - and now nothing in the backend wants Node anyway.
+# Runs the frontend toolchain (vite/tailwind) and the language servers Zed is pinned
+# to. Kept in the test feature, which is what keeps the prod environment Node-free:
+# the backend ships no frontend assets and wants Node for nothing.
 nodejs = "==26.5.0"
 # The package manager, pinned here rather than via a "packageManager" field in
 # package.json: pnpm's pmOnFail defaults to "download", so that field would make pnpm
@@ -60,7 +59,7 @@ pnpm = "==11.18.0"
 # --reload-dir is not optional: without it uvicorn watches the whole working
 # directory, and its stat reloader rglobs for *.py and stats every hit four times a
 # second -- which here means walking .pixi/ and node_modules/ to find 1891 files when
-# only the 2 under backend/src/ can ever matter.
+# the only one that can ever matter is backend/src/expense_tracker/__init__.py.
 serve = "uvicorn expense_tracker:create_app --factory --reload --reload-dir backend/src"
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 test = { cmd = "pytest", cwd = "backend" }
@@ -89,8 +88,8 @@ web-lint-fix = { cmd = "pnpm run lint-fix", cwd = "frontend" }
 # SonarCloud scan, mirroring how `test` writes coverage.xml for Python.
 web-test = { cmd = "pnpm run test", cwd = "frontend" }
 web-format = { cmd = "pnpm run format", cwd = "frontend" }
-# Zed formats on save with the project's pinned prettier, so this is the gate that
-# keeps editor output and CI in agreement.
+# The formatting gate. .zed/settings.json deliberately does not enable format_on_save,
+# so formatting is applied by web-format and checked here rather than by the editor.
 web-format-check = { cmd = "pnpm run format-check", cwd = "frontend" }
 
 # Two environments on one solve-group:

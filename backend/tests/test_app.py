@@ -59,14 +59,13 @@ def test_cors_does_not_allow_credentials() -> None:
 
 
 def test_root_is_not_served() -> None:
-    # This backend is a REST API. It served a page shell once; nothing here should
-    # ever grow a route that returns HTML again.
+    # This backend is a REST API: no route here returns HTML.
     assert TestClient(create_app()).get("/").status_code == 404
 
 
 def test_static_files_are_not_served() -> None:
-    # The vite bundle used to be mounted here and shipped inside the wheel. The
-    # frontend owns its own build output now, so there is no mount to hit.
+    # The frontend owns its own build output, so there is no StaticFiles mount and
+    # nothing from the bundle ships inside the wheel.
     assert TestClient(create_app()).get("/static/assets/index.js").status_code == 404
 
 

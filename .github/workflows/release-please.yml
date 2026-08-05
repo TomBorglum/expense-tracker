@@ -1,7 +1,7 @@
 name: Release Please
 
 # Automates releases. On every push to main, release-please opens (or updates) a
-# single "chore: release X.Y.Z" PR that bumps CHANGELOG.md and the version
+# single "chore(main): release X.Y.Z" PR that bumps CHANGELOG.md and the version
 # manifest from the Conventional Commit messages since the last tag. Merging that
 # PR creates the git tag and the GitHub Release with the generated notes.
 #
