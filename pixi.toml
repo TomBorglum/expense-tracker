@@ -1,10 +1,16 @@
-# Environments and dependencies only. This manifest declares no tasks, deliberately:
-# each stack owns its commands in the file that already owns how its tools behave - the
-# poe tasks in backend/pyproject.toml, the "scripts" block in frontend/package.json. A
-# forwarding task here would add a name to look up and nothing else. Invoke either stack
-# from the repo root with `poe -C backend <task>` or `pnpm -C frontend run <script>`; the
-# full table is in README.md. pixi's job is to put both toolchains on PATH, which .envrc
-# does on directory entry and CI's setup-direnv does per job.
+# Two layers, on purpose.
+#
+# Each stack DEFINES its commands in the file that already owns how its tools behave:
+# the poe tasks in backend/pyproject.toml, the "scripts" block in frontend/package.json.
+# That keeps `cd backend && poe test` and `cd frontend && pnpm build` working, so neither
+# directory needs this file to be a runnable project.
+#
+# This manifest AGGREGATES them, one prefixed forwarder per command, so `pixi run` stays
+# the single entry point that spans both stacks - one list, one tab-completion, one thing
+# CI calls. The delegation is uniform: every task here forwards, none defines. That is
+# what makes the layer honest rather than a place command bodies hide.
+#
+# Adding a command means two edits: define it in the stack's manifest, forward it here.
 
 [workspace]
 name = "expense-tracker"
@@ -54,8 +60,46 @@ nodejs = "==26.5.0"
 # fetch its own version and bypass this pin. pixi is the single source of truth.
 pnpm = "==11.18.0"
 
+# Forwarders, in the test feature so they are present in default and absent from prod -
+# the lean prod environment has neither poe nor pnpm to forward to.
+#
+# Each one names a task defined elsewhere and sets the cwd its runner needs; no command
+# body lives here. The prefix is what keeps one flat namespace unambiguous, and the two
+# groups never cross between backend/ and frontend/.
+[feature.test.tasks]
+# Backend -> [tool.poe.tasks] in backend/pyproject.toml. With cwd=backend, poe finds that
+# file unaided, so the forwarder needs no -C.
+backend-serve = { cmd = "poe serve", cwd = "backend" }
+# Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
+backend-test = { cmd = "poe test", cwd = "backend" }
+backend-typecheck = { cmd = "poe typecheck", cwd = "backend" }
+backend-lint = { cmd = "poe lint", cwd = "backend" }
+backend-lint-fix = { cmd = "poe lint-fix", cwd = "backend" }
+backend-format = { cmd = "poe format", cwd = "backend" }
+backend-format-check = { cmd = "poe format-check", cwd = "backend" }
+
+# Frontend -> the "scripts" block in frontend/package.json. `install` is a pnpm built-in
+# rather than a script, which is why it alone takes no `run`.
+frontend-install = { cmd = "pnpm install --frozen-lockfile", cwd = "frontend" }
+# vite's dev server, the counterpart to backend-serve. The two run side by side: this one
+# serves the page, backend-serve answers its fetches from another origin.
+frontend-dev = { cmd = "pnpm run dev", cwd = "frontend" }
+frontend-build = { cmd = "pnpm run build", cwd = "frontend" }
+frontend-check = { cmd = "pnpm run check", cwd = "frontend" }
+# eslint, the frontend counterpart to backend-lint. Type-aware, so it needs the same
+# tsconfigs frontend-check uses and costs about as much.
+frontend-lint = { cmd = "pnpm run lint", cwd = "frontend" }
+frontend-lint-fix = { cmd = "pnpm run lint-fix", cwd = "frontend" }
+# vitest + coverage; writes coverage/frontend/lcov.info at the repo root for the
+# SonarCloud scan, mirroring how backend-test writes coverage.xml for Python.
+frontend-test = { cmd = "pnpm run test", cwd = "frontend" }
+frontend-format = { cmd = "pnpm run format", cwd = "frontend" }
+# The formatting gate. .zed/settings.json deliberately does not enable format_on_save, so
+# formatting is applied by frontend-format and checked here rather than by the editor.
+frontend-format-check = { cmd = "pnpm run format-check", cwd = "frontend" }
+
 # Two environments on one solve-group:
-# - default: runtime + test tooling -> editor, local dev, CI, both stacks' task runners
+# - default: runtime + test tooling -> editor, local dev, CI, every task above
 # - prod:    runtime only (default feature) -> the API and nothing else
 # Same solve-group keeps python pinned identically across both. prod is Node-free by
 # construction now that the backend ships no frontend assets.

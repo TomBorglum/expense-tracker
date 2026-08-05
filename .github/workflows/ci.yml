@@ -1,7 +1,7 @@
 name: CI
 
 # Single workflow for all PR/push gates plus the SonarCloud scan. Running them in
-# one job means the pixi env is built once and `poe -C backend test` produces
+# one job means the pixi env is built once and `pixi run backend-test` produces
 # coverage.xml once, which the scan step below reuses (no duplicate test run across
 # workflows).
 
@@ -27,34 +27,32 @@ jobs:
         with:
           # Full history so SonarCloud can attribute issues to the right commits.
           fetch-depth: 0
-      # Activate the environment declared in .envrc (use pixi) - the same .envrc used
-      # for local development. It runs `pixi install` and appends the environment's bin
-      # to $GITHUB_PATH, so the steps below call poe, pnpm and the tools they drive
-      # directly; nothing here needs `pixi run`.
+      # Activate the environment declared in .envrc (use pixi), exposing pixi to
+      # the steps below - the same .envrc used for local development.
       - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@7823d83c64795945f41111716373bda3c0ae5d45 # v1.4.0
-      # Each stack's commands live in its own manifest - backend/pyproject.toml and
-      # frontend/package.json - and -C runs them from the repo root without a cd.
+      # Every step below calls pixi, which forwards to the stack that owns the command
+      # (poe in backend/pyproject.toml, pnpm scripts in frontend/package.json). CI knows
+      # one entry point, not two.
       # Cheapest gates first so a lint/type/format failure fails fast, before the
       # JDK setup and the scan.
-      - run: poe -C backend lint
-      - run: poe -C backend format-check
-      - run: poe -C backend typecheck
-      - run: poe -C backend test # writes coverage.xml for the scan below
+      - run: pixi run backend-lint
+      - run: pixi run backend-format-check
+      - run: pixi run backend-typecheck
+      - run: pixi run backend-test # writes coverage.xml for the scan below
       # Frontend gates. Independent of the Python ones above - the two stacks share
-      # no build artifact, so neither group can break the other. `install` is a pnpm
-      # built-in, not a script, so it takes no `run`.
-      - run: pnpm -C frontend install --frozen-lockfile
-      - run: pnpm -C frontend run format-check
-      - run: pnpm -C frontend run check
-      # After check: type-aware eslint builds a full TS program, so it is the
+      # no build artifact, so neither group can break the other.
+      - run: pixi run frontend-install
+      - run: pixi run frontend-format-check
+      - run: pixi run frontend-check
+      # After frontend-check: type-aware eslint builds a full TS program, so it is the
       # priciest of the static gates and a plain type error should surface first.
-      - run: pnpm -C frontend run lint
-      - run: pnpm -C frontend run test # writes coverage/frontend/lcov.info for the scan below
+      - run: pixi run frontend-lint
+      - run: pixi run frontend-test # writes coverage/frontend/lcov.info for the scan below
       # Last of the frontend gates, and the only one that runs vite itself: tsc and
       # vitest between them never exercise the bundler, so without this a build-time
       # failure would only surface on someone's machine. Nothing is kept from the
       # output - frontend/dist/ is gitignored.
-      - run: pnpm -C frontend run build
+      - run: pixi run frontend-build
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with
       # sonar.scanner.skipJreProvisioning below.

@@ -8,8 +8,8 @@
 //   - Frontend: Zed's built-in Tailwind and TypeScript adapters install their own npm
 //     "latest" copies under ~/.local/share/zed/; the binary.path overrides below point
 //     them at ./frontend/node_modules instead (paths here are relative to the worktree
-//     root, not to this file). Run `pnpm -C frontend install --frozen-lockfile` first,
-//     or the paths do not exist yet and the language servers will not start.
+//     root, not to this file). Run `pixi run frontend-install` first, or the paths do
+//     not exist yet and the language servers will not start.
 //   - Backend: basedpyright is pinned to the pixi env for the same reason. Its CONFIG
 //     needs no help here - see the note in the basedpyright block.
 //
@@ -19,15 +19,15 @@
 //
 // Not set on purpose:
 //   format_on_save   - left to your user settings. Formatting is applied by
-//                      `pnpm -C frontend run format` and gated in CI by the
-//                      `format-check` script beside it.
+//                      `pixi run frontend-format` and gated in CI by
+//                      frontend-format-check.
 //   formatter        - Zed's default "auto" already picks the pinned prettier.
 //   code_actions_on_format.source.fixAll.eslint
 //                    - would let eslint rewrite the buffer on save, and Zed runs the
 //                      formatter AFTER the code action, so prettier would overwrite
 //                      whatever eslint just fixed. Prettier stays the only thing that
 //                      formats; apply eslint's fixes with
-//                      `pnpm -C frontend run lint-fix`.
+//                      `pixi run frontend-lint-fix`.
 //   language_servers - ["!typescript-language-server", "vtsls", "..."] is already
 //                      Zed's default for TSX/TypeScript/JavaScript.
 //   load_direnv      - "direct" is already Zed's default; that is what puts pixi's
@@ -56,7 +56,7 @@
       //
       // That is Zed's behaviour, not a guarantee this repo can make. If your editor
       // ever disagrees with CI about Python, check that first: capture the server's
-      // initialize request, or just trust `poe -C backend typecheck`, the authority.
+      // initialize request, or just trust `pixi run backend-typecheck`, the authority.
       // See "Editor setup (Zed)" in README.md.
       "binary": {
         // Pinned by pixi.toml, for the same reason as the frontend servers below.

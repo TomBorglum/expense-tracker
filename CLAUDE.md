@@ -33,30 +33,32 @@ hand-edit versions, git tags, or `CHANGELOG.md`.**
 
 ## Commands
 
-**Each stack owns its commands, in the manifest that already owns how its tools
-behave.** The backend's are poe tasks in `backend/pyproject.toml`; the frontend's are
-the `scripts` block in `frontend/package.json`. `pixi.toml` declares **no** tasks - it
-provides the environment, and a forwarding task there would only add a name to look up.
-Add a new command to the stack that runs it, never to `pixi.toml`.
+**Commands live in two layers, and adding one means editing both.**
 
-Both runners take `-C`, so everything runs from the repo root with no `cd`, and `-C`
-also sets the working directory:
+1. **The stack that runs it defines it**, in the manifest that already owns how its
+   tools behave: poe tasks in `backend/pyproject.toml`, the `scripts` block in
+   `frontend/package.json`. This is where the command body goes.
+2. **`pixi.toml` forwards to it**, one prefixed one-liner per command, so `pixi run`
+   stays the single entry point spanning both stacks.
 
-```sh
-poe -C backend <task>          # poe -C backend with no task lists them
-pnpm -C frontend run <script>  # pnpm -C frontend run lists them
-```
+`pixi run <task>` is what CI calls and what you should reach for. Every task declares
+its own `cwd`, so it behaves identically wherever you invoke it. Full table in
+[`README.md`](README.md#development-tasks).
 
-Full table in [`README.md`](README.md#development-tasks).
+**The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Never
+put a command body there; that is what would make the layer a place definitions hide.
+Both stacks also stay runnable on their own terms (`cd backend && poe test`,
+`cd frontend && pnpm build`), which is what keeps each directory a standalone project.
 
 Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in order
 (cheapest first, so it fails fast):
 
 ```sh
-poe -C backend lint && poe -C backend format-check && poe -C backend typecheck &&
-poe -C backend test && pnpm -C frontend install --frozen-lockfile &&
-pnpm -C frontend run format-check && pnpm -C frontend run check &&
-pnpm -C frontend run lint && pnpm -C frontend run test && pnpm -C frontend run build
+pixi run backend-lint && pixi run backend-format-check &&
+pixi run backend-typecheck && pixi run backend-test &&
+pixi run frontend-install && pixi run frontend-format-check &&
+pixi run frontend-check && pixi run frontend-lint && pixi run frontend-test &&
+pixi run frontend-build
 ```
 
 The two halves are independent, so a change to one stack can only fail that stack's

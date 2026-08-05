@@ -12,5 +12,5 @@ allowBuilds:
   # msw's install script only copies the browser service worker (mockServiceWorker.js)
   # into a public directory. The tests use msw/node, which needs none of it, so the
   # script is denied rather than left undecided -- pnpm exits non-zero while a build
-  # script is unanswered, which fails the `pnpm install` step in CI.
+  # script is unanswered, which fails `pixi run frontend-install` in CI.
   msw: false
