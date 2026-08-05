@@ -46,8 +46,8 @@ jobs:
       - run: pixi run web-test # writes coverage/frontend/lcov.info for the scan below
       # Last of the frontend gates, and the only one that runs vite itself: tsc and
       # vitest between them never exercise the bundler, so without this a build-time
-      # failure would only surface on someone's machine. It replaces web-verify, which
-      # ran the build for a different reason (drift against the committed bundle).
+      # failure would only surface on someone's machine. Nothing is kept from the
+      # output - frontend/dist/ is gitignored.
       - run: pixi run web-build
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with

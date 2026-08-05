@@ -15,7 +15,7 @@
 //
 // Before concluding a pin is broken: over a remote/WSL backend Zed's Server Info
 // panel shows "Binary: Unknown" for vtsls even when it is working correctly. See
-// "Known Zed quirk" in README.md for how to verify properly (use `ps`).
+// "Editor setup (Zed)" in README.md for how to verify properly (use `ps`).
 //
 // Not set on purpose:
 //   format_on_save   - left to your user settings. Formatting is applied by

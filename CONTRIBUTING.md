@@ -2,25 +2,22 @@
 
 Releases are automated with [release-please](https://github.com/googleapis/release-please).
 It reads the commit history on `main`, decides the next version, and maintains a
-"chore(main): release X.Y.Z" pull request that updates `CHANGELOG.md` and the
-version. Merging that PR tags the version and publishes the GitHub Release.
-`CHANGELOG.md` does not exist yet - release-please creates it in the first release
-PR it opens, and no release has been cut so far.
+"chore(main): release X.Y.Z" pull request that updates `CHANGELOG.md` and the version.
+Merging that PR tags the version and publishes the GitHub Release. release-please
+creates `CHANGELOG.md` itself, in the first release PR it opens.
 
-For that to work, commits must follow [Conventional Commits](https://www.conventionalcommits.org/).
-This document is the guard rail for how to name commits and branches so the
-automation does the right thing.
+For that to work, commits must follow
+[Conventional Commits](https://www.conventionalcommits.org/). This document is the
+guard rail for naming commits and branches so the automation does the right thing.
 
 ## Soft branch protection
 
 This repo is on the GitHub **free plan**, so branch protection rules and required
-status checks **cannot be enforced** on the private repository. The rules below are
-therefore **soft rules**: they are followed by discipline (both the maintainer and
-Claude), not by GitHub blocking a non-compliant merge. Treat them as if they were
-enforced. The mirror repo `wsl-cloud-init` enforces the same rules with a
-repository ruleset; we keep parity here manually.
-
-The hard rules, in short:
+status checks **cannot be enforced** on a private repository. The rules below are
+therefore **soft rules**: followed by discipline, not by GitHub blocking a
+non-compliant merge. Treat them as if they were enforced. The sibling repo
+`wsl-cloud-init` enforces the same rules with a repository ruleset; we keep parity
+here manually.
 
 - **Never push directly to `main`.** Every change lands through a pull request.
 - **Squash-merge** (or rebase); **never a merge commit** (see the exception below).
@@ -47,19 +44,17 @@ gh pr merge --squash --delete-branch
 <optional footer - BREAKING CHANGE:, Refs #123, Co-Authored-By:>
 ```
 
-The first line (the *subject*) is what release-please parses. Keep it lowercase,
-in the imperative mood ("add", not "added" or "adds"), with no trailing period,
-and ideally under ~72 characters.
+The first line (the *subject*) is what release-please parses. Keep it lowercase, in
+the imperative mood ("add", not "added" or "adds"), with no trailing period, and
+ideally under ~72 characters.
 
 ## Types
 
-These are the types configured in [`release-please-config.json`](release-please-config.json).
-A type does two independent things: it selects the changelog section the change
-appears under, and - because release-please treats any commit in a **visible**
-(non-hidden) section as a *releasable unit* - it decides whether the change can
-cut a release on its own. We keep only `feat`, `fix`, and `deps` visible, so only
-those (plus any breaking change) cut releases; every other type is hidden and
-merely rides along.
+These are the types configured in
+[`release-please-config.json`](release-please-config.json). A type selects the
+changelog section, and - because release-please treats any commit in a **visible**
+section as a releasable unit - decides whether the change can cut a release on its
+own. Only `feat`, `fix` and `deps` are visible.
 
 | Type | Example | Changelog section | Cuts a release? |
 | --- | --- | --- | --- |
@@ -73,27 +68,24 @@ merely rides along.
 | `ci` | `ci: pin actions by sha` | *(hidden)* | no - rides along |
 | `build` `refactor` `style` `test` | `refactor: extract a helper` | *(hidden)* | no - rides along |
 
-A hidden type does not trigger a release on its own and does not appear in the
-notes either. A PR containing only hidden types will not open a release PR until a
-`feat`/`fix`/`deps` lands.
+A hidden type neither triggers a release nor appears in the notes. A PR containing
+only hidden types will not open a release PR until a `feat`/`fix`/`deps` lands.
 
-> **Visibility = releasability.** If you un-hide a section in
-> `release-please-config.json`, commits of that type will start cutting releases.
-> That is deliberate for `deps`; be intentional before un-hiding anything else
-> (a `docs:`-only change cutting a release is usually noise).
+> **Visibility = releasability.** Un-hiding a section in
+> `release-please-config.json` makes commits of that type start cutting releases.
+> That is deliberate for `deps`; be intentional before un-hiding anything else.
 
 ### `deps:` vs `ci:`
 
-**If the change alters what a user receives when they run the application, it's
-`deps:` (or `feat`/`fix`); if it only touches the build or CI, it's `ci:`/`chore:`.**
-That is why the `update-python.yml` workflow that bumps the shipped `pixi.toml`
-python pin uses `deps:` (a patch release), while Dependabot's GitHub Actions bumps
-use `ci:` (they never reach a running application).
+**If the change alters what a user receives when they run the application, it is
+`deps:` (or `feat`/`fix`); if it only touches the build or CI, it is `ci:`/`chore:`.**
+That is why `update-python.yml`, which bumps the shipped `pixi.toml` python pin, uses
+`deps:`, while Dependabot's GitHub Actions bumps use `ci:`.
 
 ## Breaking changes
 
-A breaking change forces a **major** bump (2.0.0). Mark it either with a `!`
-after the type, or with a `BREAKING CHANGE:` footer:
+A breaking change forces a **major** bump (2.0.0). Mark it either with a `!` after
+the type, or with a `BREAKING CHANGE:` footer:
 
 ```
 feat!: drop support for the old import format
@@ -107,32 +99,26 @@ BREAKING CHANGE: pre-1.0 CSV imports are no longer accepted.
 
 ## Squash merges
 
-Pull requests are **squash-merged**, so the whole branch collapses into a single
-commit on `main` whose subject is taken from the **PR title** - the individual
-commit messages on the branch are discarded. Therefore:
-
-> **The PR title must be a valid Conventional Commit.**
-
-A PR titled `Update budget code` (no type) is invisible to release-please and
-will neither appear in the changelog nor bump the version. Title it
-`fix: ...` / `feat: ...` instead.
+Pull requests are **squash-merged**: the branch collapses into one commit on `main`
+whose subject is the **PR title**, and the branch's own commit messages are
+discarded. So the PR title must be a valid Conventional Commit - a PR titled
+`Update budget code` is invisible to release-please and will neither appear in the
+changelog nor bump the version.
 
 The one thing release-please still reads from a squash commit's body is a
 `BREAKING CHANGE:` footer, so put that in the PR description when it applies.
 
 ### Multiple changelog entries from one branch
 
-A squash-merged PR yields exactly one changelog entry: its title. So prefer
-**focused PRs** - one logical change, one type. If you genuinely need a single
-branch to produce several separate entries (e.g. several `feat:` lines), merge
-that PR with a **merge commit** instead of a squash, so each Conventional Commit
-on the branch is preserved and parsed individually. This is the only case where a
-merge commit is acceptable.
+A squash-merged PR yields exactly one changelog entry, so prefer **focused PRs**:
+one logical change, one type. If a single branch genuinely has to produce several
+entries, merge it with a **merge commit** so each Conventional Commit on the branch
+is parsed individually. This is the only case where a merge commit is acceptable.
 
 ## Version selection
 
-release-please aggregates **every commit merged since the last release** (across
-all PRs, not just one branch) and applies the highest-impact bump:
+release-please aggregates **every commit merged since the last release** (across all
+PRs, not just one branch) and applies the highest-impact bump:
 
 ```
 any  feat! / BREAKING CHANGE       ->  MAJOR
@@ -144,10 +130,8 @@ else only ride-along types         ->  no release
 
 ## Branch names
 
-release-please ignores branch names entirely - it only reads commit subjects and
-PR titles on `main` (its own release branch, `release-please--branches--main`, is
-the exception, and it manages that one itself). Branch names are therefore a
-human convention only. Mirror the commit type for readability:
+release-please ignores branch names entirely - it reads only commit subjects and PR
+titles on `main`. Branch names are a human convention: mirror the commit type.
 
 ```
 <type>/<short-kebab-description>
@@ -165,9 +149,9 @@ Optionally prefix an issue number: `feat/123-monthly-budget-report`.
 1. Open a PR with a Conventional Commit **title** and let the SonarCloud check pass.
 2. Merge it (squash). release-please opens or updates the **chore(main): release
    X.Y.Z** PR.
-3. Merge that release PR - the version is tagged and the GitHub Release is
-   published automatically. No manual tagging, and never hand-edit the version,
-   tags, or `CHANGELOG.md`.
+3. Merge that release PR - the version is tagged and the GitHub Release is published
+   automatically. No manual tagging, and never hand-edit the version, tags, or
+   `CHANGELOG.md`.
 
 ## ASCII-only source
 
