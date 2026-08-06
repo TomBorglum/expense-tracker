@@ -5,8 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import RequestResponseEndpoint
 
-# The abstraction and the failure mode, never the implementation - which module builds
-# the repository is deps.py's business.
+# The contract and the failure mode. Building the repository is deps.py's business.
 from .db import GreetingRepository, GreetingUnavailableError
 from .deps import lifespan, provide_greeting_repository
 
@@ -52,8 +51,8 @@ def create_app() -> FastAPI:
     # two together. Only the shape is duplicated - the wording lives in one row of the
     # greeting table and is duplicated nowhere.
     #
-    # Reading it through an injected repository rather than inline is what lets the
-    # tests swap PostgreSQL for a fake; see deps.provide_greeting_repository.
+    # The repository is injected so the tests can swap PostgreSQL for a fake; see
+    # deps.provide_greeting_repository.
     @app.get("/api/greeting")
     async def greeting(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
         greetings: Annotated[GreetingRepository, Depends(provide_greeting_repository)],

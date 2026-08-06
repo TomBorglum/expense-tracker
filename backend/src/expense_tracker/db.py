@@ -44,15 +44,11 @@ class Greeting(Base):
 class GreetingRepository(ABC):
     """The contract a caller depends on in order to read the greeting.
 
-    An ABC rather than a Protocol, so implementations have to subclass it: the coupling
-    lands on the line a reader looks at, and a class that merely matches the shape is
-    not silently accepted in a repository's place.
+    Implementations subclass it. Matching the shape is not enough, so the coupling is
+    always on the line a reader sees.
 
-    @abstractmethod is what holds that up. Without it the `...` below is an ordinary
-    method returning None, and a subclass implementing nothing would be accepted by the
-    type checker - ruff's B027 is what stops anyone removing it. The body stays on this
-    line rather than becoming `raise NotImplementedError`, which would be a statement
-    coverage counts and nothing ever executes.
+    @abstractmethod is what enforces that: without it the `...` below is an ordinary
+    method returning None. Ruff's B027 rejects the decorator's removal.
     """
 
     @abstractmethod

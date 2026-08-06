@@ -98,8 +98,6 @@ def provide_greeting_repository(
     security-header and 404 tests never touch a database; only
     tests/test_greeting_postgres.py, behind the `postgres` marker, gets the real one.
 
-    The return annotation is the contract, not the class being constructed, so callers
-    depend on the interface and never name the implementation. What checks the two agree
-    is PostgresGreetingRepository subclassing it explicitly, not this line.
+    Returns the contract, so callers never name the implementation.
     """
     return PostgresGreetingRepository(session)

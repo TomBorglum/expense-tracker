@@ -12,16 +12,13 @@ from expense_tracker.deps import provide_greeting_repository
 class _FakeGreetingRepository(GreetingRepository):
     """Stands in for the real repository without a session or a server.
 
-    Subclasses the contract, like PostgresGreetingRepository does. GreetingRepository is
-    an ABC, so that is required rather than conventional - a look-alike that matched the
-    shape without inheriting would be rejected. Renaming or dropping the method below
-    fails the build, and dropping it fails at instantiation even without the type
-    checker.
+    Subclassing GreetingRepository is required, not a courtesy: renaming or dropping the
+    method below fails the build.
     """
 
     # Annotated at class level for the same reason PostgresGreetingRepository._session
-    # is:
-    # reportUnannotatedClassAttribute wants every attribute of a non-final class typed.
+    # is: reportUnannotatedClassAttribute wants every attribute of a non-final class
+    # typed.
     _message: str
 
     def __init__(self, message: str) -> None:

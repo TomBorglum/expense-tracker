@@ -92,25 +92,18 @@ Break one of these and CI goes red on an otherwise correct change.
   the repository as `GreetingUnavailableError`, and the handler registered in
   `create_app()` is the only place that turns it into a 503. Putting an `HTTPException`
   back in `db.py` is what this split exists to prevent.
-- **Every `GreetingRepository` subclasses it explicitly.** `PostgresGreetingRepository`
-  in `db.py` and `_FakeGreetingRepository` in `conftest.py` both name it as a base class
-  and carry `@override`, rather than satisfying it structurally. That is what puts the
-  coupling on the line a reader sees, and what makes drift a build failure: a renamed
-  method fails at the method (`no base method of same name`), a missing one at
-  construction (`Cannot instantiate abstract class`), a sync one at the signature
-  (`reportIncompatibleMethodOverride`). A new implementation or test double inherits too,
-  and because `GreetingRepository` is an `ABC` that is enforced rather than conventional:
-  a look-alike that matches the shape without inheriting is rejected
-  (`reportReturnType`), and a subclass missing the method raises `TypeError` at
-  instantiation even with the type checker bypassed. That matters because
-  `dependency_overrides` is an untyped dict and nothing else would check it.
+- **Every repository subclasses `GreetingRepository` and carries `@override`.**
+  `PostgresGreetingRepository` in `db.py` and `_FakeGreetingRepository` in `conftest.py`
+  do; a new implementation or test double does too. The base class is an `ABC`, so this
+  is enforced, not a convention - a look-alike that matches the shape without inheriting
+  is rejected. It has to be enforced somewhere, because `dependency_overrides` is an
+  untyped dict and would accept anything.
 - **`@abstractmethod` on `GreetingRepository` is load-bearing.** Without it the `...`
-  body is an ordinary method returning `None`, and a subclass implementing nothing is
-  accepted in silence by basedpyright. Ruff is what guards it, and does so three times
-  over: removing the decorator raises `B027` on the method, `B024` on the class, and
-  `F401` on the now-unused import. `pixi run backend-lint` is a CI gate, which is why no
-  test duplicates this. Keep the body as a same-line `...`: `raise NotImplementedError`
-  would be a statement coverage counts and nothing ever executes.
+  body is an ordinary method returning `None` and an empty subclass passes. Removing it
+  fails `pixi run backend-lint` three ways: `B027` on the method, `B024` on the class,
+  `F401` on the unused import. That gate is why no test asserts it. Keep the body a
+  same-line `...`; `raise NotImplementedError` would be a statement coverage counts and
+  nothing executes.
 - **The HTTP suite never touches PostgreSQL.** `backend/tests/conftest.py` overrides
   the `provide_greeting_repository` dependency with a fake repository; only
   `backend/tests/test_greeting_postgres.py`, behind the registered `postgres` marker,
