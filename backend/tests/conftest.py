@@ -1,3 +1,5 @@
+from typing import override
+
 import pytest
 from fastapi import FastAPI
 from starlette.testclient import TestClient
@@ -7,11 +9,12 @@ from expense_tracker.db import GreetingRepository
 from expense_tracker.deps import provide_greeting_repository
 
 
-class _FakeGreetingRepository:
-    """Stands in for a GreetingRepository without a session or a server.
+class _FakeGreetingRepository(GreetingRepository):
+    """Stands in for the real repository without a session or a server.
 
-    Satisfies the Protocol structurally, so it inherits from nothing. What checks it is
-    the annotated local in the app fixture below, not this class declaration.
+    Subclasses the contract explicitly, like PostgresGreetingRepository does, so this
+    line is what tells a reader the two are coupled and the type checker what to hold
+    them to. Renaming or dropping the method below fails the build.
     """
 
     # Annotated at class level for the same reason PostgresGreetingRepository._session
@@ -22,6 +25,7 @@ class _FakeGreetingRepository:
     def __init__(self, message: str) -> None:
         self._message = message
 
+    @override
     async def get_current_greeting(self) -> str:
         return self._message
 
@@ -46,11 +50,9 @@ def app(greeting_text: str) -> FastAPI:
     it never runs and no session is ever opened.
     """
     application = create_app()
-    # Annotated deliberately: dependency_overrides is an untyped dict, so this local is
-    # the only place the fake is checked against the Protocol the real repository
-    # satisfies. Drop the annotation and the two can drift in silence.
-    fake: GreetingRepository = _FakeGreetingRepository(greeting_text)
-    application.dependency_overrides[provide_greeting_repository] = lambda: fake
+    application.dependency_overrides[provide_greeting_repository] = lambda: (
+        _FakeGreetingRepository(greeting_text)
+    )
     return application
 
 

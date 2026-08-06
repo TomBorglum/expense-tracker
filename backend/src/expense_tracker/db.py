@@ -4,7 +4,7 @@ Persistence only. A caller supplies a session and handles one exception; what it
 with the failure is its own business.
 """
 
-from typing import Protocol
+from typing import Protocol, override
 
 from sqlalchemy import Text, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -41,18 +41,23 @@ class Greeting(Base):
 
 
 class GreetingRepository(Protocol):
-    """What a caller needs in order to read the greeting.
+    """The contract a caller depends on in order to read the greeting.
 
-    A Protocol rather than a base class: an implementation satisfies this by shape, so
-    the test double is checked against it without inheriting from anything. Not
-    @runtime_checkable - nothing isinstance-checks it, and static checking needs no
-    decorator.
+    Implementations here subclass it explicitly rather than relying on structural
+    typing. That is deliberate: it puts the coupling on the line a reader looks at, and
+    it cannot be lost by tidying away an annotation elsewhere. A subclass that fails to
+    implement the method below is rejected by basedpyright, which CI gates on.
+
+    The `...` body is load-bearing - it is what makes an incomplete subclass abstract to
+    the type checker. Not @abstractmethod, which basedpyright refuses inside a Protocol
+    (reportInvalidAbstractMethod, "add ABC to its base classes"), and not
+    @runtime_checkable, because nothing isinstance-checks this.
     """
 
     async def get_current_greeting(self) -> str: ...
 
 
-class PostgresGreetingRepository:
+class PostgresGreetingRepository(GreetingRepository):
     """Reads the greeting through a session it is given and does not own."""
 
     # Declared at class level because recommended mode's reportUnannotatedClassAttribute
@@ -63,6 +68,7 @@ class PostgresGreetingRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    @override
     async def get_current_greeting(self) -> str:
         """The greeting text, or GreetingUnavailableError if there is none to give.
 

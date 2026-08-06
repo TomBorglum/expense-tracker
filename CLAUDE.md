@@ -92,14 +92,20 @@ Break one of these and CI goes red on an otherwise correct change.
   the repository as `GreetingUnavailableError`, and the handler registered in
   `create_app()` is the only place that turns it into a 503. Putting an `HTTPException`
   back in `db.py` is what this split exists to prevent.
-- **Two annotations are the only thing checking the repository contract.**
-  `GreetingRepository` is a `Protocol`, satisfied structurally, so nothing inherits from
-  it and nothing is checked at a class declaration. What checks it is
-  `provide_greeting_repository`'s `-> GreetingRepository` return annotation for the real
-  implementation, and the annotated `fake: GreetingRepository` local in `conftest.py`'s
-  `app` fixture for the test double - `dependency_overrides` is an untyped dict, so
-  without that local the fake and the real class drift in silence. Neither annotation is
-  decoration; do not narrow or drop either.
+- **Every `GreetingRepository` subclasses it explicitly.** `PostgresGreetingRepository`
+  in `db.py` and `_FakeGreetingRepository` in `conftest.py` both name it as a base class
+  and carry `@override`, rather than satisfying it structurally. That is what puts the
+  coupling on the line a reader sees, and what makes drift a build failure: a renamed
+  method fails at the method (`no base method of same name`), a missing one at
+  construction (`Cannot instantiate abstract class`), a sync one at the signature
+  (`reportIncompatibleMethodOverride`). A new implementation or test double inherits too;
+  it is not optional, because `dependency_overrides` is an untyped dict and nothing else
+  would check it.
+- **The Protocol's `...` bodies are load-bearing.** They are what make an incomplete
+  subclass abstract to basedpyright. `@abstractmethod` is not an option here -
+  basedpyright rejects it inside a `Protocol` (`reportInvalidAbstractMethod`), and
+  `Protocol, ABC` is illegal - so enforcement is static only; nothing raises at runtime.
+  `pixi run backend-typecheck` is the gate that makes that sufficient.
 - **The HTTP suite never touches PostgreSQL.** `backend/tests/conftest.py` overrides
   the `provide_greeting_repository` dependency with a fake repository; only
   `backend/tests/test_greeting_postgres.py`, behind the registered `postgres` marker,
