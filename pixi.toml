@@ -90,6 +90,19 @@ PGPORT = "5433"
 PGUSER = "expense_tracker"
 PGDATABASE = "expense_tracker"
 
+# The one dependency in this file that is not conda-pinned, and the reason is the recipe
+# rather than the tool. import-linter 2.11 moved fastapi and uvicorn behind a "ui" extra,
+# for a browser graph UI nothing here runs. conda has no notion of extras, so the
+# conda-forge recipe still carries both as hard dependencies - plus nox, its own test
+# runner. Taking it from there would drag in the fastapi[standard] bundle rejected at the
+# top of this file, and a second HTTP client beside the httpx2 pin above. From PyPI it
+# declares four: click, grimp, rich, typing-extensions.
+#
+# Test feature like ruff and basedpyright: prod runs the app, it does not check how it is
+# wired. Pinned exactly, the same rule the conda tables follow.
+[feature.test.pypi-dependencies]
+import-linter = "==2.13"
+
 # Forwarders, in the test feature so they are present in default and absent from prod -
 # the lean prod environment has neither poe nor pnpm to forward to.
 #

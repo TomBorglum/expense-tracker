@@ -102,7 +102,18 @@ db-stop.shell = 'pg_ctl --pgdata="$POE_ROOT/../.pgdata" --mode=fast --wait stop 
 dev = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
 format = "ruff format"
 format-check = "ruff format --check"
-lint = "ruff check"
+# Two linters, one gate: ruff over each file, then import-linter over the graph they
+# form, against [tool.importlinter] below. The imports are just another artifact to lint,
+# so they do not get their own task. import-linter's cwd is this directory, which is how
+# it finds its config unaided - no --config flag, and no config file at the repo root.
+#
+# ruff first, and not only because it is the cheaper of the two: an import that violates
+# a contract is usually also unused, so F401 names the offending line before the graph is
+# even built. A sequence stops at the first failure, so that is the error you see.
+lint.sequence = [{ cmd = "ruff check" }, { cmd = "lint-imports" }]
+# Only ruff. import-linter has no fixer, and could not have a useful one - where a new
+# module belongs in the layer order is a design decision, not a mechanical edit. So this
+# is deliberately not the inverse of `lint`.
 lint-fix = "ruff check --fix"
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 test = "pytest"
@@ -113,6 +124,65 @@ typecheck = "basedpyright"
 # bugbear (B), simplify (SIM), and Ruff-native rules (RUF). Target version is
 # inferred from [project].requires-python.
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+# The dependency order between this package's modules, which until now was prose in
+# CLAUDE.md and two module docstrings and enforced by nothing. ruff cannot cover it:
+# TID251 bans a name project-wide, so it cannot say "db may not import fastapi but
+# __init__ may", and ruff builds no cross-module graph, so it sees no cycles at all.
+[tool.importlinter]
+root_package = "expense_tracker"
+# Needed by the "db knows nothing about HTTP" contract, which names packages outside the
+# root. Off by default, in which case only intra-package imports are graphed.
+include_external_packages = true
+
+# The stack, top to bottom. The container is the package itself, so the layer names are
+# relative to it: deps may import db, and never the reverse.
+#
+# __init__.py is the container's own module rather than one of its children, so it is not
+# a layer and is unconstrained - it sits at the top and imports both. The contract that
+# stops anything importing back into it is below.
+[[tool.importlinter.contracts]]
+name = "expense_tracker layers: deps above db"
+type = "layers"
+containers = ["expense_tracker"]
+layers = ["deps", "db"]
+# A module added under src/expense_tracker/ that is not named above breaks this contract.
+# That is the point: the gate covers new code by default instead of quietly ceasing to,
+# so where a new module sits in the stack is a decision somebody has to make rather than
+# one they can skip.
+exhaustive = true
+
+# The "db.py imports no fastapi" half of the invariant, which the layers contract cannot
+# express because fastapi is outside the root package. db.py raises
+# GreetingUnavailableError and knows no status codes; the handler in create_app() is the
+# only place that turns it into a 503. starlette is named too - it is what an
+# HTTPException import reaches through, and fastapi re-exports from it.
+[[tool.importlinter.contracts]]
+name = "db knows nothing about HTTP"
+type = "forbidden"
+source_modules = ["expense_tracker.db"]
+forbidden_modules = ["fastapi", "starlette"]
+
+# Nothing inside the package may import the package root, which is the one cycle the
+# layers contract leaves open - a container is not one of its own layers.
+# as_packages = false is load-bearing: by default a forbidden module covers its
+# descendants too, so "expense_tracker" would match db and deps and forbid the very edge
+# the layers contract exists to permit.
+[[tool.importlinter.contracts]]
+name = "nothing imports back into create_app"
+type = "forbidden"
+source_modules = ["expense_tracker.db", "expense_tracker.deps"]
+forbidden_modules = ["expense_tracker"]
+as_packages = false
+
+# Cycles, directly. The layers contract is a total order over the two modules it names,
+# so today it already implies this - but only at the top level. This one drills down
+# through subpackages as they appear (depth defaults to 10) and keeps holding without
+# being re-edited, which the layers contract cannot promise.
+[[tool.importlinter.contracts]]
+name = "no import cycles anywhere in the package"
+type = "acyclic_siblings"
+ancestors = ["expense_tracker"]
 
 [tool.pytest.ini_options]
 # Explicit rather than relying on rootdir discovery, so collection does not depend
