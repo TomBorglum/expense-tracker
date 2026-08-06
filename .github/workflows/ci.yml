@@ -46,7 +46,7 @@ jobs:
       # then runs every rule over it - the PRICIEST frontend gate, roughly twice the type
       # checker. Cold, as CI always runs them:
       #
-      #   backend    lint ~0.2s   format-check ~0.2s   typecheck ~1.1s
+      #   backend    lint ~0.2s   format-check ~0.2s   lint-imports ~0.3s   typecheck ~1.1s
       #   frontend   format-check ~0.8s   typecheck ~1.8s   lint ~3.2s
       #
       # (Cold matters for tsc alone: it caches to node_modules/.tmp, and frontend-install
@@ -57,6 +57,10 @@ jobs:
       # each list that carries the weight, and the two disagree for a reason.
       - run: pixi run backend-lint
       - run: pixi run backend-format-check
+      # Parses the package into an import graph and checks it against the contracts in
+      # backend/pyproject.toml. Dearer than the two above, which match patterns per file,
+      # and far cheaper than building a whole type-checked program - hence this slot.
+      - run: pixi run backend-lint-imports
       - run: pixi run backend-typecheck
       # The database the greeting is read from. initdb's a cluster into .pgdata/, starts
       # it on 127.0.0.1:5433 and applies backend/schema.sql - the same one task a

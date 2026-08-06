@@ -162,7 +162,10 @@ base class and never name the implementation. Implementations subclass it and ca
 `backend-typecheck`. `deps.py` is the wiring: it resolves `DATABASE_URL`, owns the
 lifespan, and injects a repository into the route. The dependency arrow runs one way,
 `deps.py` to `db.py`, and `create_app()` holds the single handler that maps the
-exception to a 503.
+exception to a 503. That arrow is checked rather than merely intended:
+`pixi run backend-lint-imports` runs import-linter against the contracts in
+`backend/pyproject.toml`, which fail the build on an import pointing back up the stack,
+on `db.py` learning about FastAPI, and on a cycle anywhere in the package.
 
 The engine is owned by the app's **lifespan** rather than built at import time, and
 handed to requests as lifespan state, from which a session is opened per request. That
@@ -319,6 +322,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run backend-test` | `poe test` | Run the test suite with coverage |
 | `pixi run backend-lint` | `poe lint` | Lint with ruff |
 | `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues |
+| `pixi run backend-lint-imports` | `poe lint-imports` | Check the module import order against the contracts |
 | `pixi run backend-format` | `poe format` | Format with ruff |
 | `pixi run backend-format-check` | `poe format-check` | Check formatting without writing changes |
 | `pixi run backend-typecheck` | `poe typecheck` | Type-check with basedpyright (recommended) |

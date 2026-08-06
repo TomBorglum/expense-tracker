@@ -25,8 +25,9 @@ hand-edit versions, git tags, or `CHANGELOG.md`.**
 ## Source conventions
 
 - **ASCII-only** committed source: no em-dashes, smart quotes, arrows, ellipses.
-- **Pin versions exactly** - `==` in `pixi.toml`, bare versions in
-  `frontend/package.json`, GitHub Actions by SHA with a version comment.
+- **Pin versions exactly** - `==` in `pixi.toml`, in both its conda tables and
+  `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
+  Actions by SHA with a version comment.
 - **Every suppression carries a reason** beside the pragma: a comment next to
   `# pyright: ignore[...]` (see `backend/src/expense_tracker/__init__.py`), or on/above
   an `// eslint-disable-next-line <rule>`. A bare disable is not acceptable.
@@ -59,7 +60,8 @@ Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in o
 
 ```sh
 pixi run backend-lint && pixi run backend-format-check &&
-pixi run backend-typecheck && pixi run backend-db-init && pixi run backend-test &&
+pixi run backend-lint-imports && pixi run backend-typecheck &&
+pixi run backend-db-init && pixi run backend-test &&
 pixi run frontend-install && pixi run frontend-format-check &&
 pixi run frontend-typecheck && pixi run frontend-lint && pixi run frontend-test &&
 pixi run frontend-build
@@ -91,7 +93,12 @@ Break one of these and CI goes red on an otherwise correct change.
   imports `GreetingRepository` from `db.py`, never the reverse. A failed read leaves
   the repository as `GreetingUnavailableError`, and the handler registered in
   `create_app()` is the only place that turns it into a 503. Putting an `HTTPException`
-  back in `db.py` is what this split exists to prevent.
+  back in `db.py` is what this split exists to prevent. Pinned by the import-linter
+  contracts in `backend/pyproject.toml`, not by a test: the layers contract forbids
+  `db -> deps`, and `db knows nothing about HTTP` forbids fastapi and starlette,
+  indirectly as well as directly. A **new module** under `src/expense_tracker/` has to
+  be added to that contract's `layers` list or the gate fails - `exhaustive = true`
+  is what stops the rule quietly ceasing to cover new code.
 - **Every repository subclasses `GreetingRepository` and carries `@override`.**
   `PostgresGreetingRepository` in `db.py` and `_FakeGreetingRepository` in `conftest.py`
   do; a new implementation or test double does too. The base class is an `ABC`, so this
@@ -155,6 +162,12 @@ Break one of these and CI goes red on an otherwise correct change.
   `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]`, both in
   `backend/pyproject.toml`. There is no config file at the repo root and no Python
   setting duplicated in the editor config.
+- **Module layering:** import-linter, `[tool.importlinter]` in the same file, run by
+  `pixi run backend-lint-imports`. Four contracts: the `deps` above `db` layering, the
+  fastapi/starlette ban on `db`, a ban on importing the package root, and
+  `acyclic_siblings` for cycles at any depth. ruff cannot cover this - `TID251` bans a
+  name project-wide rather than per-module, and ruff builds no cross-module graph, so
+  it detects no cycles.
 - **Frontend:** `tsc -b` against a `strict` tsconfig, prettier, and eslint 10 in
   `frontend/eslint.config.ts`. `eslint-config-prettier` is applied last, so **the
   linter owns correctness and prettier owns formatting** - never add a formatting rule
