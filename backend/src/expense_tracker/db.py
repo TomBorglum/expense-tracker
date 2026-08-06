@@ -4,7 +4,8 @@ Persistence only. A caller supplies a session and handles one exception; what it
 with the failure is its own business.
 """
 
-from typing import Protocol, override
+from abc import ABC, abstractmethod
+from typing import override
 
 from sqlalchemy import Text, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -40,20 +41,21 @@ class Greeting(Base):
     message: Mapped[str] = mapped_column(Text)
 
 
-class GreetingRepository(Protocol):
+class GreetingRepository(ABC):
     """The contract a caller depends on in order to read the greeting.
 
-    Implementations here subclass it explicitly rather than relying on structural
-    typing. That is deliberate: it puts the coupling on the line a reader looks at, and
-    it cannot be lost by tidying away an annotation elsewhere. A subclass that fails to
-    implement the method below is rejected by basedpyright, which CI gates on.
+    An ABC rather than a Protocol, so implementations have to subclass it: the coupling
+    lands on the line a reader looks at, and a class that merely matches the shape is
+    not silently accepted in a repository's place.
 
-    The `...` body is load-bearing - it is what makes an incomplete subclass abstract to
-    the type checker. Not @abstractmethod, which basedpyright refuses inside a Protocol
-    (reportInvalidAbstractMethod, "add ABC to its base classes"), and not
-    @runtime_checkable, because nothing isinstance-checks this.
+    @abstractmethod is what holds that up. Without it the `...` below is an ordinary
+    method returning None, and a subclass implementing nothing would be accepted by the
+    type checker - ruff's B027 is what stops anyone removing it. The body stays on this
+    line rather than becoming `raise NotImplementedError`, which would be a statement
+    coverage counts and nothing ever executes.
     """
 
+    @abstractmethod
     async def get_current_greeting(self) -> str: ...
 
 

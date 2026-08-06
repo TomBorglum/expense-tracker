@@ -156,11 +156,12 @@ second time, in Python, with nothing checking the agreement; change both togethe
 Access is SQLAlchemy 2 async over asyncpg, split across two modules. `db.py` is
 persistence alone - the model, a `GreetingRepository` **Protocol** with
 `PostgresGreetingRepository` behind it, and the `GreetingUnavailableError` it raises -
-and imports nothing from FastAPI, so it knows no status codes. Callers depend on the
-Protocol and never name the implementation. Both implementations - the Postgres one and
-the fake in `backend/tests/conftest.py` - subclass it explicitly and carry `@override`
-rather than matching it structurally, so the coupling is visible at the class
-declaration and drift fails `backend-typecheck`. `deps.py` is the wiring: it resolves
+and imports nothing from FastAPI, so it knows no status codes. `GreetingRepository` is an
+**abstract base class**; callers depend on it and never name the implementation. Both
+implementations - the Postgres one and the fake in `backend/tests/conftest.py` - subclass
+it and carry `@override`, so the coupling is visible at the class declaration, matching
+the shape without inheriting is not enough, and drift fails `backend-typecheck`.
+`deps.py` is the wiring: it resolves
 `DATABASE_URL`, owns the lifespan, and injects a repository into the route. The
 dependency arrow runs one way, `deps.py` to `db.py`, and `create_app()` holds the single
 handler that maps the exception to a 503.

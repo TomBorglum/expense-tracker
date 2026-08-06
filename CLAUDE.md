@@ -98,14 +98,19 @@ Break one of these and CI goes red on an otherwise correct change.
   coupling on the line a reader sees, and what makes drift a build failure: a renamed
   method fails at the method (`no base method of same name`), a missing one at
   construction (`Cannot instantiate abstract class`), a sync one at the signature
-  (`reportIncompatibleMethodOverride`). A new implementation or test double inherits too;
-  it is not optional, because `dependency_overrides` is an untyped dict and nothing else
-  would check it.
-- **The Protocol's `...` bodies are load-bearing.** They are what make an incomplete
-  subclass abstract to basedpyright. `@abstractmethod` is not an option here -
-  basedpyright rejects it inside a `Protocol` (`reportInvalidAbstractMethod`), and
-  `Protocol, ABC` is illegal - so enforcement is static only; nothing raises at runtime.
-  `pixi run backend-typecheck` is the gate that makes that sufficient.
+  (`reportIncompatibleMethodOverride`). A new implementation or test double inherits too,
+  and because `GreetingRepository` is an `ABC` that is enforced rather than conventional:
+  a look-alike that matches the shape without inheriting is rejected
+  (`reportReturnType`), and a subclass missing the method raises `TypeError` at
+  instantiation even with the type checker bypassed. That matters because
+  `dependency_overrides` is an untyped dict and nothing else would check it.
+- **`@abstractmethod` on `GreetingRepository` is load-bearing.** Without it the `...`
+  body is an ordinary method returning `None`, and a subclass implementing nothing is
+  accepted in silence by basedpyright. Ruff is what guards it, and does so three times
+  over: removing the decorator raises `B027` on the method, `B024` on the class, and
+  `F401` on the now-unused import. `pixi run backend-lint` is a CI gate, which is why no
+  test duplicates this. Keep the body as a same-line `...`: `raise NotImplementedError`
+  would be a statement coverage counts and nothing ever executes.
 - **The HTTP suite never touches PostgreSQL.** `backend/tests/conftest.py` overrides
   the `provide_greeting_repository` dependency with a fake repository; only
   `backend/tests/test_greeting_postgres.py`, behind the registered `postgres` marker,
