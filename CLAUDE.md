@@ -59,9 +59,8 @@ Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in o
 (cheapest first, so it fails fast):
 
 ```sh
-pixi run backend-lint && pixi run backend-format-check &&
-pixi run backend-lint-imports && pixi run backend-typecheck &&
-pixi run backend-db-init && pixi run backend-test &&
+pixi run backend-format-check && pixi run backend-lint &&
+pixi run backend-typecheck && pixi run backend-db-init && pixi run backend-test &&
 pixi run frontend-install && pixi run frontend-format-check &&
 pixi run frontend-typecheck && pixi run frontend-lint && pixi run frontend-test &&
 pixi run frontend-build
@@ -163,7 +162,10 @@ Break one of these and CI goes red on an otherwise correct change.
   `backend/pyproject.toml`. There is no config file at the repo root and no Python
   setting duplicated in the editor config.
 - **Module layering:** import-linter, `[tool.importlinter]` in the same file, run by
-  `pixi run backend-lint-imports`. Four contracts: the `deps` above `db` layering, the
+  `pixi run backend-lint` as the second half of that task. Imports are just another
+  artifact to lint, so they get no gate of their own; `lint-fix` is ruff alone, because
+  where a new module belongs in the layer order is a design decision, not a mechanical
+  edit. Four contracts: the `deps` above `db` layering, the
   fastapi/starlette ban on `db`, a ban on importing the package root, and
   `acyclic_siblings` for cycles at any depth. ruff cannot cover this - `TID251` bans a
   name project-wide rather than per-module, and ruff builds no cross-module graph, so

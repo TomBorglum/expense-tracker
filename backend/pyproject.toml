@@ -102,12 +102,19 @@ db-stop.shell = 'pg_ctl --pgdata="$POE_ROOT/../.pgdata" --mode=fast --wait stop 
 dev = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
 format = "ruff format"
 format-check = "ruff format --check"
-lint = "ruff check"
+# Two linters, one gate: ruff over each file, then import-linter over the graph they
+# form, against [tool.importlinter] below. The imports are just another artifact to lint,
+# so they do not get their own task. import-linter's cwd is this directory, which is how
+# it finds its config unaided - no --config flag, and no config file at the repo root.
+#
+# ruff first, and not only because it is the cheaper of the two: an import that violates
+# a contract is usually also unused, so F401 names the offending line before the graph is
+# even built. A sequence stops at the first failure, so that is the error you see.
+lint.sequence = [{ cmd = "ruff check" }, { cmd = "lint-imports" }]
+# Only ruff. import-linter has no fixer, and could not have a useful one - where a new
+# module belongs in the layer order is a design decision, not a mechanical edit. So this
+# is deliberately not the inverse of `lint`.
 lint-fix = "ruff check --fix"
-# import-linter, reading [tool.importlinter] below. Its cwd is this directory, which is
-# how it finds that config unaided - no --config flag, and no config file at the repo
-# root. The task name is the command name; `import-linter lint` is the same thing.
-lint-imports = "lint-imports"
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 test = "pytest"
 typecheck = "basedpyright"

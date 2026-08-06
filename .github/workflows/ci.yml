@@ -39,28 +39,24 @@ jobs:
       # the fastest gate that can catch it, and everything after it - including the JDK
       # setup and the scan below - never runs.
       #
-      # That rule puts lint at opposite ends of the two lists, which is the point worth
-      # knowing rather than a slip. ruff is a native binary matching patterns and is the
-      # CHEAPEST backend gate; frontend eslint is type-aware (projectService +
-      # strictTypeChecked), so it builds the same full TypeScript program tsc does and
-      # then runs every rule over it - the PRICIEST frontend gate, roughly twice the type
-      # checker. Cold, as CI always runs them:
+      # That rule puts lint near the end of both lists, for different reasons. backend
+      # lint is two tools in one task - ruff over each file, then import-linter over the
+      # graph they form - so it costs more than the formatter it follows. frontend eslint
+      # is type-aware (projectService + strictTypeChecked), so it builds the same full
+      # TypeScript program tsc does and then runs every rule over it - the PRICIEST
+      # frontend gate, roughly twice the type checker. Cold, as CI always runs them:
       #
-      #   backend    lint ~0.2s   format-check ~0.2s   lint-imports ~0.3s   typecheck ~1.1s
+      #   backend    format-check ~0.2s   lint ~0.3s   typecheck ~1.1s
       #   frontend   format-check ~0.8s   typecheck ~1.8s   lint ~3.2s
       #
       # (Cold matters for tsc alone: it caches to node_modules/.tmp, and frontend-install
       # rebuilds that directory every run, so the cache is never there to reuse. Warm, it
       # is about a third of the figure above.)
       #
-      # The backend's first two are a coin flip at that scale. It is the LAST position in
-      # each list that carries the weight, and the two disagree for a reason.
-      - run: pixi run backend-lint
+      # It is the LAST position in each list that carries the weight, and the two disagree
+      # for a reason.
       - run: pixi run backend-format-check
-      # Parses the package into an import graph and checks it against the contracts in
-      # backend/pyproject.toml. Dearer than the two above, which match patterns per file,
-      # and far cheaper than building a whole type-checked program - hence this slot.
-      - run: pixi run backend-lint-imports
+      - run: pixi run backend-lint
       - run: pixi run backend-typecheck
       # The database the greeting is read from. initdb's a cluster into .pgdata/, starts
       # it on 127.0.0.1:5433 and applies backend/schema.sql - the same one task a
