@@ -3,17 +3,19 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from expense_tracker import create_app
+from expense_tracker.db import GreetingRepository
 from expense_tracker.deps import provide_greeting_repository
 
 
 class _FakeGreetingRepository:
-    """Stands in for GreetingRepository without a session or a server.
+    """Stands in for a GreetingRepository without a session or a server.
 
-    dependency_overrides is an untyped dict, so nothing checks this against the real
-    class - keep the method name and signature identical by hand.
+    Satisfies the Protocol structurally, so it inherits from nothing. What checks it is
+    the annotated local in the app fixture below, not this class declaration.
     """
 
-    # Annotated at class level for the same reason GreetingRepository._session is:
+    # Annotated at class level for the same reason PostgresGreetingRepository._session
+    # is:
     # reportUnannotatedClassAttribute wants every attribute of a non-final class typed.
     _message: str
 
@@ -44,9 +46,11 @@ def app(greeting_text: str) -> FastAPI:
     it never runs and no session is ever opened.
     """
     application = create_app()
-    application.dependency_overrides[provide_greeting_repository] = lambda: (
-        _FakeGreetingRepository(greeting_text)
-    )
+    # Annotated deliberately: dependency_overrides is an untyped dict, so this local is
+    # the only place the fake is checked against the Protocol the real repository
+    # satisfies. Drop the annotation and the two can drift in silence.
+    fake: GreetingRepository = _FakeGreetingRepository(greeting_text)
+    application.dependency_overrides[provide_greeting_repository] = lambda: fake
     return application
 
 

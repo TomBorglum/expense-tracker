@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from expense_tracker.db import GreetingRepository, GreetingUnavailableError
+from expense_tracker.db import GreetingUnavailableError, PostgresGreetingRepository
 
 # Port 1 refuses instantly, so this reaches a real driver against a real unreachable
 # server without needing one - and without the postgres marker, because nothing here
@@ -15,7 +15,7 @@ async def _read_through_repository() -> str:
     engine = create_async_engine(_UNREACHABLE)
     try:
         async with AsyncSession(engine) as session:
-            return await GreetingRepository(session).get_current_greeting()
+            return await PostgresGreetingRepository(session).get_current_greeting()
     finally:
         await engine.dispose()
 
@@ -23,9 +23,10 @@ async def _read_through_repository() -> str:
 def test_query_failure_raises_the_domain_exception() -> None:
     """The property that lets db.py stay free of fastapi.
 
-    A driver failure has to leave the repository as GreetingUnavailableError, not as an
-    HTTPException and not as the raw OSError asyncpg lets out - create_app() is the only
-    place that knows this is a 503.
+    A driver failure has to leave the implementation as GreetingUnavailableError, not as
+    an HTTPException and not as the raw OSError asyncpg lets out - create_app() is the
+    only place that knows this is a 503. Exercises PostgresGreetingRepository
+    specifically; the Protocol has no behaviour to test.
     """
     # asyncio.run rather than an async test: there is no anyio or asyncio plugin in the
     # environment, which is the same reason test_greeting_postgres.py is written this

@@ -92,6 +92,14 @@ Break one of these and CI goes red on an otherwise correct change.
   the repository as `GreetingUnavailableError`, and the handler registered in
   `create_app()` is the only place that turns it into a 503. Putting an `HTTPException`
   back in `db.py` is what this split exists to prevent.
+- **Two annotations are the only thing checking the repository contract.**
+  `GreetingRepository` is a `Protocol`, satisfied structurally, so nothing inherits from
+  it and nothing is checked at a class declaration. What checks it is
+  `provide_greeting_repository`'s `-> GreetingRepository` return annotation for the real
+  implementation, and the annotated `fake: GreetingRepository` local in `conftest.py`'s
+  `app` fixture for the test double - `dependency_overrides` is an untyped dict, so
+  without that local the fake and the real class drift in silence. Neither annotation is
+  decoration; do not narrow or drop either.
 - **The HTTP suite never touches PostgreSQL.** `backend/tests/conftest.py` overrides
   the `provide_greeting_repository` dependency with a fake repository; only
   `backend/tests/test_greeting_postgres.py`, behind the registered `postgres` marker,

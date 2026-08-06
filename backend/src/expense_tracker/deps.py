@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from .db import GreetingRepository
+from .db import GreetingRepository, PostgresGreetingRepository
 
 
 def database_url() -> str:
@@ -97,12 +97,9 @@ def provide_greeting_repository(
     tests/conftest.py overrides this with a fake repository, so the CORS,
     security-header and 404 tests never touch a database; only
     tests/test_greeting_postgres.py, behind the `postgres` marker, gets the real one.
+
+    The return annotation is the Protocol, not the class being constructed: that is what
+    checks PostgresGreetingRepository still satisfies the contract callers depend on, so
+    narrowing it to the concrete type would silently give up the check.
     """
-    return GreetingRepository(session)
-
-
-# The annotation routes actually write. Declaring it here rather than at each use keeps
-# Depends out of the router entirely, and is the form FastAPI's own docs use.
-GreetingRepositoryDep = Annotated[
-    GreetingRepository, Depends(provide_greeting_repository)
-]
+    return PostgresGreetingRepository(session)

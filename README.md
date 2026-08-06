@@ -154,12 +154,14 @@ The `Greeting` model in `backend/src/expense_tracker/db.py` declares the same ta
 second time, in Python, with nothing checking the agreement; change both together.
 
 Access is SQLAlchemy 2 async over asyncpg, split across two modules. `db.py` is
-persistence alone - the model, a `GreetingRepository`, and the
-`GreetingUnavailableError` it raises - and imports nothing from FastAPI, so it knows no
-status codes. `deps.py` is the wiring: it resolves `DATABASE_URL`, owns the lifespan,
-and injects a repository into the route. The dependency arrow runs one way, `deps.py`
-to `db.py`, and `create_app()` holds the single handler that maps the exception to a
-503.
+persistence alone - the model, a `GreetingRepository` **Protocol** with
+`PostgresGreetingRepository` behind it, and the `GreetingUnavailableError` it raises -
+and imports nothing from FastAPI, so it knows no status codes. Callers depend on the
+Protocol and never name the implementation; `provide_greeting_repository`'s return
+annotation is what checks the two still agree. `deps.py` is the wiring: it resolves
+`DATABASE_URL`, owns the lifespan, and injects a repository into the route. The
+dependency arrow runs one way, `deps.py` to `db.py`, and `create_app()` holds the single
+handler that maps the exception to a 503.
 
 The engine is owned by the app's **lifespan** rather than built at import time, and
 handed to requests as lifespan state, from which a session is opened per request. That

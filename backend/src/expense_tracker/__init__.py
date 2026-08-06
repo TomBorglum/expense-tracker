@@ -1,10 +1,14 @@
-from fastapi import FastAPI, Request, Response
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import RequestResponseEndpoint
 
-from .db import GreetingUnavailableError
-from .deps import GreetingRepositoryDep, lifespan
+# The abstraction and the failure mode, never the implementation - which module builds
+# the repository is deps.py's business.
+from .db import GreetingRepository, GreetingUnavailableError
+from .deps import lifespan, provide_greeting_repository
 
 # Security headers applied to every response. This app serves JSON and nothing else,
 # so the page-oriented directives a browser shell would need (script-src, style-src,
@@ -52,7 +56,7 @@ def create_app() -> FastAPI:
     # tests swap PostgreSQL for a fake; see deps.provide_greeting_repository.
     @app.get("/api/greeting")
     async def greeting(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
-        greetings: GreetingRepositoryDep,
+        greetings: Annotated[GreetingRepository, Depends(provide_greeting_repository)],
     ) -> JSONResponse:
         # no-store because the wording is now a row somebody can UPDATE: a cached copy
         # would outlive the change.

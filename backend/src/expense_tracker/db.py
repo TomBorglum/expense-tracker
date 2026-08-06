@@ -4,6 +4,8 @@ Persistence only. A caller supplies a session and handles one exception; what it
 with the failure is its own business.
 """
 
+from typing import Protocol
+
 from sqlalchemy import Text, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +40,19 @@ class Greeting(Base):
     message: Mapped[str] = mapped_column(Text)
 
 
-class GreetingRepository:
+class GreetingRepository(Protocol):
+    """What a caller needs in order to read the greeting.
+
+    A Protocol rather than a base class: an implementation satisfies this by shape, so
+    the test double is checked against it without inheriting from anything. Not
+    @runtime_checkable - nothing isinstance-checks it, and static checking needs no
+    decorator.
+    """
+
+    async def get_current_greeting(self) -> str: ...
+
+
+class PostgresGreetingRepository:
     """Reads the greeting through a session it is given and does not own."""
 
     # Declared at class level because recommended mode's reportUnannotatedClassAttribute
