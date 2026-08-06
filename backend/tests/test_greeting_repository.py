@@ -26,10 +26,15 @@ def test_query_failure_raises_the_domain_exception() -> None:
     A driver failure has to leave the implementation as GreetingUnavailableError, not as
     an HTTPException and not as the raw OSError asyncpg lets out - create_app() is the
     only place that knows this is a 503. Exercises PostgresGreetingRepository
-    specifically; the Protocol has no behaviour to test.
+    specifically; GreetingRepository is abstract and has no behaviour to test.
     """
     # asyncio.run rather than an async test: there is no anyio or asyncio plugin in the
     # environment, which is the same reason test_greeting_postgres.py is written this
     # way.
+    #
+    # Building the coroutine executes none of it, so it is bound here rather than inline
+    # below. That leaves asyncio.run as the only call inside the block that can raise,
+    # which is what makes the assertion unambiguous (sonar python:S5778).
+    pending_read = _read_through_repository()
     with pytest.raises(GreetingUnavailableError):
-        _ = asyncio.run(_read_through_repository())
+        _ = asyncio.run(pending_read)
