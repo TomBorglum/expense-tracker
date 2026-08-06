@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from starlette.testclient import TestClient
 
 from expense_tracker import create_app
-from expense_tracker.db import Greeting, database_url
+from expense_tracker.db import Greeting
+from expense_tracker.deps import database_url
 
 # The whole module talks to the cluster `pixi run backend-db-init` creates, and it is
 # the only one in the suite that does. The marker is registered in pyproject.toml, which

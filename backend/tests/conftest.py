@@ -3,7 +3,25 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from expense_tracker import create_app
-from expense_tracker.db import provide_greeting
+from expense_tracker.deps import provide_greeting_repository
+
+
+class _FakeGreetingRepository:
+    """Stands in for GreetingRepository without a session or a server.
+
+    dependency_overrides is an untyped dict, so nothing checks this against the real
+    class - keep the method name and signature identical by hand.
+    """
+
+    # Annotated at class level for the same reason GreetingRepository._session is:
+    # reportUnannotatedClassAttribute wants every attribute of a non-final class typed.
+    _message: str
+
+    def __init__(self, message: str) -> None:
+        self._message = message
+
+    async def get_current_greeting(self) -> str:
+        return self._message
 
 
 @pytest.fixture
@@ -22,10 +40,13 @@ def app(greeting_text: str) -> FastAPI:
 
     Overriding the dependency, rather than pointing the app at a test database, is what
     keeps this suite about the HTTP surface - CORS, security headers, 404s - and
-    runnable with no server anywhere.
+    runnable with no server anywhere. provide_session is upstream of the override, so
+    it never runs and no session is ever opened.
     """
     application = create_app()
-    application.dependency_overrides[provide_greeting] = lambda: greeting_text
+    application.dependency_overrides[provide_greeting_repository] = lambda: (
+        _FakeGreetingRepository(greeting_text)
+    )
     return application
 
 

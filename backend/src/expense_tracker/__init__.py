@@ -1,11 +1,10 @@
-from typing import Annotated
-
-from fastapi import Depends, FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import RequestResponseEndpoint
 
-from .db import lifespan, provide_greeting
+from .db import GreetingUnavailableError
+from .deps import GreetingRepositoryDep, lifespan
 
 # Security headers applied to every response. This app serves JSON and nothing else,
 # so the page-oriented directives a browser shell would need (script-src, style-src,
@@ -49,17 +48,32 @@ def create_app() -> FastAPI:
     # two together. Only the shape is duplicated - the wording lives in one row of the
     # greeting table and is duplicated nowhere.
     #
-    # Reading it through a dependency rather than inline is what lets the tests below
-    # swap PostgreSQL for a constant; see db.provide_greeting.
+    # Reading it through an injected repository rather than inline is what lets the
+    # tests swap PostgreSQL for a fake; see deps.provide_greeting_repository.
     @app.get("/api/greeting")
     async def greeting(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
-        message: Annotated[str, Depends(provide_greeting)],
+        greetings: GreetingRepositoryDep,
     ) -> JSONResponse:
         # no-store because the wording is now a row somebody can UPDATE: a cached copy
         # would outlive the change.
         return JSONResponse(
-            {"greeting": message}, headers={"Cache-Control": "no-store"}
+            {"greeting": await greetings.get_current_greeting()},
+            headers={"Cache-Control": "no-store"},
         )
+
+    # The one place the repository's failure becomes an HTTP status, which is what lets
+    # db.py stay free of fastapi. Registered handlers run in starlette's
+    # ExceptionMiddleware, which sits inside the middleware added above, so this
+    # response still collects the security headers on its way out.
+    @app.exception_handler(GreetingUnavailableError)
+    async def handle_greeting_unavailable(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        _request: Request, _exc: Exception
+    ) -> JSONResponse:
+        # Both causes - an unreachable server, and the table present with its seed row
+        # gone - are server faults a client should retry, so both answer 503 rather
+        # than 404. Neither argument is used: the detail is deliberately the same
+        # either way, so a client learns nothing about the database from a failure.
+        return JSONResponse({"detail": "greeting unavailable"}, status_code=503)
 
     # Added last, so it is the outermost middleware: that is what lets it answer a
     # preflight itself instead of passing OPTIONS down to a router that has no such

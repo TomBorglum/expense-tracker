@@ -84,11 +84,16 @@ Break one of these and CI goes red on an otherwise correct change.
   is registered after the security-headers middleware, which makes it outermost and
   lets it answer preflights itself.
 - **`create_app()` opens no socket.** The engine is built by the lifespan in
-  `backend/src/expense_tracker/db.py`, not by the factory, which is what keeps
+  `backend/src/expense_tracker/deps.py`, not by the factory, which is what keeps
   `TestClient(app)` (without `with`) database-free and `uvicorn --factory` working.
   Moving engine creation into `create_app()` breaks the entire HTTP suite.
+- **`db.py` imports no fastapi and no `deps`.** The wiring points one way: `deps.py`
+  imports `GreetingRepository` from `db.py`, never the reverse. A failed read leaves
+  the repository as `GreetingUnavailableError`, and the handler registered in
+  `create_app()` is the only place that turns it into a 503. Putting an `HTTPException`
+  back in `db.py` is what this split exists to prevent.
 - **The HTTP suite never touches PostgreSQL.** `backend/tests/conftest.py` overrides
-  the `provide_greeting` dependency with a constant; only
+  the `provide_greeting_repository` dependency with a fake repository; only
   `backend/tests/test_greeting_postgres.py`, behind the registered `postgres` marker,
   connects. A new test that hits `/api/greeting` takes the `client` fixture. That
   module skips when no server answers and **fails** under `CI=true`, so a database that
