@@ -153,13 +153,24 @@ the seed uses `ON CONFLICT DO NOTHING` so re-running never stamps on an edited r
 The `Greeting` model in `backend/src/expense_tracker/db.py` declares the same table a
 second time, in Python, with nothing checking the agreement; change both together.
 
-Access is SQLAlchemy 2 async over asyncpg. The engine is owned by the app's **lifespan**
-rather than built at import time, and handed to requests as lifespan state. That is not
-incidental: it means `create_app()` opens no socket, which is what lets most of the test
-suite construct a real app with no database anywhere.
+Access is SQLAlchemy 2 async over asyncpg, split across two modules. `db.py` is
+persistence alone - the model, the `GreetingRepository` **abstract base class** with
+`PostgresGreetingRepository` behind it, and the `GreetingUnavailableError` it raises -
+and imports nothing from FastAPI, so it knows no status codes. Callers depend on the
+base class and never name the implementation. Implementations subclass it and carry
+`@override`, so the coupling is visible at the class declaration and drift fails
+`backend-typecheck`. `deps.py` is the wiring: it resolves `DATABASE_URL`, owns the
+lifespan, and injects a repository into the route. The dependency arrow runs one way,
+`deps.py` to `db.py`, and `create_app()` holds the single handler that maps the
+exception to a 503.
 
-`backend/tests/test_app.py` overrides the greeting dependency with a constant and never
-connects. Only `backend/tests/test_greeting_postgres.py` talks to the real server,
+The engine is owned by the app's **lifespan** rather than built at import time, and
+handed to requests as lifespan state, from which a session is opened per request. That
+is not incidental: it means `create_app()` opens no socket, which is what lets most of
+the test suite construct a real app with no database anywhere.
+
+`backend/tests/test_app.py` overrides the greeting dependency with a fake repository and
+never connects. Only `backend/tests/test_greeting_postgres.py` talks to the real server,
 behind the `postgres` marker registered in `backend/pyproject.toml`; it skips when
 nothing answers, so a developer who has not run `db-init` does not face a red suite,
 and **fails** under `CI=true`, so a database that did not come up cannot go green.

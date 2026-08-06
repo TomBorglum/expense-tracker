@@ -84,11 +84,28 @@ Break one of these and CI goes red on an otherwise correct change.
   is registered after the security-headers middleware, which makes it outermost and
   lets it answer preflights itself.
 - **`create_app()` opens no socket.** The engine is built by the lifespan in
-  `backend/src/expense_tracker/db.py`, not by the factory, which is what keeps
+  `backend/src/expense_tracker/deps.py`, not by the factory, which is what keeps
   `TestClient(app)` (without `with`) database-free and `uvicorn --factory` working.
   Moving engine creation into `create_app()` breaks the entire HTTP suite.
+- **`db.py` imports no fastapi and no `deps`.** The wiring points one way: `deps.py`
+  imports `GreetingRepository` from `db.py`, never the reverse. A failed read leaves
+  the repository as `GreetingUnavailableError`, and the handler registered in
+  `create_app()` is the only place that turns it into a 503. Putting an `HTTPException`
+  back in `db.py` is what this split exists to prevent.
+- **Every repository subclasses `GreetingRepository` and carries `@override`.**
+  `PostgresGreetingRepository` in `db.py` and `_FakeGreetingRepository` in `conftest.py`
+  do; a new implementation or test double does too. The base class is an `ABC`, so this
+  is enforced, not a convention - a look-alike that matches the shape without inheriting
+  is rejected. It has to be enforced somewhere, because `dependency_overrides` is an
+  untyped dict and would accept anything.
+- **`@abstractmethod` on `GreetingRepository` is load-bearing.** Without it the `...`
+  body is an ordinary method returning `None` and an empty subclass passes. Removing it
+  fails `pixi run backend-lint` three ways: `B027` on the method, `B024` on the class,
+  `F401` on the unused import. That gate is why no test asserts it. Keep the body a
+  same-line `...`; `raise NotImplementedError` would be a statement coverage counts and
+  nothing executes.
 - **The HTTP suite never touches PostgreSQL.** `backend/tests/conftest.py` overrides
-  the `provide_greeting` dependency with a constant; only
+  the `provide_greeting_repository` dependency with a fake repository; only
   `backend/tests/test_greeting_postgres.py`, behind the registered `postgres` marker,
   connects. A new test that hits `/api/greeting` takes the `client` fixture. That
   module skips when no server answers and **fails** under `CI=true`, so a database that
