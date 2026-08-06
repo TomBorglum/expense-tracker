@@ -45,6 +45,10 @@ hand-edit versions, git tags, or `CHANGELOG.md`.**
 its own `cwd`, so it behaves identically wherever you invoke it. Full table in
 [`README.md`](README.md#development-tasks).
 
+The five `backend-db-*` tasks are no exception to either layer: their bodies are poe
+tasks like the rest, and only the cluster they drive sits at the workspace root rather
+than under `backend/`. They reach it through `$POE_ROOT/..`, never a relative path.
+
 **The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Never
 put a command body there; that is what would make the layer a place definitions hide.
 Both stacks also stay runnable on their own terms (`cd backend && poe test`,
@@ -55,7 +59,7 @@ Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in o
 
 ```sh
 pixi run backend-lint && pixi run backend-format-check &&
-pixi run backend-typecheck && pixi run backend-test &&
+pixi run backend-typecheck && pixi run backend-db-init && pixi run backend-test &&
 pixi run frontend-install && pixi run frontend-format-check &&
 pixi run frontend-typecheck && pixi run frontend-lint && pixi run frontend-test &&
 pixi run frontend-build
@@ -79,9 +83,29 @@ Break one of these and CI goes red on an otherwise correct change.
   to become a real origin list. Pinned by `test_cors_does_not_allow_credentials`. It
   is registered after the security-headers middleware, which makes it outermost and
   lets it answer preflights itself.
-- **Four things are declared twice. Change both halves together:**
-  - the greeting payload - `backend/src/expense_tracker/__init__.py` and
-    `frontend/src/api/greeting.ts`, with nothing checking the agreement;
+- **`create_app()` opens no socket.** The engine is built by the lifespan in
+  `backend/src/expense_tracker/db.py`, not by the factory, which is what keeps
+  `TestClient(app)` (without `with`) database-free and `uvicorn --factory` working.
+  Moving engine creation into `create_app()` breaks the entire HTTP suite.
+- **The HTTP suite never touches PostgreSQL.** `backend/tests/conftest.py` overrides
+  the `provide_greeting` dependency with a constant; only
+  `backend/tests/test_greeting_postgres.py`, behind the registered `postgres` marker,
+  connects. A new test that hits `/api/greeting` takes the `client` fixture. That
+  module skips when no server answers and **fails** under `CI=true`, so a database that
+  did not come up cannot go green.
+- **`backend/schema.sql` is the only DDL.** No Alembic, no `Base.metadata.create_all`,
+  and every statement in it stays idempotent because `db-init` re-runs against live
+  clusters.
+- **Six things are declared twice. Change both halves together:**
+  - the greeting *payload shape and path* - `backend/src/expense_tracker/__init__.py`
+    and `frontend/src/api/greeting.ts`, with nothing checking the agreement. The
+    greeting *wording* is not duplicated anywhere: it is one row of the `greeting`
+    table;
+  - the `greeting` table - `backend/schema.sql` and the `Greeting` model in
+    `backend/src/expense_tracker/db.py`, which never creates it and only reads it;
+  - the local database connection - `DATABASE_URL` and the `PG*` variables in
+    `[feature.test.activation.env]`, against the port and username baked into
+    `db-create`'s `initdb` flags;
   - the `@` alias (`frontend/src`) - `frontend/vite.config.ts` and
     `frontend/tsconfig.app.json`, because vite does not read tsconfig `paths`;
   - the `frontend/src/main.tsx` coverage exclusion - `frontend/vite.config.ts` and

@@ -30,6 +30,68 @@ executor = "simple"
 # Alphabetical, matching the forwarder table in pixi.toml and what `poe` with no task
 # prints. Ordering by workflow instead would leave a new task no obviously right place.
 [tool.poe.tasks]
+# --- The local PostgreSQL cluster -------------------------------------------------
+#
+# A cluster owned by this checkout: initdb'd into .pgdata/ at the REPO root (gitignored),
+# listening on 127.0.0.1:5433 so it can never collide with a system PostgreSQL on 5432,
+# with a superuser and a database both named after the project so the DSN in pixi.toml is
+# identical on every machine and on CI. No container, no compose file, no `services:`
+# block in ci.yml - the server comes out of the same conda-forge lock as python and node.
+#
+# Defined here with the rest of the backend's commands because the backend is the only
+# thing that talks to the database, but the cluster itself is a workspace-level artifact
+# like .pixi/, so it sits beside them rather than under backend/. That is the one thing
+# these five do differently from every other task in this file: they address $POE_ROOT/..
+# instead of the relative paths the others use. $POE_ROOT is poe's own absolute path to
+# this file's directory, so it holds however the task was invoked - `poe db-init` from
+# backend/, `poe -C backend db-init` from anywhere, or the pixi forwarder.
+#
+# `shell`, not the default `cmd`: every one of them is idempotent - CI runs them on a bare
+# runner and a developer runs them again next week, and the two have to behave the same -
+# and the `||` guards that buy that need a real shell to interpret them.
+
+# initdb refuses a non-empty directory, so the PG_VERSION probe is what makes a second
+# run a no-op. The three --set flags are written into the generated postgresql.conf,
+# which is why db-start needs no -o "-p 5433": the port, the loopback-only listener and
+# the socket directory are properties of the cluster, not of how it was launched.
+# --auth=trust is safe only because of listen_addresses: this is a throwaway dev cluster
+# holding one row of public text, and the flags must not be copied anywhere real.
+db-create.shell = """
+test -f "$POE_ROOT/../.pgdata/PG_VERSION" ||
+  initdb --pgdata="$POE_ROOT/../.pgdata" --username=expense_tracker \
+         --auth-local=trust --auth-host=trust --encoding=UTF8 --locale=C \
+         --no-instructions --set=port=5433 --set=listen_addresses=127.0.0.1 \
+         --set=unix_socket_directories=/tmp
+"""
+# The entry point: after this, `poe dev` and `poe test` both work. Reads as
+# (probe || createdb) && apply-schema, which is left-associative, so the schema is
+# applied down either branch. The probe is psql's own exit code - it fails when the
+# database does not exist - so there is nothing to grep. schema.sql is idempotent, which
+# is what makes re-running this against a live cluster a no-op.
+#
+# Deliberately not a dep of `test`: coupling them would hide the property this design is
+# built around, that the HTTP suite needs no database at all.
+db-init.shell = """
+psql --tuples-only --output=/dev/null --command='SELECT 1' || createdb expense_tracker &&
+  psql --set=ON_ERROR_STOP=1 --file="$POE_ROOT/schema.sql"
+"""
+db-init.deps = ["db-start"]
+# The escape hatch: throw the cluster away and start over. Nothing in .pgdata/ is
+# precious - schema.sql can rebuild all of it - and this is the documented cure when a
+# test that edits the greeting row is killed before it can restore it.
+db-reset.shell = 'rm -rf "$POE_ROOT/../.pgdata"'
+db-reset.deps = ["db-stop"]
+# `pg_ctl status` exits 3 when nothing is running and 0 when something is, which is the
+# whole idempotency check. It also sees through a stale postmaster.pid, so a cluster left
+# behind by a hard reboot recovers by re-running this.
+db-start.shell = """
+pg_ctl --pgdata="$POE_ROOT/../.pgdata" status ||
+  pg_ctl --pgdata="$POE_ROOT/../.pgdata" --log="$POE_ROOT/../.pgdata/server.log" --wait start
+"""
+db-start.deps = ["db-create"]
+# Tolerant of an already-stopped cluster, so it is safe to run blind and safe to chain.
+db-stop.shell = 'pg_ctl --pgdata="$POE_ROOT/../.pgdata" --mode=fast --wait stop || exit 0'
+
 # The REST API with the reloader, on uvicorn's default port 8000. It serves JSON and
 # nothing else - the page comes from `pixi run frontend-dev`, its counterpart on vite's
 # own port, and CORS is what lets the two talk. --factory lets create_app be the target.
@@ -57,6 +119,12 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 # on which directory pytest is invoked from.
 testpaths = ["tests"]
 addopts = "--strict-markers --strict-config --cov=expense_tracker --cov-report=xml --cov-report=term-missing"
+# --strict-markers is on, so this registration is what makes the marker legal. It is a
+# label rather than a filter: the marked module skips itself when no server answers,
+# and fails instead of skipping under CI, so a broken db-init cannot go green.
+markers = [
+  "postgres: exercises a real PostgreSQL server; needs `pixi run backend-db-init`",
+]
 
 [tool.basedpyright]
 # basedpyright's own default, and a superset of pyright's `strict`: it adds the

@@ -27,6 +27,12 @@ python = "==3.14.6"
 # of them.
 fastapi-core = "==0.141.1"
 uvicorn = "==0.52.0"
+# The ORM and the driver. Runtime, not test-only: the API cannot answer its one request
+# without them. asyncpg speaks the PostgreSQL wire protocol directly, so this pair adds
+# greenlet (what SQLAlchemy's asyncio extension runs on) and nothing else - no libpq, no
+# client binaries, and above all no server. That is in the test feature below.
+sqlalchemy = "==2.0.51"
+asyncpg = "==0.31.0"
 
 # The app itself, installed editable so `expense_tracker` imports everywhere
 # (tests, serve, REPL) with no PYTHONPATH. pixi builds it via hatchling from
@@ -59,6 +65,30 @@ nodejs = "==26.5.0"
 # package.json: pnpm's pmOnFail defaults to "download", so that field would make pnpm
 # fetch its own version and bypass this pin. pixi is the single source of truth.
 pnpm = "==11.18.0"
+# The database server, and the initdb/pg_ctl/psql/createdb binaries the db-* poe tasks
+# in backend/pyproject.toml drive. A development and CI concern only: prod connects to a
+# database somebody
+# else operates, so keeping the server out of [dependencies] is what stops it - and
+# libpq, icu, krb5, openldap and liburing behind it - landing in the lean runtime
+# environment that only ever needs to speak the wire protocol.
+postgresql = "==18.4"
+
+# Where the local cluster lives, for everything that talks to it. Scoped to the test
+# feature rather than a bare [activation.env]: a root block belongs to the default
+# feature, so it would be folded into prod too and hand a deployment a DSN pointing at
+# its own loopback.
+#
+# DATABASE_URL and the PG* variables are the same four facts twice - SQLAlchemy reads
+# the first, psql/createdb read the second - so they are kept adjacent and change
+# together. The PG* half is what lets every db-* task in backend/pyproject.toml omit the
+# --host/--port/--username flags. Written out literally rather than interpolating
+# $PGHOST into the DSN, because an unexpanded variable there would fail confusingly.
+[feature.test.activation.env]
+DATABASE_URL = "postgresql+asyncpg://expense_tracker@127.0.0.1:5433/expense_tracker"
+PGHOST = "127.0.0.1"
+PGPORT = "5433"
+PGUSER = "expense_tracker"
+PGDATABASE = "expense_tracker"
 
 # Forwarders, in the test feature so they are present in default and absent from prod -
 # the lean prod environment has neither poe nor pnpm to forward to.
@@ -75,6 +105,17 @@ pnpm = "==11.18.0"
 [feature.test.tasks]
 # Backend -> [tool.poe.tasks] in backend/pyproject.toml. With cwd=backend, poe finds that
 # file unaided, so the forwarder needs no -C.
+#
+# The five backend-db-* forwarders are ordinary members of this group: the cluster they
+# drive lives at the workspace root rather than under backend/, but the tasks are the
+# backend's like every other one here, and their bodies sit in backend/pyproject.toml
+# with the rest. Nothing about the database earns an exception to the rule that this
+# file only forwards.
+backend-db-create = { cmd = "poe db-create", cwd = "backend" }
+backend-db-init = { cmd = "poe db-init", cwd = "backend" }
+backend-db-reset = { cmd = "poe db-reset", cwd = "backend" }
+backend-db-start = { cmd = "poe db-start", cwd = "backend" }
+backend-db-stop = { cmd = "poe db-stop", cwd = "backend" }
 backend-dev = { cmd = "poe dev", cwd = "backend" }
 backend-format = { cmd = "poe format", cwd = "backend" }
 backend-format-check = { cmd = "poe format-check", cwd = "backend" }
