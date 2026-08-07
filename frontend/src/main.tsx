@@ -17,9 +17,11 @@ if (!root) {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // The greeting only changes when a new wheel is deployed, and this is a single
-      // screen -- there is nothing worth refetching when the tab regains focus.
-      refetchOnWindowFocus: false,
+      // refetchOnWindowFocus is left at its default (true) deliberately. The greeting
+      // is a row somebody can UPDATE rather than a constant baked into a deploy - the
+      // reason the API serves it with Cache-Control: no-store - and regaining focus is
+      // exactly when a value that changed while the tab was backgrounded is the one on
+      // screen. The cost is one request against one small endpoint.
       retry: 1,
     },
   },
