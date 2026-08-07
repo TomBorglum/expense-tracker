@@ -67,7 +67,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[AppState]:
     return type is AsyncGenerator, not AsyncIterator: basedpyright deprecates the
     latter under @asynccontextmanager.
     """
-    engine = create_async_engine(database_url())
+    # pool_pre_ping because the pool outlives the connections in it: a server restart, a
+    # failover or an idle-connection cull leaves a checked-in socket that fails on its
+    # next statement. Unprobed, that failure reaches the repository, which converts it
+    # like any other, and a client sees a 503 for a database that is up. The cost is one
+    # round trip per checkout.
+    engine = create_async_engine(database_url(), pool_pre_ping=True)
     try:
         # Merged into every request's state by starlette. expire_on_commit=False
         # because nothing here writes; it only keeps loaded rows usable after a commit.
