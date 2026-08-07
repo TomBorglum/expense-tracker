@@ -2,8 +2,8 @@
 .pixi/
 
 # The local PostgreSQL cluster: data directory, postgresql.conf and server.log.
-# Created by `pixi run db-init` and thrown away by `pixi run db-reset`. Nothing in here
-# is precious - backend/schema.sql can rebuild all of it.
+# Created by `pixi run backend-db-init` and thrown away by `pixi run backend-db-reset`.
+# Nothing in here is precious - backend/schema.sql can rebuild all of it.
 .pgdata/
 
 # Python bytecode
@@ -25,7 +25,8 @@ frontend/.env.local
 .coverage
 coverage.xml
 
-# import-linter's graph cache, written into backend/ by `pixi run backend-lint-imports`.
+# import-linter's graph cache, written into backend/ by `pixi run backend-lint` - that
+# task is ruff followed by lint-imports, and the second half is what writes this.
 .import_linter_cache/
 
 # Frontend coverage output (vitest)
