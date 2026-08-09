@@ -148,12 +148,18 @@ Break one of these and CI goes red on an otherwise correct change.
   Same reason `frontend/eslint.config.ts` opens with `globalIgnores(["dist"])`.
 - **`frontend/package.json` must not gain a `packageManager` field**, and
   `frontend/pnpm-lock.yaml` must stay at `lockfileVersion: 9.0`. The first bypasses the
-  pnpm pin in `pixi.toml`; both break Dependabot's lockfile parsing. See
-  [`README.md`](README.md#package-manager).
-- **`frontend/pnpm-workspace.yaml` must not gain a `minimumReleaseAge` exemption.** It
-  exists only to answer `allowBuilds`. Exempting a version disables the 24-hour
-  supply-chain guard for the least-vetted release there is; pick a version that already
-  clears the window.
+  pnpm pin in `pixi.toml`; both break Dependabot's lockfile parsing. That lockfile
+  version is also what Dependabot reads its pnpm major from, which is why the next
+  invariant exists. See [`README.md`](README.md#package-manager).
+- **`frontend/pnpm-workspace.yaml` states `minimumReleaseAge: 1440` and must never gain
+  a `minimumReleaseAgeExclude`.** Stating the value and excusing a package from it are
+  opposites: 1440 is already pnpm 11's default, written down because Dependabot resolves
+  this lockfile with pnpm 10 (per the `lockfileVersion: 9.0` pin above), where the
+  default is 0 - so without it the 24-hour guard covers CI's *verification* but not
+  Dependabot's *resolution*. An exclusion, by contrast, disables the guard for the
+  least-vetted release there is; pick a version that already clears the window. Naming
+  the value also turns on `minimumReleaseAgeStrict`, which is intended. The file's two
+  settings are the whole of it - the other is `allowBuilds`.
 
 ## Quality gates
 

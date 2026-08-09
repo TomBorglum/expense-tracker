@@ -28,6 +28,11 @@ updates:
   #     cannot parse that (dependabot-core#14794). pixi.toml pins pnpm instead, and
   #     its comment there gives the other reason to keep it out of package.json.
   #   - The lockfile must stay at lockfileVersion 9.0, which Dependabot does parse.
+  #     That version also decides which pnpm Dependabot resolves with - it reads the
+  #     major out of the lockfile, and 9.0 lands it on pnpm 10, two behind the pin in
+  #     pixi.toml. frontend/pnpm-workspace.yaml states minimumReleaseAge for that
+  #     reason: pnpm 10 defaults it to 0, so the guard CI verifies against would not
+  #     otherwise apply to the resolution that produced the lockfile.
   #
   # No build output is committed here, so a bump to vite, react or tailwind needs
   # nothing added to the Dependabot branch - CI's `pixi run frontend-build` is what proves
@@ -46,6 +51,12 @@ updates:
     # the rest of the toolchain (plugin-react, @types/*, testing-library) to catch up
     # first, and arrives as its own PR outside the group. Patches keep the 3-day
     # default. Security updates ignore cooldown.
+    #
+    # This holds back the packages Dependabot UPDATES, and nothing else. The transitive
+    # versions its lockfile resolution drags along are outside it (dependabot-core#14683,
+    # #13165) - those are held by minimumReleaseAge in frontend/pnpm-workspace.yaml,
+    # which is a separate mechanism with a separate window. Raising the days here does
+    # not cover them.
     cooldown:
       default-days: 7
       semver-major-days: 30

@@ -1,16 +1,34 @@
-# pnpm settings. This file exists only for `allowBuilds` below: pnpm 11 stopped
-# reading the "pnpm" field in package.json, so pnpm-workspace.yaml is the one place
-# the setting can live. pnpm scaffolds the file itself when a dependency ships an
-# install script, leaving the value as a placeholder for a human to decide.
-#
-# It must NOT gain a `minimumReleaseAge` exemption. That guard is what stops this
-# repo's exact pins from installing a package published in the last 24 hours; see the
-# "Package manager" section of ../README.md. Prefer picking a release that already
-# clears the window.
+# pnpm settings. pnpm 11 stopped reading the "pnpm" field in package.json, so this file
+# is the one place they can live. Two of them, in alphabetical order.
 
+# pnpm scaffolds this key itself when a dependency ships an install script, leaving the
+# value as a placeholder for a human to decide.
 allowBuilds:
   # msw's install script only copies the browser service worker (mockServiceWorker.js)
   # into a public directory. The tests use msw/node, which needs none of it, so the
   # script is denied rather than left undecided -- pnpm exits non-zero while a build
   # script is unanswered, which fails `pixi run frontend-install` in CI.
   msw: false
+
+# pnpm 11's own default, stated rather than inherited, because DEPENDABOT DOES NOT RUN
+# PNPM 11. It picks its pnpm major from the lockfile, and `lockfileVersion: 9.0` - a pin
+# that exists for its parser (see ../.github/dependabot.yml) - lands it on pnpm 10, where
+# this setting defaults to 0 instead of 1440.
+#
+# Left implicit, the 24-hour supply-chain guard therefore applies where the lockfile is
+# VERIFIED (CI, pnpm 11) but not where it is RESOLVED (Dependabot, pnpm 10). A transitive
+# package published in the last day then lands in pnpm-lock.yaml and fails
+# `pixi run frontend-install` with ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION, which is what
+# broke the frontend bump in PR #48. Both majors have the setting - it arrived in pnpm
+# 10.16.0 - so stating it is all it takes for the two halves to agree.
+#
+# Stating the value is NOT an exemption, and this file must still never gain a
+# `minimumReleaseAgeExclude` key: that excuses a named package from the guard, which is
+# precisely the least-vetted release there is. Pick a version that already clears the
+# window instead; see the "Package manager" section of ../README.md.
+#
+# One side effect, and it is the direction this repo wants: naming the value explicitly
+# also flips pnpm 11's `minimumReleaseAgeStrict` default from false to true. It only
+# applies when NO version in range is old enough, and it turns "install the too-young one
+# anyway" into a failure.
+minimumReleaseAge: 1440
