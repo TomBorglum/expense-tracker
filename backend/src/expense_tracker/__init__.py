@@ -5,9 +5,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import RequestResponseEndpoint
 
-# The contract and the failure mode. Building the repository is deps.py's business.
-from .db import GreetingRepository, GreetingUnavailableError
-from .deps import lifespan, provide_greeting_repository
+# The contracts and the failure modes. Building the repositories is deps.py's business.
+from .db import (
+    ExpenseRepository,
+    ExpensesUnavailableError,
+    GreetingRepository,
+    GreetingUnavailableError,
+)
+from .deps import lifespan, provide_expense_repository, provide_greeting_repository
 
 # Security headers applied to every response. This app serves JSON and nothing else,
 # so the page-oriented directives a browser shell would need (script-src, style-src,
@@ -64,6 +69,38 @@ def create_app() -> FastAPI:
             headers={"Cache-Control": "no-store"},
         )
 
+    # The expenses the loader has put in the database, newest first. Read-only by
+    # design: rows arrive through `pixi run backend-load-expenses` and nothing else, so
+    # there is no POST, PUT or DELETE here and no plan for one.
+    #
+    # Hand-built for the same reason as the greeting above. Unlike the greeting's, this
+    # shape is declared exactly once - the frontend does not consume it yet - so there
+    # is no second half to keep in step.
+    @app.get("/api/expenses")
+    async def expenses(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        expenses: Annotated[ExpenseRepository, Depends(provide_expense_repository)],
+    ) -> JSONResponse:
+        # str(amount), never float(amount): the column is numeric(12, 2) and arrives as
+        # a Decimal, but JSON has no decimal type and 775.37 has no exact binary form.
+        # A float round trip is how a total drifts by a cent, so the string is the
+        # payload and the client parses it.
+        #
+        # The order is the repository's, reproduced here untouched. Sorting again would
+        # hide a repository that stopped sorting.
+        return JSONResponse(
+            [
+                {
+                    "amount": str(record.amount),
+                    "currency": record.currency,
+                    "date": record.expense_date.isoformat(),
+                    "category": record.category,
+                    "details": record.details,
+                }
+                for record in await expenses.list_expenses()
+            ],
+            headers={"Cache-Control": "no-store"},
+        )
+
     # The one place the repository's failure becomes an HTTP status, which is what lets
     # db.py stay free of fastapi. Registered handlers run in starlette's
     # ExceptionMiddleware, which sits inside the middleware added above, so this
@@ -77,6 +114,17 @@ def create_app() -> FastAPI:
         # than 404. Neither argument is used: the detail is deliberately the same
         # either way, so a client learns nothing about the database from a failure.
         return JSONResponse({"detail": "greeting unavailable"}, status_code=503)
+
+    @app.exception_handler(ExpensesUnavailableError)
+    async def handle_expenses_unavailable(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        _request: Request, _exc: Exception
+    ) -> JSONResponse:
+        # Only ever an unreachable or failing database. An empty table is NOT this: it
+        # answers 200 with [], because a database nobody has run the loader against yet
+        # is a legitimate state and a 503 would train a client to retry forever against
+        # a server that is working perfectly. That asymmetry with the greeting - whose
+        # missing row IS a fault, because its row is required - is deliberate.
+        return JSONResponse({"detail": "expenses unavailable"}, status_code=503)
 
     # Added last, so it is the outermost middleware: that is what lets it answer a
     # preflight itself instead of passing OPTIONS down to a router that has no such

@@ -1,8 +1,8 @@
-"""How the app is wired to PostgreSQL: configuration, lifetime, injection.
+"""How the app is wired to PostgreSQL: lifetime and injection.
 
-Nothing here knows how to read a greeting - that is db.py's job, and the dependency
-below hands its repository to a route. The import goes one way only: this module
-imports db, db imports nothing from here.
+Nothing here knows how to read a row - that is db.py's job, and the dependencies below
+hand its repositories to routes. The import goes one way only: this module imports db
+and config, neither of which imports anything from here.
 
 The engine is built by the lifespan rather than at import time, so merely constructing
 an app - which most of the test suite does - opens no socket and needs no database.
@@ -10,7 +10,6 @@ Everything is async because the app runs on uvicorn's event loop: a blocking dri
 would stall every other request while one waited on a socket.
 """
 
-import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Annotated, TypedDict, cast
@@ -22,24 +21,13 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from .db import GreetingRepository, PostgresGreetingRepository
-
-
-def database_url() -> str:
-    """The DSN to connect with. Required, with deliberately no fallback.
-
-    The development value is declared once, in pixi.toml's
-    [feature.test.activation.env], so `pixi run` hands it to serve, test and the editor
-    alike. A default here would be that value written a second time, and in a
-    deployment it would turn a forgotten setting into a silent connection attempt
-    against the deployment's own loopback.
-    """
-    url = os.environ.get("DATABASE_URL")
-    if url is None:
-        raise RuntimeError(
-            "DATABASE_URL is not set; `pixi run` supplies the development value"
-        )
-    return url
+from .config import database_url
+from .db import (
+    ExpenseRepository,
+    GreetingRepository,
+    PostgresExpenseRepository,
+    PostgresGreetingRepository,
+)
 
 
 class AppState(TypedDict):
@@ -101,3 +89,15 @@ def provide_greeting_repository(
     Returns the contract, so callers never name the implementation.
     """
     return PostgresGreetingRepository(session)
+
+
+def provide_expense_repository(
+    session: Annotated[AsyncSession, Depends(provide_session)],
+) -> ExpenseRepository:
+    """The other seam the HTTP tests replace, on the same terms as the greeting's.
+
+    Both are overridden in tests/conftest.py, which is what keeps every test in
+    test_app.py free of a database - overriding the repository short-circuits
+    provide_session above, so no engine is ever asked for.
+    """
+    return PostgresExpenseRepository(session)

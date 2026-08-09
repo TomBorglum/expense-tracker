@@ -1,7 +1,10 @@
+from typing import cast
+
 import pytest
 from starlette.testclient import TestClient
 
 from expense_tracker import create_app
+from expense_tracker.db import ExpenseRecord
 
 # The origin a browser would send. Any value works against a wildcard policy; a
 # realistic one keeps the assertions readable.
@@ -95,6 +98,84 @@ def test_greeting_is_unavailable_when_the_database_is_down(
     assert response.status_code == 503
     assert response.json() == {"detail": "greeting unavailable"}
     # An error response is still decorated by the security-headers middleware.
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_expenses_endpoint_returns_json(
+    client: TestClient, expense_records: list[ExpenseRecord]
+) -> None:
+    response = client.get("/api/expenses")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json() == [
+        {
+            "amount": "1250.00",
+            "currency": "DKK",
+            "date": "2026-02-02",
+            "category": "Housing",
+            "details": "Rent",
+        },
+        {
+            "amount": "775.37",
+            "currency": "DKK",
+            "date": "2026-01-02",
+            "category": "Insurance",
+            "details": "Accident / Car",
+        },
+    ]
+    # The fixture is the other half of that literal; if it changes, this should fail
+    # rather than quietly assert against itself.
+    assert len(expense_records) == 2
+
+
+def test_expense_amounts_are_strings_not_numbers(client: TestClient) -> None:
+    """The property a float() would break. 1250.00 must not arrive as 1250.0.
+
+    JSON has no decimal type and 775.37 has no exact binary form, so a float round trip
+    is how a total drifts by a cent. The client parses the string.
+    """
+    # cast because Response.json() is Any, which recommended mode's reportAny rejects
+    # the moment it is bound to a name - the same reason deps.provide_session casts.
+    body = cast("list[dict[str, str]]", client.get("/api/expenses").json())
+    assert [row["amount"] for row in body] == ["1250.00", "775.37"]
+
+
+def test_expenses_endpoint_preserves_the_repository_order(client: TestClient) -> None:
+    """Ordering belongs to the repository and its index, not to the route.
+
+    The fake hands back what it was given, so this fails if the route ever sorts or
+    reverses on its own.
+    """
+    body = cast("list[dict[str, str]]", client.get("/api/expenses").json())
+    assert [row["date"] for row in body] == ["2026-02-02", "2026-01-02"]
+
+
+def test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded(
+    empty_expenses_client: TestClient,
+) -> None:
+    """200 and [], deliberately not 503 - the asymmetry with the greeting.
+
+    A greeting's missing row is a fault, because exactly one row is required. An empty
+    expense table is a freshly initialised database nobody has run the loader against,
+    which is a legitimate state; answering 503 would train a client to retry forever
+    against a server that is working perfectly.
+    """
+    response = empty_expenses_client.get("/api/expenses")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_expenses_are_unavailable_when_the_database_is_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The real dependency this time, not the fake, against a port that refuses
+    # instantly. Context-managed so the lifespan runs and an engine is actually built.
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://nobody@127.0.0.1:1/none")
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses")
+    assert response.status_code == 503
+    assert response.json() == {"detail": "expenses unavailable"}
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
