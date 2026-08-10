@@ -63,7 +63,8 @@ test -f "$POE_ROOT/../.pgdata/PG_VERSION" ||
          --no-instructions --set=port=5433 --set=listen_addresses=127.0.0.1 \
          --set=unix_socket_directories=/tmp
 """
-# The entry point: after this, `poe dev` and `poe test` both work. Reads as
+# The entry point: `poe dev` depends on it, and after it the postgres-marked tests
+# connect instead of skipping. Reads as
 # (probe || createdb) && apply-schema, which is left-associative, so the schema is
 # applied down either branch. The probe is psql's own exit code - it fails when the
 # database does not exist - so there is nothing to grep. schema.sql is idempotent, which
@@ -99,7 +100,13 @@ db-stop.shell = 'pg_ctl --pgdata="$POE_ROOT/../.pgdata" --mode=fast --wait stop 
 # and its stat reloader rglobs for *.py and stats every hit four times a second - which
 # here means walking .pixi/ and node_modules/ to find 1891 files when the only one that
 # can ever matter is src/expense_tracker/__init__.py.
-dev = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
+#
+# The db-init dep is what makes this the one command a developer needs for the backend: it
+# is idempotent and chains db-start and db-create, so a cold checkout and a machine that
+# was already serving yesterday both reach the same place. Table form because a task
+# cannot be both a string and a `deps` table.
+dev.cmd = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
+dev.deps = ["db-init"]
 format = "ruff format"
 format-check = "ruff format --check"
 # Two linters, one gate: ruff over each file, then import-linter over the graph they

@@ -133,6 +133,10 @@ backend-db-init = { cmd = "poe db-init", cwd = "backend" }
 backend-db-reset = { cmd = "poe db-reset", cwd = "backend" }
 backend-db-start = { cmd = "poe db-start", cwd = "backend" }
 backend-db-stop = { cmd = "poe db-stop", cwd = "backend" }
+# The one command a developer needs for the backend: `poe dev` deps on db-init, so the
+# cluster is up and schema'd before uvicorn binds. The dep is declared there rather than
+# as a `depends-on` here, which pixi would also accept - it belongs beside the
+# db-init -> db-start -> db-create chain it extends, not split across two files.
 backend-dev = { cmd = "poe dev", cwd = "backend" }
 backend-format = { cmd = "poe format", cwd = "backend" }
 backend-format-check = { cmd = "poe format-check", cwd = "backend" }
@@ -146,8 +150,10 @@ backend-typecheck = { cmd = "poe typecheck", cwd = "backend" }
 # Frontend -> the "scripts" block in frontend/package.json. `install` is a pnpm built-in
 # rather than a script, which is why it alone takes no `run`.
 frontend-build = { cmd = "pnpm run build", cwd = "frontend" }
-# vite's dev server, the counterpart to backend-dev. The two run side by side: this one
-# serves the page, backend-dev answers its fetches from another origin.
+# vite's dev server, the counterpart to backend-dev in both senses. The two run side by
+# side - this one serves the page, backend-dev answers its fetches from another origin -
+# and this one is likewise the only command the frontend needs, because the "dev" script
+# runs the same frozen-lockfile install as frontend-install before it starts vite.
 frontend-dev = { cmd = "pnpm run dev", cwd = "frontend" }
 frontend-format = { cmd = "pnpm run format", cwd = "frontend" }
 # The formatting gate. .zed/settings.json deliberately does not enable format_on_save, so

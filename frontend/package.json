@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b && vite build",
-    "dev": "vite",
+    "dev": "pnpm install --frozen-lockfile && vite",
     "format": "prettier --write .",
     "format-check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",

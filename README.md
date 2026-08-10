@@ -60,20 +60,22 @@ reports the directives as unknown commands.
 ## Quickstart
 
 ```sh
-cd expense-tracker          # direnv provisions the environment on entry
-pixi run frontend-install   # install frontend dependencies (pnpm)
-pixi run backend-db-init    # create, start and seed the local database
+cd expense-tracker     # direnv provisions the environment on entry
 ```
 
-`db-init` is idempotent, so it is also how you start the database again on any later
-day. Without it the API answers `503` and the page shows its error state.
-
-Then start both, in two terminals:
+Then one command per stack, in two terminals:
 
 ```sh
 pixi run backend-dev   # the REST API on http://localhost:8000
 pixi run frontend-dev  # the SPA on http://localhost:5173
 ```
+
+Each brings its own prerequisite up first, so there is no setup step to remember and no
+order to get wrong: `backend-dev` depends on `db-init`, which creates, starts and seeds
+the local database, and `frontend-dev` runs the same frozen-lockfile `pnpm install` that
+`frontend-install` does. Both prerequisites are idempotent, so this is the same command
+on a fresh clone and on any later day. `pixi run backend-db-init` and
+`pixi run frontend-install` remain available on their own, which is what CI calls.
 
 Visit http://localhost:5173 and you should see `Hello, World!`, fetched from
 `http://localhost:8000/api/greeting` - a genuine cross-origin request, which works
@@ -159,7 +161,8 @@ public text, rebuildable at any moment from `backend/schema.sql`. Do not copy th
 `initdb` flags anywhere real.
 
 All five tasks are idempotent, and `db-init` depends on `db-start` depends on
-`db-create`, so `pixi run backend-db-init` is the only one you normally need.
+`db-create`, so `pixi run backend-db-init` is the only one you normally need - and
+`backend-dev` depends on it in turn, so starting the API is usually all it takes.
 `db-reset` throws the cluster away - the cure if a test that edits the greeting row is
 killed before it can restore it.
 
@@ -360,6 +363,14 @@ alongside Node. Three deliberate choices:
   `pixi run frontend-install` in CI. The decision lives in `frontend/pnpm-workspace.yaml`
   under `allowBuilds`, the only place pnpm 11 still reads it. `msw` is denied there:
   its script only copies the browser service worker, and the tests use `msw/node`.
+- **The `dev` script installs even though pnpm would.** pnpm 11's
+  `verifyDepsBeforeRun` defaults to `install`, so `pnpm run dev` already brings a stale
+  `node_modules` up to date before the script starts - which is why a fresh clone shows
+  two installs, pnpm's and the script's own no-op. The explicit one stays because that
+  default is a *setting*, and a developer whose global pnpm config turns it off would
+  otherwise get a `dev` task that no longer installs. It is not a lockfile guard: pnpm's
+  check runs first, so on drift the lockfile is already updated by the time
+  `--frozen-lockfile` sees it. `pixi run frontend-install` in CI is the guard.
 
 ## Editor setup (Zed)
 
@@ -412,12 +423,12 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 
 | Command | Delegates to | What it does |
 | --- | --- | --- |
-| `pixi run backend-db-init` | `poe db-init` | Create, start and seed the local database (the one you need) |
+| `pixi run backend-db-init` | `poe db-init` | Create, start and seed the local database (`backend-dev` depends on it) |
 | `pixi run backend-db-create` | `poe db-create` | `initdb` a cluster into `.pgdata/`, if there is not one |
 | `pixi run backend-db-start` | `poe db-start` | Start the cluster on 127.0.0.1:5433, if it is not running |
 | `pixi run backend-db-stop` | `poe db-stop` | Stop the cluster; succeeds if it is already stopped |
 | `pixi run backend-db-reset` | `poe db-reset` | Stop the cluster and delete `.pgdata/` entirely |
-| `pixi run backend-dev` | `poe dev` | Run the API on uvicorn, port 8000 (with reloader) |
+| `pixi run backend-dev` | `poe dev` | Run `db-init`, then the API on uvicorn, port 8000 (with reloader) |
 | `pixi run backend-test` | `poe test` | Run the test suite with coverage |
 | `pixi run backend-lint` | `poe lint` | Lint with ruff, then check the import graph with import-linter |
 | `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues (ruff only) |
@@ -426,7 +437,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run backend-format-check` | `poe format-check` | Check formatting without writing changes |
 | `pixi run backend-typecheck` | `poe typecheck` | Type-check with basedpyright (recommended) |
 | `pixi run frontend-install` | `pnpm install` | Install frontend dependencies (`--frozen-lockfile`) |
-| `pixi run frontend-dev` | `pnpm run dev` | Run vite's dev server on port 5173 (hot reload) |
+| `pixi run frontend-dev` | `pnpm run dev` | Install, then run vite's dev server on port 5173 (hot reload) |
 | `pixi run frontend-build` | `pnpm run build` | Build the frontend into `frontend/dist/` |
 | `pixi run frontend-typecheck` | `pnpm run typecheck` | Type-check the frontend with tsc |
 | `pixi run frontend-lint` | `pnpm run lint` | Lint the frontend with eslint (type-aware, `--max-warnings 0`) |
@@ -475,6 +486,12 @@ cd frontend && pnpm test   # pnpm run lists the frontend's
 The cost is that adding a command means two edits - define it in the stack's manifest,
 then forward it from `pixi.toml`. Put the command body in the stack, never in the
 forwarder.
+
+That goes for one command depending on another, too. pixi tasks take a `depends-on`, so
+`backend-dev` could have been chained to `backend-db-init` here; instead the dependency
+is `dev.deps` in `backend/pyproject.toml`, beside the `db-init` -> `db-start` ->
+`db-create` chain it extends, so the whole graph reads in one file. The frontend has no
+equivalent mechanism, so its `dev` script chains with `&&`.
 
 ## Configuration
 
