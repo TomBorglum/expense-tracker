@@ -8,20 +8,15 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from expense_tracker import create_app
-from expense_tracker.db import ExpenseRecord, ExpenseRepository, GreetingRepository
 from expense_tracker.deps import provide_expense_repository, provide_greeting_repository
+from expense_tracker.expense_repository import ExpenseRecord, ExpenseRepository
+from expense_tracker.greeting_repository import GreetingRepository
 
 
 class _FakeGreetingRepository(GreetingRepository):
-    """Stands in for the real repository without a session or a server.
+    """Stands in for the real repository without a session or a server."""
 
-    Subclassing GreetingRepository is required, not a courtesy: renaming or dropping the
-    method below fails the build.
-    """
-
-    # Annotated at class level for the same reason PostgresGreetingRepository._session
-    # is: reportUnannotatedClassAttribute wants every attribute of a non-final class
-    # typed.
+    # Annotated at class level for reportUnannotatedClassAttribute.
     _message: str
 
     def __init__(self, message: str) -> None:
@@ -36,19 +31,14 @@ class _FakeGreetingRepository(GreetingRepository):
 def greeting_text() -> str:
     """The fake greeting the HTTP suite asserts against.
 
-    Deliberately not the wording schema.sql seeds: if the endpoint ever went back to
-    serving a constant, a matching value here would let these tests pass anyway.
+    Deliberately not the wording schema.sql seeds: a matching value here would let
+    these tests pass against an endpoint that served a constant.
     """
     return "Hello from the test double!"
 
 
 class _FakeExpenseRepository(ExpenseRepository):
-    """Stands in for the real repository without a session or a server.
-
-    Subclassing ExpenseRepository is required for the same reason the greeting's fake
-    subclasses its own: dependency_overrides is an untyped dict and would accept a
-    look-alike, so the ABC is what makes the coupling real.
-    """
+    """Stands in for the real repository without a session or a server."""
 
     _records: Sequence[ExpenseRecord]
 
@@ -57,17 +47,17 @@ class _FakeExpenseRepository(ExpenseRepository):
 
     @override
     async def list_expenses(self) -> Sequence[ExpenseRecord]:
-        # Handed back in the order it was given, deliberately unsorted. Ordering is the
-        # repository's job, so a fake that sorted would hide a route that re-sorted.
+        # Handed back in the order it was given. Ordering is the repository's job, so
+        # a fake that sorted would hide a route that re-sorted.
         return self._records
 
 
 @pytest.fixture
 def expense_records() -> list[ExpenseRecord]:
-    """Two expenses, already newest first, as the real repository would return them.
+    """Two expenses, already newest first.
 
-    The amounts have two decimal places and one of them has a trailing zero, so a route
-    that reached for float() instead of str() shows up as 1250.0 rather than 1250.00.
+    One amount has a trailing zero, so a route reaching for float() instead of str()
+    shows up as 1250.0 rather than 1250.00.
     """
     return [
         ExpenseRecord(
@@ -87,10 +77,8 @@ def expense_records() -> list[ExpenseRecord]:
 def app(greeting_text: str, expense_records: list[ExpenseRecord]) -> FastAPI:
     """An app whose data comes from memory instead of PostgreSQL.
 
-    Overriding the dependencies, rather than pointing the app at a test database, is
-    what keeps this suite about the HTTP surface - CORS, security headers, 404s - and
-    runnable with no server anywhere. provide_session is upstream of both overrides, so
-    it never runs and no session is ever opened.
+    provide_session is upstream of both overrides, so it never runs and no session is
+    ever opened.
     """
     application = create_app()
     application.dependency_overrides[provide_greeting_repository] = lambda: (
@@ -104,19 +92,16 @@ def app(greeting_text: str, expense_records: list[ExpenseRecord]) -> FastAPI:
 
 @pytest.fixture
 def client(app: FastAPI) -> TestClient:
-    # Deliberately not entered as a context manager: `with TestClient(...)` runs the
-    # lifespan, which would build a real engine from DATABASE_URL. These tests want the
-    # router and the middleware stack, not a database.
+    # Not entered as a context manager: `with TestClient(...)` runs the lifespan, which
+    # would build a real engine from DATABASE_URL.
     return TestClient(app)
 
 
 @pytest.fixture
 def empty_expenses_client(app: FastAPI) -> TestClient:
-    """The same app with nothing loaded yet, which is a state and not a fault.
-
-    Re-overriding the dependency on the app fixture rather than parametrising it
-    indirectly: request.param is an Any expression, which recommended mode rejects.
-    """
+    """The same app with nothing loaded yet, which is a state and not a fault."""
+    # Re-overriding on the app fixture rather than parametrising it indirectly:
+    # request.param is an Any expression, which reportAny rejects.
     app.dependency_overrides[provide_expense_repository] = lambda: (
         _FakeExpenseRepository([])
     )

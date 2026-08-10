@@ -20,11 +20,12 @@ expense-tracker/
   sonar-project.properties      # one Sonar project spanning both languages
   .github/                      # CI, release-please, dependabot
   .pgdata/                      # the local PostgreSQL cluster, gitignored
-  data/expenses/                # the committed expense files, loaded into the database
   backend/
     pyproject.toml              # hatchling, ruff, pytest, basedpyright, poe tasks
     schema.sql                  # the whole schema: three tables, one seeded row
-    src/expense_tracker/        # __init__ (the API), deps, loader, db, config
+    data/expenses/              # the committed expense files, loaded into the database
+    src/expense_tracker/        # __init__ (the API), deps, config, db,
+                                #   {greeting,expense}_repository, expense_loader
     tests/
   frontend/
     package.json, pnpm-lock.yaml, pnpm-workspace.yaml
@@ -87,16 +88,18 @@ error state until something answers on 8000.
 | Route | What it serves |
 | --- | --- |
 | `GET /api/greeting` | `{"greeting": "<the message column of the greeting table>"}` |
-| `GET /api/expenses` | `[{"amount", "currency", "date", "category", "details"}, ...]` |
+| `GET /api/expenses` | `[{"amount", "currency", "date", "category", "details"}, ...]` - the `ExpensePayload` model |
 
 Both send `Cache-Control: no-store`.
 
 The greeting answers `503 {"detail": "greeting unavailable"}` when the database is
 unreachable or the seed row is missing - both server faults, not client ones.
 
-Expenses come back **newest first**, and `amount` is a **string**, not a number:
-the column is `numeric(12, 2)`, JSON has no decimal type, and `775.37` has no exact
-binary form, so a float round trip is how a total drifts by a cent. An unreachable
+Expenses come back **newest first**, and `amount` is a **string**, not a number: the
+column is `numeric(12, 2)`, JSON has no decimal type, and a decimal has no exact binary
+form, so a float round trip is how a total drifts by a cent. That shape is declared once,
+as the `ExpensePayload` pydantic model in `backend/src/expense_tracker/__init__.py`;
+the tests parse responses back into it rather than into untyped dicts. An unreachable
 database answers `503 {"detail": "expenses unavailable"}`, but an **empty table answers
 `200 []`** - a database nobody has run the loader against yet is a legitimate state, not
 a fault, which is where this differs from the greeting's missing row.
@@ -127,8 +130,9 @@ than passing it to a router with no such route.
 ## Database
 
 PostgreSQL, holding three tables: `greeting` (one row - changing the wording is an
-`UPDATE`, not a deploy), and `loaded_file` and `expense`, which together are a view of
-the files in `data/expenses/`. See [Loading expenses](#loading-expenses).
+`UPDATE`, not a deploy), and `loaded_expense_file` and `expense`, which together are a
+view of the files in `backend/data/expenses/`. See
+[Loading expenses](#loading-expenses).
 
 The server is a **pixi dependency**, not a container. `postgresql` is pinned in
 `pixi.toml` beside python and node, so `direnv allow` provisions it and the `db-*`
@@ -163,26 +167,34 @@ killed before it can restore it.
 
 `backend/schema.sql` is the entire schema and the only DDL. There is no Alembic - three
 tables do not earn a migration tool when two of them are append-only and rebuildable
-from `data/expenses/` - and the app issues no DDL of its own, so nothing but `db-init`
-ever runs it. Every statement in it is idempotent, and the seed uses
+from `backend/data/expenses/` - and the app issues no DDL of its own, so nothing but
+`db-init` ever runs it. Every statement in it is idempotent, and the seed uses
 `ON CONFLICT DO NOTHING` so re-running never stamps on an edited row. Generated keys use
 `GENERATED ALWAYS AS IDENTITY` rather than `bigserial`, which PostgreSQL's own
 [Don't Do This](https://wiki.postgresql.org/wiki/Don%27t_Do_This) page advises against
-for new applications. The `Greeting`, `LoadedFile` and `Expense` models in
-`backend/src/expense_tracker/db.py` declare the same tables a second time, in Python,
-with nothing checking the agreement; change both together.
+for new applications. The `Greeting`, `LoadedExpenseFile` and `Expense` models declare
+the same tables a second time, in Python, with nothing checking the agreement; change
+both together.
 
-Access is SQLAlchemy 2 async over asyncpg, split across four modules. `db.py` is
-persistence alone - the models, the `GreetingRepository` and `ExpenseRepository`
-**abstract base classes** with their `Postgres*` implementations behind them, and the
-`...UnavailableError`s they raise - and imports nothing from FastAPI, so it knows no
-status codes. Callers depend on the base classes and never name an implementation.
-Implementations subclass them and carry `@override`, so the coupling is visible at the
-class declaration and drift fails `backend-typecheck`. `config.py` resolves
-`DATABASE_URL` and does nothing else. `deps.py` is the HTTP wiring: it owns the
-lifespan and injects a repository into each route. `loader.py` is the second entry
-point, a CLI that writes; it is a *sibling* of `deps.py`, not something below it, and
-may not import it - which is what keeps FastAPI out of `python -m`.
+Access is SQLAlchemy 2 async over asyncpg, split across six modules:
+
+| Module | Holds |
+| --- | --- |
+| `__init__.py` | `create_app()`, both routes, both exception handlers, `ExpensePayload` |
+| `deps.py` | the lifespan, the per-request session, and the two `provide_*_repository` seams |
+| `expense_loader.py` | the TSV parser and the `python -m` entry point - the only thing that writes |
+| `expense_repository.py` | `LoadedExpenseFile`, `Expense`, and the expense repository |
+| `greeting_repository.py` | `Greeting` and the greeting repository |
+| `db.py` | the declarative `Base` the two repository modules share |
+| `config.py` | `DATABASE_URL`, and nothing else |
+
+Each repository module holds its models, an **abstract base class**, its `Postgres*`
+implementation and the `...UnavailableError` it raises, and imports nothing from
+FastAPI - so neither knows a status code. Callers depend on the base classes and never
+name an implementation; implementations subclass them and carry `@override`, so the
+coupling is visible at the class declaration and drift fails `backend-typecheck`.
+`expense_loader.py` is a *sibling* of `deps.py`, not something below it, and may not
+import it - which is what keeps FastAPI out of `python -m`.
 
 The dependency arrows run one way, and are checked rather than merely intended: `pixi
 run backend-lint` runs import-linter after ruff, against the contracts in
@@ -205,28 +217,33 @@ developer who has not run `db-init` does not face a red suite, and **fail** unde
 ### Loading expenses
 
 ```sh
-pixi run backend-load-expenses      # reads data/expenses/*.csv into the database
+pixi run backend-load-expenses      # reads backend/data/expenses/*.tsv into the database
 ```
 
-Files are named `*.csv` but are **tab-separated**, with this header exactly:
+Files are `*.tsv`: **tab-separated**, UTF-8, one header line naming exactly these five
+columns in this order, then one line per expense.
 
-```
-Amount	Currency	Date	Category	Details
-775.37	DKK	02/01/2026	Insurance	Accident / Car
-```
+| Column | Format | Notes |
+| --- | --- | --- |
+| `Amount` | decimal | At most two decimal places; may be negative |
+| `Currency` | ISO 4217 alpha-3 | Uppercase |
+| `Date` | `DD/MM/YYYY` | Day first |
+| `Category` | free text | Must not be blank |
+| `Details` | free text | May be empty |
 
-Dates are `DD/MM/YYYY` (so that row is 2 January). Amounts carry at most two decimal
-places - a third is refused rather than rounded away by `numeric(12, 2)` in silence -
-and may be negative, because a refund is a negative expense. The header is checked
-strictly, which doubles as a delimiter check: a comma-separated file fails on line 1
-naming what it found instead of loading a column of nonsense.
+A third decimal place is refused rather than rounded away by `numeric(12, 2)` in
+silence. A negative amount is accepted, because a refund is a negative expense. The
+header is checked strictly, which doubles as a delimiter check: a comma-separated file
+fails on line 1 naming what it found instead of loading a column of nonsense. A
+byte-order mark is tolerated, and blank lines are skipped.
 
 **Re-running the loader is a no-op**, and that is the ledger's doing, not the rows'.
-`loaded_file` records each file's name and the SHA-256 of its bytes; a file already
-recorded with a matching digest is skipped whole. The expense rows carry no content
-hash and no `ON CONFLICT`, deliberately - two identical lines are two real purchases,
-so the rows themselves cannot say whether they have been loaded, and hashing them would
-silently collapse a pair of same-day fill-ups into one and make the month come up short.
+`loaded_expense_file` records each file's name and the SHA-256 of its bytes; a file
+already recorded with a matching digest is skipped whole. The expense rows carry no
+content hash and no `ON CONFLICT`, deliberately - two identical lines are two real
+purchases, so the rows themselves cannot say whether they have been loaded, and hashing
+them would silently collapse a pair of same-day fill-ups into one and make the month
+come up short.
 
 Each file is its own transaction: its ledger row and its expenses commit together or
 not at all, so a run that dies half way can simply be re-run.
@@ -244,6 +261,11 @@ pixi run backend-db-reset && pixi run backend-db-init && pixi run backend-load-e
 That rebuild is also the cure after `pixi run backend-test`, which TRUNCATEs both tables
 before and after every test in `test_expense_postgres.py` - running the suite empties
 whatever you had loaded.
+
+It is the cure for a **schema change**, too. Every statement in `schema.sql` is
+`CREATE ... IF NOT EXISTS`, so `db-init` adds what is missing but never renames or alters
+what is already there. Pulling a branch that changes a column or a table name means
+resetting the cluster, not re-running `db-init`.
 
 ## Frontend
 
@@ -399,7 +421,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run backend-test` | `poe test` | Run the test suite with coverage |
 | `pixi run backend-lint` | `poe lint` | Lint with ruff, then check the import graph with import-linter |
 | `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues (ruff only) |
-| `pixi run backend-load-expenses` | `poe load-expenses` | Read `data/expenses/*.csv` into the database |
+| `pixi run backend-load-expenses` | `poe load-expenses` | Read `backend/data/expenses/*.tsv` into the database |
 | `pixi run backend-format` | `poe format` | Format with ruff |
 | `pixi run backend-format-check` | `poe format-check` | Check formatting without writing changes |
 | `pixi run backend-typecheck` | `poe typecheck` | Type-check with basedpyright (recommended) |
@@ -420,8 +442,8 @@ the two directories. `pixi task list` prints this table's first column.
 The five `backend-db-*` tasks are the backend's like any other, but the cluster they
 drive is a workspace-level artifact like `.pixi/`: it is initdb'd into `.pgdata/` at the
 repo root, not under `backend/`. They address it through `$POE_ROOT`, poe's absolute path
-to `backend/`, so it does not matter where you invoke them from either.
-`backend-load-expenses` reaches `data/expenses/` the same way, and for the same reason.
+to `backend/`, so it does not matter where you invoke them from either. Every other task,
+`backend-load-expenses` included, uses a plain relative path.
 
 CI runs every gate above except the two `dev` tasks, the two `-fix` variants,
 `backend-format`, `backend-load-expenses` and the four `backend-db-*` tasks other than

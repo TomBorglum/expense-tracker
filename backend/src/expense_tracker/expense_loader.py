@@ -1,17 +1,7 @@
-"""Read the committed expense files into PostgreSQL. `python -m expense_tracker.loader`.
+"""Reads the committed expense files into PostgreSQL.
 
-The second entry point into this package, and the only thing that writes to it: the API
-reads expenses and never creates them, so this is where rows come from. It is a sibling
-of deps.py rather than something below it - a CLI is not part of the HTTP wiring - and
-the import-linter contracts in pyproject.toml keep the two from reaching for each other.
-
-Idempotency lives in the loaded_file ledger, not in the expense rows. Two identical
-lines - same amount, day, category and details - are two real purchases, so the rows
-cannot say whether they have been loaded before. A file can, by name and by digest.
-
-Every file is its own transaction: its ledger row and its expenses commit together or
-not at all, and earlier files stay committed when a later one fails. A run that dies
-half way can therefore be re-run, and picks up where it stopped.
+`python -m expense_tracker.expense_loader <directory>`. The only thing that writes to
+the database; the API reads and never creates.
 """
 
 import asyncio
@@ -29,39 +19,29 @@ from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from .config import database_url
-from .db import Expense, ExpenseRecord, LoadedFile
+from .expense_repository import Expense, ExpenseRecord, LoadedExpenseFile
 
-# The file's first line, split on tabs. Named here once so a mismatch is reported
-# against a single source of truth, and so switching format later is one edit.
-#
-# Checking it strictly doubles as a delimiter check: a comma-separated file splits into
-# one field whose name is the whole line, which fails here on line 1 with the offending
-# text quoted, rather than loading a column of nonsense.
+# The file's first line, split on tabs. Checking it strictly doubles as a delimiter
+# check: a comma-separated file splits into one field and fails here.
 _HEADER = ("Amount", "Currency", "Date", "Category", "Details")
 
-# What the file calls a date. Danish exports, so day first - 02/01/2026 is 2 January.
+# Day first: 02/01/2026 is 2 January.
 _DATE_FORMAT = "%d/%m/%Y"
 
-# At most two decimal places, because the column is numeric(12, 2) and a third would be
-# rounded away in silence. Deliberately no limit on the integer digits: that is a range
-# question, and the column answers it - see the atomicity note in load_directory.
+# At most two decimal places, because the column is numeric(12, 2) and a third would
+# be rounded away in silence. No limit on the integer digits - the column owns range.
 _AMOUNT = re.compile(r"^-?\d+(?:\.\d{1,2})?$")
 
-# ISO 4217 alpha-3, e.g. DKK. Same shape as the CHECK constraint on the column.
+# ISO 4217 alpha-3, e.g. DKK.
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
 
 
 class ExpenseFileError(Exception):
-    """A file could not be loaded, and the run stops.
-
-    One type for a malformed line, an unreadable directory and a file that changed
-    after being loaded: all of them mean the same thing to a caller, which is that the
-    data on disk needs a human before anything else happens.
-    """
+    """A file could not be loaded, and the run stops."""
 
 
 class LoadSummary(NamedTuple):
-    """What one run did. Printed by main(), asserted on by the tests."""
+    """What one run did."""
 
     files_read: int
     files_skipped: int
@@ -69,17 +49,13 @@ class LoadSummary(NamedTuple):
 
 
 def parse_expense_rows(filename: str, data: bytes) -> list[ExpenseRecord]:
-    """Turn one file's bytes into records, or raise ExpenseFileError naming the line.
+    """Turns one file's bytes into records, or raises ExpenseFileError naming the line.
 
-    Takes bytes rather than a path so the caller reads the file exactly once and hashes
-    the same bytes it parses - a file that changed between the two would otherwise be
-    recorded under a digest that never existed.
-
-    utf-8-sig strips a byte-order mark if a spreadsheet left one, and decodes plain
-    UTF-8 when it did not. Real files carry Danish text; the committed samples stay
-    ASCII because CLAUDE.md asks committed source to.
+    Takes bytes rather than a path so the caller hashes exactly what it parses.
     """
     try:
+        # utf-8-sig strips a byte-order mark if a spreadsheet left one, and decodes
+        # plain UTF-8 when it did not.
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         raise ExpenseFileError(f"{filename}: not valid UTF-8 ({exc})") from exc
@@ -95,10 +71,10 @@ def parse_expense_rows(filename: str, data: bytes) -> list[ExpenseRecord]:
         )
 
     records: list[ExpenseRecord] = []
-    # Enumerate from 2 so the number in a message is the line a text editor shows.
+    # From 2, so a number in a message is the line a text editor shows.
     for line_number, row in enumerate(rows[1:], start=2):
-        # A trailing newline yields an empty row, and a spreadsheet often leaves a line
-        # of empty columns. Neither is data and neither is an error.
+        # A trailing newline yields an empty row, and a spreadsheet often leaves a
+        # line of empty columns. Neither is data and neither is an error.
         if not any(field.strip() for field in row):
             continue
         records.append(_parse_row(filename, line_number, row))
@@ -145,13 +121,7 @@ def _parse_row(filename: str, line_number: int, row: list[str]) -> ExpenseRecord
 def _changed_file_error(
     filename: str, loaded_at: datetime.datetime
 ) -> ExpenseFileError:
-    """A known filename arriving with a different digest: the file was edited.
-
-    Refused rather than skipped or re-read. Skipping would make a typo fix appear to
-    work while doing nothing; re-reading would either duplicate the rows that did not
-    change or delete rows from a database that is meant to be a read-only view. So the
-    loader stops and says which file, when it was taken in, and what to do instead.
-    """
+    """A known filename arriving with a different digest: the file was edited."""
     return ExpenseFileError(
         f"{filename} changed since it was loaded on"
         + f" {loaded_at:%Y-%m-%d %H:%M:%S%z} (sha256 mismatch)."
@@ -161,14 +131,11 @@ def _changed_file_error(
 
 
 async def load_directory(directory: Path, url: str) -> LoadSummary:
-    """Load every *.csv in `directory`, in name order, one transaction per file.
-
-    The directory check comes before the engine is built, so a mistyped path fails
-    without opening a socket - which is what lets a test cover this path with no server.
-    """
+    """Loads every *.tsv in `directory`, in name order, one transaction per file."""
+    # Before the engine is built, so a mistyped path fails without opening a socket.
     if not directory.is_dir():
         raise ExpenseFileError(f"{directory}: not a directory")
-    paths = sorted(directory.glob("*.csv"))
+    paths = sorted(directory.glob("*.tsv"))
 
     files_skipped = 0
     rows_inserted = 0
@@ -180,11 +147,12 @@ async def load_directory(directory: Path, url: str) -> LoadSummary:
             digest = hashlib.sha256(data).hexdigest()
             async with sessions() as session:
                 # The whole entity rather than the two columns wanted: a Row types its
-                # attributes as Any, which recommended mode's reportAny rejects, while
-                # a mapped instance carries the types from the model. Five short columns
-                # for one file is not a cost worth a cast to avoid.
+                # attributes as Any, which reportAny rejects, while a mapped instance
+                # carries the model's types.
                 recorded = await session.scalar(
-                    select(LoadedFile).where(LoadedFile.filename == path.name)
+                    select(LoadedExpenseFile).where(
+                        LoadedExpenseFile.filename == path.name
+                    )
                 )
                 if recorded is not None:
                     if recorded.sha256 == digest:
@@ -197,22 +165,21 @@ async def load_directory(directory: Path, url: str) -> LoadSummary:
                 # second SELECT: one round trip, and the value cannot be raced.
                 file_id = (
                     await session.execute(
-                        insert(LoadedFile)
+                        insert(LoadedExpenseFile)
                         .values(
                             filename=path.name, sha256=digest, row_count=len(records)
                         )
-                        .returning(LoadedFile.id)
+                        .returning(LoadedExpenseFile.id)
                     )
                 ).scalar_one()
                 if records:
-                    # The 2.0 ORM bulk form: one insertmanyvalues statement rather than
-                    # an INSERT per row. An out-of-range amount is caught here, by
-                    # numeric(12, 2), and takes the ledger row above down with it -
-                    # both are in this transaction, which has not committed yet.
+                    # The 2.0 ORM bulk form: one insertmanyvalues statement rather
+                    # than an INSERT per row. An out-of-range amount is caught here by
+                    # numeric(12, 2) and takes the uncommitted ledger row with it.
                     _ = await session.execute(
                         insert(Expense),
                         [
-                            {"loaded_file_id": file_id, **record._asdict()}
+                            {"loaded_expense_file_id": file_id, **record._asdict()}
                             for record in records
                         ],
                     )
@@ -225,15 +192,12 @@ async def load_directory(directory: Path, url: str) -> LoadSummary:
 
 
 def main() -> int:
-    """The `python -m` entry point. Returns a process exit status.
-
-    sys.argv rather than argparse: there is one positional and no flags, and typeshed
-    types argparse.Namespace attribute access as Any, which recommended mode's
-    reportAny rejects - a suppression bought for nothing.
-    """
+    """The `python -m` entry point. Returns a process exit status."""
+    # sys.argv rather than argparse: there is one positional and no flags, and
+    # typeshed types Namespace attribute access as Any, which reportAny rejects.
     if len(sys.argv) != 2:
         print(
-            "usage: python -m expense_tracker.loader <directory>\n"
+            "usage: python -m expense_tracker.expense_loader <directory>\n"
             + "`pixi run backend-load-expenses` passes data/expenses/ for you.",
             file=sys.stderr,
         )
@@ -242,7 +206,7 @@ def main() -> int:
         summary = asyncio.run(load_directory(Path(sys.argv[1]), database_url()))
     except ExpenseFileError as exc:
         # Caught rather than allowed to propagate: a traceback is the wrong shape of
-        # output for a data problem the message already explains in full.
+        # output for a data problem the message already explains.
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(

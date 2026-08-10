@@ -25,8 +25,16 @@ hand-edit versions, git tags, or `CHANGELOG.md`.**
 ## Source conventions
 
 - **ASCII-only** committed source: no em-dashes, smart quotes, arrows, ellipses. That
-  includes the sample data under `data/expenses/`. The loader decodes `utf-8-sig`, so a
-  developer's own (uncommitted) exports carry Danish text and byte-order marks fine.
+  includes the sample data under `backend/data/expenses/`. The loader decodes
+  `utf-8-sig`, so a developer's own (uncommitted) exports carry Danish text and
+  byte-order marks fine.
+- **Comments say what the code does**, and only where that is not plain from reading it.
+  No rationale essays, no rejected alternatives, no explaining why a module exists or
+  where it sits in the layer order - that reasoning lives in this file and in
+  `README.md`, and repeating it in the source gives one fact two places to drift apart.
+  Module docstrings are one line; function docstrings are one line, and only where the
+  name and signature do not already say it. This is about code, SQL and config comments;
+  the prose in `README.md` and this file keeps its current density.
 - **Pin versions exactly** - `==` in `pixi.toml`, in both its conda tables and
   `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
   Actions by SHA with a version comment.
@@ -50,10 +58,10 @@ its own `cwd`, so it behaves identically wherever you invoke it. Full table in
 
 The five `backend-db-*` tasks are no exception to either layer: their bodies are poe
 tasks like the rest, and only the cluster they drive sits at the workspace root rather
-than under `backend/`. They reach it through `$POE_ROOT/..`, never a relative path.
-`backend-load-expenses` reaches `data/expenses/` the same way, for the same reason, but
-is **not** a sixth `backend-db-*` task - those five are the cluster's lifecycle, this is
-data going into it.
+than under `backend/`. They reach it through `$POE_ROOT/..`, never a relative path, and
+they are the **only** tasks that do. `backend-load-expenses` is not a sixth one: those
+five are the cluster's lifecycle, this is data going into it, and its files live under
+`backend/data/expenses/` so it uses a plain relative path like every other task.
 
 **The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Never
 put a command body there; that is what would make the layer a place definitions hide.
@@ -84,7 +92,8 @@ Break one of these and CI goes red on an otherwise correct change.
   `test_static_files_are_not_served` and `test_unknown_api_routes_404`.
 - **Expenses are read-only over HTTP.** Rows arrive through
   `pixi run backend-load-expenses` and nowhere else, so there is no POST, PUT or DELETE
-  and no plan for one. The database is a view of the files in `data/expenses/`.
+  and no plan for one. The database is a view of the files in `backend/data/expenses/`,
+  which are `*.tsv`: tab-separated, five named columns, dates `DD/MM/YYYY`.
 - **No OpenAPI.** `docs_url`, `redoc_url` and `openapi_url` stay `None` in
   `create_app()`. Pinned by `test_openapi_docs_are_disabled`.
 - **CORS is wildcard with `allow_credentials=False`.** The spec forbids the pair, so
@@ -97,18 +106,23 @@ Break one of these and CI goes red on an otherwise correct change.
   `TestClient(app)` (without `with`) database-free and `uvicorn --factory` working.
   Moving engine creation into `create_app()` breaks the entire HTTP suite.
 - **Only `deps.py` imports fastapi, and nothing imports `deps`.** The wiring points one
-  way: `deps.py` imports the repositories from `db.py`, never the reverse, and `db.py`,
-  `config.py` and `loader.py` know no HTTP at all. A failed read leaves the repository
-  as `GreetingUnavailableError` or `ExpensesUnavailableError`, and the handlers
-  registered in `create_app()` are the only place that turn them into a 503. Putting an
-  `HTTPException` back in `db.py` is what this split exists to prevent. Pinned by the
-  import-linter contracts in `backend/pyproject.toml`, not by a test.
+  way: `deps.py` imports `greeting_repository` and `expense_repository`, never the
+  reverse, and those two plus `db.py`, `config.py` and `expense_loader.py` know no HTTP
+  at all. A failed read leaves the repository as `GreetingUnavailableError` or
+  `ExpensesUnavailableError`, and the handlers registered in `create_app()` are the only
+  place that turn them into a 503. Putting an `HTTPException` back in a repository is
+  what this split exists to prevent. Pinned by the import-linter contracts in
+  `backend/pyproject.toml`, not by a test.
   A **new module** under `src/expense_tracker/` has to be added to **three** lists, not
   one: the `layers` contract (where `exhaustive = true` fails the gate by itself), and
   the `source_modules` of *both* `forbidden` contracts - a `forbidden` contract has no
   `exhaustive` option, so an unnamed module is silently uncovered by them.
+- **`db.py` holds `Base` and nothing else.** Both repository modules need one shared
+  `DeclarativeBase`, and giving it a module of its own is what keeps them from importing
+  each other - which the `expense_repository | greeting_repository` layer forbids. A new
+  model goes in the repository module that reads it, not in `db.py`.
 - **Every repository subclasses its ABC and carries `@override`.**
-  `PostgresGreetingRepository` and `PostgresExpenseRepository` in `db.py`, and
+  `PostgresGreetingRepository` and `PostgresExpenseRepository`, and
   `_FakeGreetingRepository` and `_FakeExpenseRepository` in `conftest.py`, all do; a new
   implementation or test double does too. The base classes are `ABC`s, so this is
   enforced, not a convention - a look-alike that matches the shape without inheriting is
@@ -141,17 +155,19 @@ Break one of these and CI goes red on an otherwise correct change.
   and every statement in it stays idempotent because `db-init` re-runs against live
   clusters. The loader issues DML only. New tables use
   `GENERATED ALWAYS AS IDENTITY`, not `serial`/`bigserial`, which PostgreSQL's own
-  "Don't Do This" page advises against for new applications.
+  "Don't Do This" page advises against for new applications. `IF NOT EXISTS` adds what
+  is missing but never renames or alters, so a change to an existing table means
+  `backend-db-reset` and a reload, not another `db-init`.
 - **Six things are declared twice. Change both halves together:**
   - the greeting *payload shape and path* - `backend/src/expense_tracker/__init__.py`
     and `frontend/src/api/greeting.ts`, with nothing checking the agreement. The
     greeting *wording* is not duplicated anywhere: it is one row of the `greeting`
-    table. The *expenses* payload is likewise declared exactly once, in
-    `create_app()` - the frontend does not consume it yet, so there is no second half
-    to go looking for;
-  - the three tables - `backend/schema.sql` and the `Greeting`, `LoadedFile` and
-    `Expense` models in `backend/src/expense_tracker/db.py`, which never create them
-    and only read them;
+    table. The *expenses* payload is likewise declared exactly once, as the
+    `ExpensePayload` model - the route builds it and the tests parse responses back
+    into it, so there is no second half to go looking for;
+  - the three tables - `backend/schema.sql` and the `Greeting` model in
+    `greeting_repository.py` plus `LoadedExpenseFile` and `Expense` in
+    `expense_repository.py`, which never create them and only read them;
   - the local database connection - `DATABASE_URL` and the `PG*` variables in
     `[feature.test.activation.env]`, against the port and username baked into
     `db-create`'s `initdb` flags;
@@ -197,7 +213,8 @@ Break one of these and CI goes red on an otherwise correct change.
   `pixi run backend-lint` as the second half of that task. Imports are just another
   artifact to lint, so they get no gate of their own; `lint-fix` is ruff alone, because
   where a new module belongs in the layer order is a design decision, not a mechanical
-  edit. Four contracts: the `deps | loader` above `db | config` layering, the
+  edit. Four contracts: the three-tier `deps | expense_loader` above
+  `expense_repository | greeting_repository` above `db | config` layering, the
   fastapi/starlette ban on everything but `deps`, a ban on importing the package root,
   and `acyclic_siblings` for cycles at any depth. In a layer list `|` joins siblings
   that may **not** import each other and `:` joins siblings that **may** - the two are
