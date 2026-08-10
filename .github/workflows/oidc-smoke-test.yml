@@ -1,0 +1,79 @@
+name: OIDC Smoke Test
+
+# Proves the GitHub Actions -> AWS OIDC path end to end, and nothing else depends on
+# it: mint an OIDC token, exchange it for temporary credentials on
+# gha-expense-tracker-ci, read the Docker Hub PAT from SSM Parameter Store and print
+# it. The stored value is a dummy placeholder, which is the only reason the last step
+# is acceptable - see the comment on it.
+#
+# Manual only. Re-run it after any change to that role's trust policy or permissions;
+# it is the cheapest way to find out whether the change was right.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-parameter:
+    runs-on: ubuntu-latest
+    permissions:
+      # A job-level permissions block replaces the workflow-level one outright rather
+      # than merging with it, so contents: read is restated here deliberately.
+      contents: read
+      id-token: write # mint the OIDC token the next-but-one step exchanges
+    steps:
+      # The claims AWS conditions on, dumped before any AWS call is made, so a trust
+      # policy mismatch is diagnosable from this run instead of from a bare "Not
+      # authorized to perform sts:AssumeRoleWithWebIdentity" further down. Confirms
+      # job_workflow_ref in particular: AWS's condition-key reference describes it as
+      # the path to the *reusable* workflow, this repo has none, and both trust
+      # policies assume it is populated on an ordinary job.
+      #
+      # Only the payload is decoded. The token itself is a live credential for its few
+      # minutes of life and never reaches the log.
+      - name: Show the OIDC token claims
+        run: |
+          set -euo pipefail
+          token="$(curl -fsSL --proto '=https' \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
+            | jq -r .value)"
+          payload="$(echo "$token" | cut -d. -f2)"
+          # base64url -> base64, then pad to a multiple of 4 so base64 -d accepts it.
+          payload="${payload//-/+}"
+          payload="${payload//_//}"
+          while (( ${#payload} % 4 )); do payload+="="; done
+          echo "$payload" | base64 -d | jq .
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: oidc-smoke-test
+
+      # sts:GetCallerIdentity needs no IAM permission, so this works on a role whose
+      # only grants are the SSM read and the KMS decrypt. Prints the assumed-role ARN
+      # and session name, which is how you tell the credentials are the federated ones.
+      - name: Confirm the assumed identity
+        run: aws sts get-caller-identity
+
+      # Exercises both halves of the inline policy at once: ssm:GetParameter on the
+      # parameter, and kms:Decrypt on the aws/ssm key via --with-decryption. Dropping
+      # that flag would return the ciphertext and quietly skip the KMS grant, which is
+      # the half more likely to be wrong.
+      - name: Read the Docker Hub PAT
+        run: |
+          set -euo pipefail
+          value="$(aws ssm get-parameter \
+            --name /expense-tracker/ci/dockerhub-pat \
+            --with-decryption \
+            --query Parameter.Value \
+            --output text)"
+          # Printed unmasked on purpose: the stored value is a dummy and seeing it is
+          # the entire result of this workflow. The day this parameter holds a real
+          # PAT, the first thing in this block becomes echo "::add-mask::$value" and
+          # this line goes away.
+          echo "Parameter value: $value"
