@@ -3,16 +3,15 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.middleware.base import RequestResponseEndpoint
 
-# The contract and the failure mode. Building the repository is deps.py's business.
-from .db import GreetingRepository, GreetingUnavailableError
-from .deps import lifespan, provide_greeting_repository
+from .deps import lifespan, provide_expense_repository, provide_greeting_repository
+from .expense_repository import ExpenseRepository, ExpensesUnavailableError
+from .greeting_repository import GreetingRepository, GreetingUnavailableError
 
-# Security headers applied to every response. This app serves JSON and nothing else,
-# so the page-oriented directives a browser shell would need (script-src, style-src,
-# connect-src, COOP) have nothing to describe here. What is left says "this response
-# is not a document and must not be treated as one".
+# Applied to every response. This app serves JSON and nothing else, so the policy
+# grants nothing at all.
 _SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
     "X-Content-Type-Options": "nosniff",
@@ -21,74 +20,104 @@ _SECURITY_HEADERS = {
 }
 
 
+class ExpensePayload(BaseModel):
+    """One expense as GET /api/expenses sends it.
+
+    Every field is a string, amount included: JSON has no decimal type, so a float
+    round trip is how a total drifts by a cent. These are the wire types, which is
+    what lets the tests parse a response back into this class.
+    """
+
+    amount: str
+    currency: str
+    date: str
+    category: str
+    details: str
+
+
 def create_app() -> FastAPI:
-    # No OpenAPI schema and no docs routes. One hand-written JSON route does not earn
-    # a generated document, and /docs, /redoc and /openapi.json would be public surface
-    # advertising it.
+    # No OpenAPI schema and no docs routes: /docs, /redoc and /openapi.json would be
+    # public surface for two hand-written routes.
     #
-    # Still a no-arg factory, and still cheap: the lifespan is what opens the
-    # connection pool, so building an app touches no socket and reads no environment.
-    # `uvicorn --factory` and the whole HTTP suite depend on that.
+    # The lifespan is what opens the connection pool, so building an app touches no
+    # socket and reads no environment. `uvicorn --factory` and the HTTP suite rely on
+    # that.
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
-    # Wraps the whole ASGI app. Registered before the CORS middleware below, which
-    # makes it the inner of the two -- see the ordering note there.
+    # Registered before the CORS middleware below, which makes it the inner of the two.
     @app.middleware("http")
     async def add_security_headers(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
         request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
         response = await call_next(request)
         for header, value in _SECURITY_HEADERS.items():
-            # `_ =` because setdefault returns the header's existing value and we have
-            # no use for it; recommended mode's reportUnusedCallResult wants that said
-            # out loud rather than left to the reader.
+            # `_ =` because setdefault returns the existing value and we have no use
+            # for it; reportUnusedCallResult wants that said out loud.
             _ = response.headers.setdefault(header, value)
         return response
 
-    # The whole API. The payload is built by hand rather than derived from a
-    # response_model: with openapi_url=None there is no schema to publish, so the shape
-    # is declared here and mirrored by hand in frontend/src/api/greeting.ts. Change the
-    # two together. Only the shape is duplicated - the wording lives in one row of the
-    # greeting table and is duplicated nowhere.
-    #
-    # The repository is injected so the tests can swap PostgreSQL for a fake; see
-    # deps.provide_greeting_repository.
+    # The payload shape is mirrored by hand in frontend/src/api/greeting.ts; change
+    # the two together. The wording itself lives in one row of the greeting table.
     @app.get("/api/greeting")
     async def greeting(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
         greetings: Annotated[GreetingRepository, Depends(provide_greeting_repository)],
     ) -> JSONResponse:
-        # no-store because the wording is now a row somebody can UPDATE: a cached copy
-        # would outlive the change.
+        # no-store because the wording is a row somebody can UPDATE.
         return JSONResponse(
             {"greeting": await greetings.get_current_greeting()},
             headers={"Cache-Control": "no-store"},
         )
 
-    # The one place the repository's failure becomes an HTTP status, which is what lets
-    # db.py stay free of fastapi. Registered handlers run in starlette's
-    # ExceptionMiddleware, which sits inside the middleware added above, so this
-    # response still collects the security headers on its way out.
+    # Read-only: rows arrive through `pixi run backend-load-expenses` and nowhere
+    # else, so there is no POST, PUT or DELETE.
+    @app.get("/api/expenses")
+    async def expenses(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        expenses: Annotated[ExpenseRepository, Depends(provide_expense_repository)],
+    ) -> JSONResponse:
+        payload = [
+            ExpensePayload(
+                # str(), never float(): the column is numeric(12, 2) and arrives as a
+                # Decimal.
+                amount=str(record.amount),
+                currency=record.currency,
+                date=record.expense_date.isoformat(),
+                category=record.category,
+                details=record.details,
+            )
+            # The repository's order, reproduced untouched. Sorting again here would
+            # hide a repository that stopped sorting.
+            for record in await expenses.list_expenses()
+        ]
+        return JSONResponse(
+            [item.model_dump() for item in payload],
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # The only place a repository failure becomes an HTTP status, which is what lets
+    # the repository modules stay free of fastapi. Registered handlers run inside the
+    # middleware above, so these responses still collect the security headers.
     @app.exception_handler(GreetingUnavailableError)
     async def handle_greeting_unavailable(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
         _request: Request, _exc: Exception
     ) -> JSONResponse:
-        # Both causes - an unreachable server, and the table present with its seed row
-        # gone - are server faults a client should retry, so both answer 503 rather
-        # than 404. Neither argument is used: the detail is deliberately the same
-        # either way, so a client learns nothing about the database from a failure.
+        # Neither argument is used: the detail is the same either way, so a client
+        # learns nothing about the database from a failure.
         return JSONResponse({"detail": "greeting unavailable"}, status_code=503)
 
-    # Added last, so it is the outermost middleware: that is what lets it answer a
-    # preflight itself instead of passing OPTIONS down to a router that has no such
-    # route. The consequence is that a preflight response carries the CORS headers but
-    # not the ones above, which is correct -- there is no body to protect.
+    @app.exception_handler(ExpensesUnavailableError)
+    async def handle_expenses_unavailable(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        _request: Request, _exc: Exception
+    ) -> JSONResponse:
+        # An empty table is not this: it answers 200 with [].
+        return JSONResponse({"detail": "expenses unavailable"}, status_code=503)
+
+    # Added last, so it is the outermost middleware and can answer a preflight itself
+    # instead of passing OPTIONS to a router that has no such route.
     #
-    # Open to every origin because the frontend is a separate app served from its own
-    # dev server (vite on 5173), and packaging the two into one deployable is out of
-    # scope. This is a deliberate dev-time posture, not a default to ship: the day the
-    # API grows cookies or an Authorization header, the wildcard is what has to be
-    # replaced with a real origin list, because it cannot be combined with
-    # allow_credentials=True -- the CORS spec forbids the pair and browsers reject it.
+    # Open to every origin because the frontend is served from its own dev server.
+    # allow_credentials must stay False while the origin is a wildcard - the CORS spec
+    # forbids the pair - so the day this API grows cookies or an Authorization header,
+    # the wildcard is what has to become a real origin list.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

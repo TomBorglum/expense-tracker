@@ -33,6 +33,10 @@ uvicorn = "==0.52.0"
 # client binaries, and above all no server. That is in the test feature below.
 sqlalchemy = "==2.0.51"
 asyncpg = "==0.31.0"
+# Already resolved here by fastapi-core, so this pin changes no solve. Declared because
+# create_app() imports it directly for the ExpensePayload response model, and a direct
+# import should not rest on a transitive dependency.
+pydantic = "==2.13.4"
 
 # The app itself, installed editable so `expense_tracker` imports everywhere
 # (tests, serve, REPL) with no PYTHONPATH. pixi builds it via hatchling from
@@ -134,6 +138,7 @@ backend-format = { cmd = "poe format", cwd = "backend" }
 backend-format-check = { cmd = "poe format-check", cwd = "backend" }
 backend-lint = { cmd = "poe lint", cwd = "backend" }
 backend-lint-fix = { cmd = "poe lint-fix", cwd = "backend" }
+backend-load-expenses = { cmd = "poe load-expenses", cwd = "backend" }
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 backend-test = { cmd = "poe test", cwd = "backend" }
 backend-typecheck = { cmd = "poe typecheck", cwd = "backend" }

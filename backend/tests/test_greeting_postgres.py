@@ -8,12 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from starlette.testclient import TestClient
 
 from expense_tracker import create_app
-from expense_tracker.db import Greeting
-from expense_tracker.deps import database_url
+from expense_tracker.config import database_url
+from expense_tracker.greeting_repository import Greeting
 
-# The whole module talks to the cluster `pixi run backend-db-init` creates, and it is
-# the only one in the suite that does. The marker is registered in pyproject.toml, which
-# --strict-markers requires.
+# Talks to the cluster `pixi run backend-db-init` creates. The marker is registered in
+# pyproject.toml, which --strict-markers requires.
 pytestmark = pytest.mark.postgres
 
 
@@ -62,12 +61,8 @@ async def _insert_row(message: str) -> None:
 
 @pytest.fixture(scope="module", autouse=True)
 def require_postgres() -> None:
-    """Skip locally when no server answers; fail loudly under CI.
-
-    A developer who has not run `pixi run backend-db-init` should not face a red
-    suite. CI, which runs db-init as a gate step, must never see these tests quietly
-    skip - that would turn a broken database into a green build.
-    """
+    """Skip locally when no server answers; fail under CI, so a database that did not
+    come up cannot go green."""
     try:
         _ = asyncio.run(_read_message())
     except (RuntimeError, SQLAlchemyError, OSError) as exc:
@@ -79,8 +74,8 @@ def require_postgres() -> None:
 
 
 def test_greeting_endpoint_matches_the_row_in_postgres() -> None:
-    # Entered as a context manager, unlike the HTTP suite: that runs the lifespan, so
-    # the app builds a real engine and answers out of the real table.
+    # Context-managed, unlike the HTTP suite: that runs the lifespan, so the app builds
+    # a real engine and answers out of the real table.
     with TestClient(create_app()) as client:
         response = client.get("/api/greeting")
     assert response.status_code == 200
@@ -88,12 +83,8 @@ def test_greeting_endpoint_matches_the_row_in_postgres() -> None:
 
 
 def test_greeting_follows_the_row_when_it_changes() -> None:
-    """The test that actually pins the requirement.
-
-    Agreement with the seeded row proves nothing while that seed happens to match the
-    wording which used to be hardcoded. Changing the row and watching the endpoint
-    follow is what proves the constant is gone.
-    """
+    """Changing the row and watching the endpoint follow, which is what proves the
+    wording is not still a constant that happens to match the seed."""
     original = asyncio.run(_read_message())
     assert original is not None, (
         "schema.sql seeds one row; run `pixi run backend-db-init`"
@@ -106,17 +97,14 @@ def test_greeting_follows_the_row_when_it_changes() -> None:
         assert response.status_code == 200
         assert response.json() == {"greeting": probe}
     finally:
-        # Restored even on failure, so a red run does not leave a developer's database
-        # - or the next test - holding the probe string. If the process is killed
-        # before this runs, `pixi run backend-db-reset && pixi run backend-db-init` is
-        # the cure.
+        # Restored even on failure. If the process is killed before this runs,
+        # `backend-db-reset && backend-db-init` is the cure.
         asyncio.run(_write_message(original))
 
 
 def test_greeting_is_unavailable_when_the_row_is_missing() -> None:
-    # The table exists but the seed row does not: a deployment that ran the schema and
-    # nothing else. That is a server fault, not a client one, so it answers 503 rather
-    # than 404 or a null greeting.
+    # The table exists but the seed row does not. A server fault, so 503 rather than
+    # 404 or a null greeting.
     original = asyncio.run(_read_message())
     assert original is not None, (
         "schema.sql seeds one row; run `pixi run backend-db-init`"
