@@ -560,8 +560,14 @@ the job of whatever *launches* the process, and two things do it here:
 | poe | `envfile` in `[tool.poe]` | every `pixi run backend-*`, and `poe -C backend <task>` |
 | direnv | `dotenv_if_exists` in `.envrc` | anything else you run from a shell in the repo |
 
-poe's half is what lets the `db-*` tasks stay free of `--host`/`--port`/`--username`
-flags. direnv's covers the things no task wraps, which is why `direnv allow` is a
+The two overlap in a local shell, where both are loaded and agree - but neither is
+redundant, and **poe's is the one CI depends on**. `setup-direnv` activates `.envrc` with
+`direnv exec . true`, and only its custom `use_*` directives append to `$GITHUB_PATH` and
+`$GITHUB_ENV`; `dotenv_if_exists` is stock direnv, so the four names die with that step
+and every later `pixi run` sees none of them. `envfile` is what supplies them there, and
+it is also what keeps a task working in a shell where `direnv allow` was never run.
+
+direnv's half covers the things no task wraps, which is why `direnv allow` is a
 precondition rather than a convenience:
 
 ```sh

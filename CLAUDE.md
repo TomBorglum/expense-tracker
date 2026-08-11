@@ -164,12 +164,20 @@ Break one of these and CI goes red on an otherwise correct change.
   this rule exists to prevent: a wheel-installed package has no project directory to
   derive a path from, so the code either finds nothing or finds a developer's settings,
   depending on how it happened to be installed. Two **launchers** put the four names
-  there instead: poe, through `envfile` in `[tool.poe]`, which is what lets every `db-*`
-  task omit `--host`/`--port`/`--username`; and direnv, through `dotenv_if_exists` in
-  `.envrc`, which covers everything started from a shell. Both layer
-  `backend/.env.local` over the top - gitignored, absent by default, and the way to move
-  the cluster off a taken port - and both **overwrite** the ambient environment, so an
-  `export PGPORT=...` is not how you change the port.
+  there instead: poe, through `envfile` in `[tool.poe]`, and direnv, through
+  `dotenv_if_exists` in `.envrc`. Both layer `backend/.env.local` over the top -
+  gitignored, absent by default, and the way to move the cluster off a taken port - and
+  both **overwrite** the ambient environment, so an `export PGPORT=...` is not how you
+  change the port.
+  **Neither is redundant, and `envfile` is the one that cannot go.** They look
+  interchangeable locally, where both are loaded and agree. They are not: `setup-direnv`
+  activates `.envrc` with `direnv exec . true`, and only its custom `use_*` directives
+  append to `$GITHUB_PATH`/`$GITHUB_ENV` - `dotenv_if_exists` is stock direnv, so in CI
+  the four names die with that step and every later `pixi run` sees none of them. poe's
+  `envfile` is the sole supplier there, and `db-create`'s `--set=port="$PGPORT"` is what
+  would break first. direnv's half is the one that cannot go either, for the opposite
+  reason: it covers everything no task wraps - a bare `psql`, an editor's test runner,
+  the loader pointed at another directory.
 - **`backend/.env` is the single source of the connection settings.** `PGHOST`, `PGPORT`,
   `PGUSER` and `PGDATABASE` live there and nowhere else - `pixi.toml` declares no
   `[activation.env]`, and that absence is deliberate rather than an omission. **The DSN
