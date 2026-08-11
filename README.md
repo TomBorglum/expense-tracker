@@ -19,7 +19,6 @@ expense-tracker/
                                 #   per command, each forwarding to the stack below
   sonar-project.properties      # one Sonar project spanning both languages
   .github/                      # CI, release-please, dependabot
-  .pgdata/                      # the local PostgreSQL cluster, gitignored
   backend/
     pyproject.toml              # hatchling, ruff, pytest, basedpyright, poe tasks
     schema.sql                  # the whole schema: three tables, one seeded row
@@ -27,6 +26,7 @@ expense-tracker/
     src/expense_tracker/        # __init__ (the API), deps, config, db,
                                 #   {greeting,expense}_repository, expense_loader
     tests/
+    .pgdata/                    # the local PostgreSQL cluster, gitignored
   frontend/
     package.json, pnpm-lock.yaml, pnpm-workspace.yaml
     tsconfig*.json, vite.config.ts, eslint.config.ts
@@ -142,9 +142,9 @@ developer runs.
 
 ### The cluster
 
-`pixi run backend-db-create` runs `initdb` into `.pgdata/` at the repo root
-(gitignored). Three settings are baked into the generated `postgresql.conf` rather than
-passed at launch, which is why `db-start` needs no flags:
+`pixi run backend-db-create` runs `initdb` into `backend/.pgdata/` (gitignored), beside
+the only code that talks to it. Three settings are baked into the generated
+`postgresql.conf` rather than passed at launch, which is why `db-start` needs no flags:
 
 | Setting | Value | Why |
 | --- | --- | --- |
@@ -413,10 +413,10 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | Command | Delegates to | What it does |
 | --- | --- | --- |
 | `pixi run backend-db-init` | `poe db-init` | Create, start and seed the local database (the one you need) |
-| `pixi run backend-db-create` | `poe db-create` | `initdb` a cluster into `.pgdata/`, if there is not one |
+| `pixi run backend-db-create` | `poe db-create` | `initdb` a cluster into `backend/.pgdata/`, if there is not one |
 | `pixi run backend-db-start` | `poe db-start` | Start the cluster on 127.0.0.1:5433, if it is not running |
 | `pixi run backend-db-stop` | `poe db-stop` | Stop the cluster; succeeds if it is already stopped |
-| `pixi run backend-db-reset` | `poe db-reset` | Stop the cluster and delete `.pgdata/` entirely |
+| `pixi run backend-db-reset` | `poe db-reset` | Stop the cluster and delete `backend/.pgdata/` entirely |
 | `pixi run backend-dev` | `poe dev` | Run the API on uvicorn, port 8000 (with reloader) |
 | `pixi run backend-test` | `poe test` | Run the test suite with coverage |
 | `pixi run backend-lint` | `poe lint` | Lint with ruff, then check the import graph with import-linter |
@@ -437,13 +437,13 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 
 Every task sets its own working directory in `pixi.toml` (`backend/` or `frontend/`), so
 `pixi run <task>` behaves the same wherever you invoke it from. No task crosses between
-the two directories. `pixi task list` prints this table's first column.
+the two directories, and every one of them - the five `backend-db-*` included - addresses
+its files by a plain relative path. Nothing reaches above its own stack.
 
-The five `backend-db-*` tasks are the backend's like any other, but the cluster they
-drive is a workspace-level artifact like `.pixi/`: it is initdb'd into `.pgdata/` at the
-repo root, not under `backend/`. They address it through `$POE_ROOT`, poe's absolute path
-to `backend/`, so it does not matter where you invoke them from either. Every other task,
-`backend-load-expenses` included, uses a plain relative path.
+That holds when you skip the forwarder too: poe runs a task from the directory of the
+`pyproject.toml` it loaded, so `poe -C backend db-start` from anywhere starts the cluster
+in `backend/.pgdata/`, exactly as `cd backend && poe db-start` does. `pixi task list`
+prints this table's first column.
 
 CI runs every gate above except the two `dev` tasks, the two `-fix` variants,
 `backend-format`, `backend-load-expenses` and the four `backend-db-*` tasks other than

@@ -122,12 +122,6 @@ import-linter = "==2.13"
 [feature.test.tasks]
 # Backend -> [tool.poe.tasks] in backend/pyproject.toml. With cwd=backend, poe finds that
 # file unaided, so the forwarder needs no -C.
-#
-# The five backend-db-* forwarders are ordinary members of this group: the cluster they
-# drive lives at the workspace root rather than under backend/, but the tasks are the
-# backend's like every other one here, and their bodies sit in backend/pyproject.toml
-# with the rest. Nothing about the database earns an exception to the rule that this
-# file only forwards.
 backend-db-create = { cmd = "poe db-create", cwd = "backend" }
 backend-db-init = { cmd = "poe db-init", cwd = "backend" }
 backend-db-reset = { cmd = "poe db-reset", cwd = "backend" }

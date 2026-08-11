@@ -57,11 +57,11 @@ its own `cwd`, so it behaves identically wherever you invoke it. Full table in
 [`README.md`](README.md#development-tasks).
 
 The five `backend-db-*` tasks are no exception to either layer: their bodies are poe
-tasks like the rest, and only the cluster they drive sits at the workspace root rather
-than under `backend/`. They reach it through `$POE_ROOT/..`, never a relative path, and
-they are the **only** tasks that do. `backend-load-expenses` is not a sixth one: those
-five are the cluster's lifecycle, this is data going into it, and its files live under
-`backend/data/expenses/` so it uses a plain relative path like every other task.
+tasks like the rest, and the cluster they drive is initdb'd into `backend/.pgdata/`,
+addressed by a plain relative path like every other task in that file. poe runs a task
+from the directory of the `pyproject.toml` it loaded, so that path holds however the task
+was invoked - `cd backend && poe db-init`, `poe -C backend db-init` from anywhere, or the
+pixi forwarder. Nothing in `backend/pyproject.toml` needs `$POE_ROOT`.
 
 **The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Never
 put a command body there; that is what would make the layer a place definitions hide.
