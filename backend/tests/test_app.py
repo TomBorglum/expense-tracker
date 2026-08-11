@@ -1,5 +1,8 @@
+from pathlib import Path
+
 import pytest
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
+from sqlalchemy import make_url
 from starlette.testclient import TestClient
 
 from expense_tracker import ExpensePayload, config, create_app
@@ -165,39 +168,78 @@ def test_expenses_are_unavailable_when_the_database_is_down(
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
-def test_the_dsn_is_composed_from_the_connection_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.setattr(config, "_dotenv", dict)
-    monkeypatch.setenv("PGUSER", "someone")
-    monkeypatch.setenv("PGHOST", "10.0.0.1")
-    monkeypatch.setenv("PGPORT", "6000")
-    monkeypatch.setenv("PGDATABASE", "somewhere")
-    assert config.database_url() == (
+def _detached_settings(**overrides: str) -> config.DatabaseSettings:
+    """Settings built from `overrides` alone - no dotenv layer, so the committed
+    backend/.env cannot answer for any of them."""
+    return config.DatabaseSettings.load(None, **overrides)
+
+
+def test_the_dsn_is_composed_from_the_connection_settings() -> None:
+    settings = _detached_settings(
+        pguser="someone", pghost="10.0.0.1", pgport="6000", pgdatabase="somewhere"
+    )
+    assert settings.dsn.render_as_string() == (
         "postgresql+asyncpg://someone@10.0.0.1:6000/somewhere"
     )
 
 
-def test_database_url_overrides_the_connection_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_dsn_parts_needing_escaping_are_encoded_not_interpolated() -> None:
+    """A username carrying @ is escaped rather than emitted raw.
+
+    Interpolating it would put a second @ in the authority and produce a URL that parses
+    as a different host, so the round-trip is the assertion that matters.
+    """
+    settings = _detached_settings(
+        pguser="user@corp", pghost="10.0.0.1", pgport="6000", pgdatabase="somewhere"
+    )
+    rendered = settings.dsn.render_as_string()
+    assert "user%40corp" in rendered
+    assert make_url(rendered).username == "user@corp"
+    assert make_url(rendered).host == "10.0.0.1"
+
+
+def test_a_password_is_redacted_when_the_dsn_is_rendered() -> None:
+    """What stops a deployment's credential reaching a log or a traceback."""
+    settings = _detached_settings(
+        database_url="postgresql+asyncpg://someone:s3cret@10.0.0.1:6000/somewhere"
+    )
+    assert "s3cret" not in str(settings.dsn)
+    assert "s3cret" not in repr(settings.dsn)
+    assert settings.dsn.password == "s3cret"
+
+
+def test_database_url_overrides_the_connection_settings() -> None:
     """Whole-DSN override, not a default: what a deployment is handed wins over the
-    parts, which is why nothing here needs to unset them."""
-    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://nobody@127.0.0.1:1/none")
-    monkeypatch.setenv("PGPORT", "6000")
-    assert config.database_url() == "postgresql+asyncpg://nobody@127.0.0.1:1/none"
+    parts, which is why this still passes one of them."""
+    settings = _detached_settings(
+        database_url="postgresql+asyncpg://nobody@127.0.0.1:1/none", pgport="6000"
+    )
+    assert (
+        settings.dsn.render_as_string()
+        == "postgresql+asyncpg://nobody@127.0.0.1:1/none"
+    )
+
+
+def test_a_non_numeric_port_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        _ = _detached_settings(
+            pguser="someone",
+            pghost="10.0.0.1",
+            pgport="not-a-port",
+            pgdatabase="somewhere",
+        )
 
 
 def test_missing_database_settings_are_refused_at_startup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # No silent default: a deployment that forgets the settings fails to boot rather
-    # than dialling its own loopback. The files are emptied too, or the committed
-    # backend/.env would answer for them.
-    monkeypatch.setattr(config, "_dotenv", dict)
+    # than dialling its own loopback. Pointing _BACKEND_DIR at nothing is what the prod
+    # environment's non-editable install does for real - no source tree in
+    # site-packages means no backend/.env to answer with.
+    monkeypatch.setattr(config, "_BACKEND_DIR", Path("/nonexistent"))
     monkeypatch.delenv("DATABASE_URL", raising=False)
     for name in ("PGUSER", "PGHOST", "PGPORT", "PGDATABASE"):
         monkeypatch.delenv(name, raising=False)
-    with pytest.raises(RuntimeError, match="PGUSER"), TestClient(create_app()):
+    with pytest.raises(ValidationError, match="PGUSER"), TestClient(create_app()):
         pass

@@ -11,6 +11,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from sqlalchemy import make_url
 
 from expense_tracker.expense_loader import ExpenseFileError, load_directory, main
 from expense_tracker.expense_loader import parse_expense_rows as parse
@@ -21,7 +22,7 @@ _DATA = Path(__file__).resolve().parents[1] / "data" / "expenses"
 _HEADER = b"Amount\tCurrency\tDate\tCategory\tDetails\n"
 
 # Never reached: every test here fails before a connection would be opened.
-_UNREACHABLE = "postgresql+asyncpg://nobody@127.0.0.1:1/none"
+_UNREACHABLE = make_url("postgresql+asyncpg://nobody@127.0.0.1:1/none")
 
 
 def test_a_valid_file_parses() -> None:

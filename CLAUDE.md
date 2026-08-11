@@ -163,12 +163,28 @@ Break one of these and CI goes red on an otherwise correct change.
   no `[activation.env]`, and that absence is deliberate rather than an omission. Two
   readers consume the one file: poe, through `envfile` in `[tool.poe]`, which is what
   lets every `db-*` task omit `--host`/`--port`/`--username`; and `config.py`, through
-  `dotenv_values`, so a process launched outside poe resolves the same values. It reads
-  `backend/.env.local` over the top - gitignored, absent by default, and the way to move
-  the cluster off a taken port. **The DSN is stored nowhere**: `database_url()` composes
-  it from the four parts, which is what stops the port being written into a URL string a
-  second time, and `DATABASE_URL` overrides the lot for a deployment that has no `.env`.
-  Do not reintroduce a literal DSN in any manifest.
+  pydantic-settings, so a process launched outside poe resolves the same values. Both
+  read `backend/.env.local` over the top - gitignored, absent by default, and the way to
+  move the cluster off a taken port. They differ in one respect worth knowing: poe's
+  `envfile` **overwrites** the ambient environment, while `config.py` lets the
+  environment win, so an `export PGPORT=...` is honoured by `python -m` and ignored by
+  `poe`. **The DSN is stored nowhere**: `DatabaseSettings.dsn` builds it with
+  `sqlalchemy.URL`, which stops the port being written into a URL string a second time
+  and escapes parts containing `@`, `:` or `/`. `DATABASE_URL` overrides the four
+  wholesale. Do not reintroduce a literal DSN in any manifest, and do not go back to
+  f-string interpolation.
+- **`database_url()` returns a `URL`, not a `str`.** `str()` and `repr()` of it redact
+  the password as `***`, which is what stops a deployment credential reaching a log or a
+  traceback; a `str` return would silently give that up. `create_async_engine` and
+  `load_directory` both take the `URL` unchanged.
+- **`prod` installs the app as a wheel; only `default` installs it editable.** The two
+  `[feature.*.pypi-dependencies]` blocks in `pixi.toml` are why `[dependencies]` holds
+  runtime *libraries* and not the app. Moving `expense-tracker` back into the default
+  feature, or setting `editable = true` for prod, reopens a specific bug: an editable
+  install is a redirect to `backend/src`, so `config.py.__file__` points into the source
+  tree, and a container built that way finds the committed developer `backend/.env` and
+  dials `127.0.0.1` instead of refusing to start. Pinned by no test - `pixi run -e prod`
+  is the check, and it is described in `README.md` under "Environments".
 - **Six things are declared twice. Change both halves together:**
   - the greeting *payload shape and path* - `backend/src/expense_tracker/__init__.py`
     and `frontend/src/api/greeting.ts`, with nothing checking the agreement. The

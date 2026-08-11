@@ -17,8 +17,9 @@ name = "expense-tracker"
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
-# Production / runtime dependencies (the "default" feature).
-# Folded into EVERY environment, so both default and prod get these.
+# Production / runtime LIBRARIES (the "default" feature).
+# Folded into EVERY environment, so both default and prod get these. The app itself is
+# not here: how it is installed differs per environment, and the two blocks below say so.
 [dependencies]
 python = "==3.14.6"
 # fastapi-core, not fastapi: on conda-forge the plain `fastapi` package is the
@@ -37,16 +38,24 @@ asyncpg = "==0.31.0"
 # create_app() imports it directly for the ExpensePayload response model, and a direct
 # import should not rest on a transitive dependency.
 pydantic = "==2.13.4"
-# What config.py reads backend/.env with. Runtime rather than test-only: the deployed API
-# imports it too, where it finds no such file and falls through to the DATABASE_URL its
-# environment supplies. Nothing behind it - the package declares python and nothing else.
-python-dotenv = "==1.2.2"
+# What config.py resolves the database settings with. Runtime rather than test-only: the
+# deployed API reads its own configuration. python-dotenv comes along behind it and is
+# deliberately NOT pinned here - config.py stopped importing it directly when this
+# replaced it, and only direct imports get a line in this file.
+pydantic-settings = "==2.15.0"
 
-# The app itself, installed editable so `expense_tracker` imports everywhere
-# (tests, serve, REPL) with no PYTHONPATH. pixi builds it via hatchling from
-# backend/pyproject.toml.
-[pypi-dependencies]
+# The app itself, in two flavours, because an editable install is a development tool and
+# not a production deliverable. Editable installs a redirect to backend/src, so the source
+# tree has to stay put and __file__ points into it - which is what lets a developer edit
+# and re-run with no reinstall, and exactly what an image must not do: it would drag
+# backend/.env, tests/ and data/ along and let a misconfigured container read the dev
+# settings instead of failing. prod gets a real wheel, built by hatchling from
+# backend/pyproject.toml, which packages src/expense_tracker and nothing else.
+[feature.dev.pypi-dependencies]
 expense-tracker = { path = "backend", editable = true }
+
+[feature.prod.pypi-dependencies]
+expense-tracker = { path = "backend", editable = false }
 
 # Test-only dependencies, isolated in the "test" feature so the lean
 # prod environment can exclude them.
@@ -152,10 +161,12 @@ frontend-test = { cmd = "pnpm run test", cwd = "frontend" }
 frontend-typecheck = { cmd = "pnpm run typecheck", cwd = "frontend" }
 
 # Two environments on one solve-group:
-# - default: runtime + test tooling -> editor, local dev, CI, every task above
-# - prod:    runtime only (default feature) -> the API and nothing else
+# - default: runtime libraries + test tooling + the editable app -> editor, local dev, CI
+# - prod:    runtime libraries + the app as a wheel -> the API and nothing else
 # Same solve-group keeps python pinned identically across both. prod is Node-free by
-# construction now that the backend ships no frontend assets.
+# construction now that the backend ships no frontend assets, and it is the environment an
+# image is built from - so anything a container must not have has to stay out of the
+# default feature and out of the prod feature both.
 [environments]
-default = { features = ["test"], solve-group = "prod" }
-prod = { solve-group = "prod" }
+default = { features = ["test", "dev"], solve-group = "prod" }
+prod = { features = ["prod"], solve-group = "prod" }

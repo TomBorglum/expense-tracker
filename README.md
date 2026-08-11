@@ -335,7 +335,10 @@ The flip side of `.env` loading in every mode is that `pixi run frontend-build` 
 `http://localhost:8000` into the bundle**. That is fine today, since the build exists
 as a CI gate and nothing deploys it, but a real deployment needs the value supplied for
 the production mode via a `.env.production` or a `VITE_API_BASE_URL` in the build
-environment. vite inlines it at build time; there is no runtime lookup to override.
+environment. vite inlines it at build time; there is no runtime lookup to override. Note
+that `.gitignore` ignores every `.env` variant but the two committed defaults, so a
+`.env.production` you add has to be named back in before it can be committed - deliberate,
+since that is the shape a real credential usually arrives in.
 
 ### Package manager
 
@@ -482,6 +485,45 @@ The cost is that adding a command means two edits - define it in the stack's man
 then forward it from `pixi.toml`. Put the command body in the stack, never in the
 forwarder.
 
+## Environments
+
+`pixi.toml` declares two, on one solve-group so python is pinned identically across both:
+
+| Environment | Contains | Used by |
+| --- | --- | --- |
+| `default` | runtime libraries, test tooling, node, PostgreSQL, and the app **editable** | the editor, local dev, CI, every task |
+| `prod` | runtime libraries and the app as a **wheel** | what an image is built from |
+
+The install mode is the difference that matters. An editable install is a redirect to
+`backend/src`: nothing is copied, so the source tree has to stay where it was at install
+time and `__file__` points into it. That is exactly what a developer wants - edit, re-run,
+no reinstall - and exactly what a deployment must not have. It would mean shipping the
+source tree, `backend/data/`, `backend/tests/` and `backend/.env` inside the image, and a
+container that forgot `DATABASE_URL` would read that developer `.env` and dial its own
+loopback instead of failing.
+
+So the app is declared per feature rather than in the default feature, which is why
+`[dependencies]` holds runtime *libraries* only:
+
+```toml
+[feature.dev.pypi-dependencies]
+expense-tracker = { path = "backend", editable = true }
+
+[feature.prod.pypi-dependencies]
+expense-tracker = { path = "backend", editable = false }
+```
+
+`prod` gets a real wheel, built by hatchling, containing `src/expense_tracker` and
+nothing else. You can check the property directly:
+
+```sh
+pixi install -e prod
+pixi run -e prod python -c "from expense_tracker.config import database_url; database_url()"
+# ValidationError: set DATABASE_URL, or all of PGUSER, PGHOST, PGPORT, PGDATABASE
+```
+
+Nothing in CI builds `prod` yet; it is verified by hand until there is an image to build.
+
 ## Configuration
 
 Where the local database lives is written down once, in **`backend/.env`**, as the four
@@ -496,30 +538,46 @@ PGDATABASE=expense_tracker
 
 Two readers consume that one file, because two kinds of process need it. **poe** exports
 it into every task, via `envfile` in `[tool.poe]` - which is what lets the `db-*` tasks
-stay free of `--host`/`--port`/`--username` flags. **`config.py`** reads it directly and
-composes the DSN SQLAlchemy connects with, so a process launched outside poe
-(`uvicorn --factory`, an editor's test runner) resolves the same values; the path it
-looks in is derived from `config.py`'s own location, not the working directory.
-`pixi.toml` deliberately declares none of this - a second copy is exactly what this file
-replaces.
+stay free of `--host`/`--port`/`--username` flags. **`config.py`** reads it through
+pydantic-settings, so a process launched outside poe (`uvicorn --factory`, an editor's
+test runner) resolves the same values; the directory it looks in is derived from
+`config.py`'s own location, not the working directory. `pixi.toml` deliberately declares
+none of this - a second copy is exactly what this file replaces.
 
-The DSN itself is stored nowhere. It is composed from the four parts, which is what keeps
-the port from being written into a URL string a second time. **`DATABASE_URL` overrides
-them wholesale**, and that is the deployment path: there is no `.env` in a deployment, and
-the database is one somebody else operates. **A deployment supplies its own.**
+Precedence, for the Python half, is pydantic-settings' documented order: **the
+environment beats `.env.local`, which beats `.env`.** That is the 12-factor rule a
+container needs. poe's `envfile` is the one asymmetry - it *overwrites* the ambient
+environment rather than yielding to it, so `export PGPORT=...` is honoured by a direct
+`python -m expense_tracker.expense_loader` and ignored by `poe load-expenses`. Use
+`.env.local` rather than an export and the question does not arise.
+
+The DSN itself is stored nowhere. `config.py` builds it with `sqlalchemy.URL`, which
+keeps the port from being written into a URL string a second time and escapes any part
+containing `@`, `:` or `/` instead of emitting a URL that parses as something else.
+`database_url()` returns a `URL` rather than a `str`, so `str()` and `repr()` render any
+password as `***` - a DSN that reaches a log or a traceback cannot leak one.
+**`DATABASE_URL` overrides the four parts wholesale**, and that is the deployment path.
+**A deployment supplies its own.**
 
 None of it has a **default**. With no `DATABASE_URL`, nothing in the environment and no
 `.env` on disk, the process refuses to start rather than quietly dialling its own
-loopback.
+loopback. That last clause is why the `prod` environment installs the app as a **wheel**
+and only `default` installs it editable: an editable install is a redirect to
+`backend/src`, so `config.py.__file__` would point into the source tree and a container
+built from it would find this developer `.env` and use it. Installed properly the package
+sits in site-packages, the two files are absent, and a container that forgets
+`DATABASE_URL` fails loudly. See [Environments](#environments).
 
 To move the cluster off a port something else has taken, put `PGPORT` in
 **`backend/.env.local`** - gitignored, layered over `backend/.env` by both readers, and
 the exact counterpart of `frontend/.env.local`. The port is baked into the cluster at
 `initdb` time, so follow it with `pixi run backend-db-reset && pixi run backend-db-init`.
 
-One consequence worth knowing: these are no longer pixi activation variables, so a bare
-`psql` typed straight into a `pixi shell` needs its own `-p`. Everything that goes through
-`pixi run backend-db-*` is unaffected.
+Two consequences worth knowing. These are no longer pixi activation variables, so a bare
+`psql` typed straight into a `pixi shell` needs its own `-p`; everything that goes through
+`pixi run backend-db-*` is unaffected. And `.gitignore` ignores **every** `.env` variant,
+naming back only the two committed defaults - so a `backend/.env.production` you create is
+untracked by default rather than by memory.
 
 The frontend has exactly one variable of its own, `VITE_API_BASE_URL` - see
 [Where the API lives](#where-the-api-lives).
