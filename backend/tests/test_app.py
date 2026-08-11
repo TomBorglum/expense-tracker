@@ -2,7 +2,7 @@ import pytest
 from pydantic import TypeAdapter
 from starlette.testclient import TestClient
 
-from expense_tracker import ExpensePayload, create_app
+from expense_tracker import ExpensePayload, config, create_app
 from expense_tracker.expense_repository import ExpenseRecord
 
 # The origin a browser would send. Any value works against a wildcard policy.
@@ -165,11 +165,39 @@ def test_expenses_are_unavailable_when_the_database_is_down(
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
-def test_missing_database_url_is_refused_at_startup(
+def test_the_dsn_is_composed_from_the_connection_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # No silent default: a deployment that forgets the setting fails to boot rather
-    # than dialling its own loopback.
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    with pytest.raises(RuntimeError, match="DATABASE_URL"), TestClient(create_app()):
+    monkeypatch.setattr(config, "_dotenv", dict)
+    monkeypatch.setenv("PGUSER", "someone")
+    monkeypatch.setenv("PGHOST", "10.0.0.1")
+    monkeypatch.setenv("PGPORT", "6000")
+    monkeypatch.setenv("PGDATABASE", "somewhere")
+    assert config.database_url() == (
+        "postgresql+asyncpg://someone@10.0.0.1:6000/somewhere"
+    )
+
+
+def test_database_url_overrides_the_connection_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Whole-DSN override, not a default: what a deployment is handed wins over the
+    parts, which is why nothing here needs to unset them."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://nobody@127.0.0.1:1/none")
+    monkeypatch.setenv("PGPORT", "6000")
+    assert config.database_url() == "postgresql+asyncpg://nobody@127.0.0.1:1/none"
+
+
+def test_missing_database_settings_are_refused_at_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No silent default: a deployment that forgets the settings fails to boot rather
+    # than dialling its own loopback. The files are emptied too, or the committed
+    # backend/.env would answer for them.
+    monkeypatch.setattr(config, "_dotenv", dict)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    for name in ("PGUSER", "PGHOST", "PGPORT", "PGDATABASE"):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(RuntimeError, match="PGUSER"), TestClient(create_app()):
         pass

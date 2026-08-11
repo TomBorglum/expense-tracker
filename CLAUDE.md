@@ -158,6 +158,17 @@ Break one of these and CI goes red on an otherwise correct change.
   "Don't Do This" page advises against for new applications. `IF NOT EXISTS` adds what
   is missing but never renames or alters, so a change to an existing table means
   `backend-db-reset` and a reload, not another `db-init`.
+- **`backend/.env` is the single source of the database connection settings.** `PGHOST`,
+  `PGPORT`, `PGUSER` and `PGDATABASE` live there and nowhere else - `pixi.toml` declares
+  no `[activation.env]`, and that absence is deliberate rather than an omission. Two
+  readers consume the one file: poe, through `envfile` in `[tool.poe]`, which is what
+  lets every `db-*` task omit `--host`/`--port`/`--username`; and `config.py`, through
+  `dotenv_values`, so a process launched outside poe resolves the same values. It reads
+  `backend/.env.local` over the top - gitignored, absent by default, and the way to move
+  the cluster off a taken port. **The DSN is stored nowhere**: `database_url()` composes
+  it from the four parts, which is what stops the port being written into a URL string a
+  second time, and `DATABASE_URL` overrides the lot for a deployment that has no `.env`.
+  Do not reintroduce a literal DSN in any manifest.
 - **Six things are declared twice. Change both halves together:**
   - the greeting *payload shape and path* - `backend/src/expense_tracker/__init__.py`
     and `frontend/src/api/greeting.ts`, with nothing checking the agreement. The
@@ -168,9 +179,11 @@ Break one of these and CI goes red on an otherwise correct change.
   - the three tables - `backend/schema.sql` and the `Greeting` model in
     `greeting_repository.py` plus `LoadedExpenseFile` and `Expense` in
     `expense_repository.py`, which never create them and only read them;
-  - the local database connection - `DATABASE_URL` and the `PG*` variables in
-    `[feature.test.activation.env]`, against the port and username baked into
-    `db-create`'s `initdb` flags;
+  - what is left of the local database connection - `PGUSER` and `PGHOST` in
+    `backend/.env`, against `--username=expense_tracker` and
+    `--set=listen_addresses=127.0.0.1` in `db-create`'s `initdb` flags, and against
+    `createdb expense_tracker` in `db-init`. `PGPORT` is *not* in this list: `db-create`
+    takes it as `--set=port="$PGPORT"`, and the rest could follow the same way;
   - the `@` alias (`frontend/src`) - `frontend/vite.config.ts` and
     `frontend/tsconfig.app.json`, because vite does not read tsconfig `paths`;
   - the `frontend/src/main.tsx` coverage exclusion - `frontend/vite.config.ts` and

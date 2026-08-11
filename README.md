@@ -148,9 +148,15 @@ the only code that talks to it. Three settings are baked into the generated
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `port` | `5433` | Cannot collide with a system PostgreSQL on 5432 |
+| `port` | `$PGPORT`, `5433` by default | Cannot collide with a system PostgreSQL on 5432 |
 | `listen_addresses` | `127.0.0.1` | Off the network entirely |
 | `unix_socket_directories` | `/tmp` | Nothing connects over it; the DSN is TCP |
+
+The port comes from `backend/.env` (see [Configuration](#configuration)); the other two
+are literals in the `db-create` task. Because all three are baked into the cluster rather
+than passed at launch, changing `PGPORT` takes a `pixi run backend-db-reset` and a fresh
+`backend-db-init` to take effect - `db-create` is a no-op against a `.pgdata/` that
+already exists.
 
 The superuser and the database are both named `expense_tracker`, so the DSN is
 identical on every machine and on CI. Authentication is `trust`, which is acceptable
@@ -186,7 +192,7 @@ Access is SQLAlchemy 2 async over asyncpg, split across six modules:
 | `expense_repository.py` | `LoadedExpenseFile`, `Expense`, and the expense repository |
 | `greeting_repository.py` | `Greeting` and the greeting repository |
 | `db.py` | the declarative `Base` the two repository modules share |
-| `config.py` | `DATABASE_URL`, and nothing else |
+| `config.py` | the database connection settings, and nothing else |
 
 Each repository module holds its models, an **abstract base class**, its `Postgres*`
 implementation and the `...UnavailableError` it raises, and imports nothing from
@@ -414,7 +420,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | --- | --- | --- |
 | `pixi run backend-db-init` | `poe db-init` | Create, start and seed the local database (the one you need) |
 | `pixi run backend-db-create` | `poe db-create` | `initdb` a cluster into `backend/.pgdata/`, if there is not one |
-| `pixi run backend-db-start` | `poe db-start` | Start the cluster on 127.0.0.1:5433, if it is not running |
+| `pixi run backend-db-start` | `poe db-start` | Start the cluster on `$PGHOST:$PGPORT`, if it is not running |
 | `pixi run backend-db-stop` | `poe db-stop` | Stop the cluster; succeeds if it is already stopped |
 | `pixi run backend-db-reset` | `poe db-reset` | Stop the cluster and delete `backend/.pgdata/` entirely |
 | `pixi run backend-dev` | `poe dev` | Run the API on uvicorn, port 8000 (with reloader) |
@@ -478,21 +484,42 @@ forwarder.
 
 ## Configuration
 
-The backend reads exactly one environment variable, `DATABASE_URL`, resolved in
-`config.py` and used by both entry points - the app and the loader. It has **no
-default**: a process that cannot find the setting refuses to start rather than quietly
-dialling its own loopback.
+Where the local database lives is written down once, in **`backend/.env`**, as the four
+facts `psql` and `createdb` already read:
 
-`pixi.toml` supplies the development value from `[feature.test.activation.env]`, so
-`pixi run backend-dev`, `pixi run backend-test`, `pixi run backend-load-expenses` and
-the editor all get it without anyone exporting anything. That block is scoped to the `test` feature deliberately - a root
-`[activation.env]` would be folded into the `prod` environment too and hand a
-deployment a DSN pointing at its own loopback. **A deployment supplies its own.**
+```
+PGHOST=127.0.0.1
+PGPORT=5433
+PGUSER=expense_tracker
+PGDATABASE=expense_tracker
+```
 
-Alongside it sit `PGHOST`, `PGPORT`, `PGUSER` and `PGDATABASE`: the same four facts in
-the form `psql` and `createdb` read, which is what lets the `db-*` tasks stay free of
-`--host`/`--port`/`--username` flags. Change them together, and together with the
-`initdb` flags in `db-create` that create the cluster they describe.
+Two readers consume that one file, because two kinds of process need it. **poe** exports
+it into every task, via `envfile` in `[tool.poe]` - which is what lets the `db-*` tasks
+stay free of `--host`/`--port`/`--username` flags. **`config.py`** reads it directly and
+composes the DSN SQLAlchemy connects with, so a process launched outside poe
+(`uvicorn --factory`, an editor's test runner) resolves the same values; the path it
+looks in is derived from `config.py`'s own location, not the working directory.
+`pixi.toml` deliberately declares none of this - a second copy is exactly what this file
+replaces.
+
+The DSN itself is stored nowhere. It is composed from the four parts, which is what keeps
+the port from being written into a URL string a second time. **`DATABASE_URL` overrides
+them wholesale**, and that is the deployment path: there is no `.env` in a deployment, and
+the database is one somebody else operates. **A deployment supplies its own.**
+
+None of it has a **default**. With no `DATABASE_URL`, nothing in the environment and no
+`.env` on disk, the process refuses to start rather than quietly dialling its own
+loopback.
+
+To move the cluster off a port something else has taken, put `PGPORT` in
+**`backend/.env.local`** - gitignored, layered over `backend/.env` by both readers, and
+the exact counterpart of `frontend/.env.local`. The port is baked into the cluster at
+`initdb` time, so follow it with `pixi run backend-db-reset && pixi run backend-db-init`.
+
+One consequence worth knowing: these are no longer pixi activation variables, so a bare
+`psql` typed straight into a `pixi shell` needs its own `-p`. Everything that goes through
+`pixi run backend-db-*` is unaffected.
 
 The frontend has exactly one variable of its own, `VITE_API_BASE_URL` - see
 [Where the API lives](#where-the-api-lives).

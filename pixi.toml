@@ -37,6 +37,10 @@ asyncpg = "==0.31.0"
 # create_app() imports it directly for the ExpensePayload response model, and a direct
 # import should not rest on a transitive dependency.
 pydantic = "==2.13.4"
+# What config.py reads backend/.env with. Runtime rather than test-only: the deployed API
+# imports it too, where it finds no such file and falls through to the DATABASE_URL its
+# environment supplies. Nothing behind it - the package declares python and nothing else.
+python-dotenv = "==1.2.2"
 
 # The app itself, installed editable so `expense_tracker` imports everywhere
 # (tests, serve, REPL) with no PYTHONPATH. pixi builds it via hatchling from
@@ -77,22 +81,11 @@ pnpm = "==11.18.0"
 # environment that only ever needs to speak the wire protocol.
 postgresql = "==18.4"
 
-# Where the local cluster lives, for everything that talks to it. Scoped to the test
-# feature rather than a bare [activation.env]: a root block belongs to the default
-# feature, so it would be folded into prod too and hand a deployment a DSN pointing at
-# its own loopback.
-#
-# DATABASE_URL and the PG* variables are the same four facts twice - SQLAlchemy reads
-# the first, psql/createdb read the second - so they are kept adjacent and change
-# together. The PG* half is what lets every db-* task in backend/pyproject.toml omit the
-# --host/--port/--username flags. Written out literally rather than interpolating
-# $PGHOST into the DSN, because an unexpanded variable there would fail confusingly.
-[feature.test.activation.env]
-DATABASE_URL = "postgresql+asyncpg://expense_tracker@127.0.0.1:5433/expense_tracker"
-PGHOST = "127.0.0.1"
-PGPORT = "5433"
-PGUSER = "expense_tracker"
-PGDATABASE = "expense_tracker"
+# No [activation.env] here, and deliberately none: where the local cluster lives is
+# declared once, in backend/.env, which poe exports into every task and config.py reads
+# directly. A block here would be a second source for the same four facts - and a root
+# one would belong to the default feature, folding into prod too and handing a deployment
+# a DSN pointing at its own loopback.
 
 # The one dependency in this file that is not conda-pinned, and the reason is the recipe
 # rather than the tool. import-linter 2.11 moved fastapi and uvicorn behind a "ui" extra,

@@ -22,6 +22,9 @@ frontend/dist/
 # Local API-origin override; the committed frontend/.env holds the default.
 frontend/.env.local
 
+# Local database-connection override; the committed backend/.env holds the defaults.
+backend/.env.local
+
 # Test/coverage artifacts
 .pytest_cache/
 .coverage
