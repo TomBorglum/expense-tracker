@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import App from "./App";
+import { createAppRouter } from "./router";
 import "./styles/app.css";
 
 const root = document.getElementById("root");
@@ -17,18 +18,22 @@ if (!root) {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // The greeting only changes when a new wheel is deployed, and this is a single
-      // screen -- there is nothing worth refetching when the tab regains focus.
+      // The greeting only changes when a new wheel is deployed and the expenses only
+      // when the loader runs -- there is nothing worth refetching when the tab regains
+      // focus.
       refetchOnWindowFocus: false,
       retry: 1,
     },
   },
 });
 
+// No history argument, so the router uses the browser's. The tests pass a memory one.
+const router = createAppRouter();
+
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <RouterProvider router={router} />
     </QueryClientProvider>
   </StrictMode>,
 );

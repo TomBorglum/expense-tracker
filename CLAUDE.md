@@ -143,7 +143,18 @@ Break one of these and CI goes red on an otherwise correct change.
   `PostgresExpenseRepository` raises only from its `except` arm, with no
   `if not rows: raise` counterpart. Pinned by
   `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` in both
-  `test_app.py` and `test_expense_postgres.py`.
+  `test_app.py` and `test_expense_postgres.py`. The frontend keeps its half of that
+  asymmetry: `ExpensesTable` renders `[]` as a row reading `No expenses loaded.` and
+  reserves its `role="alert"` for a request that actually failed.
+- **The expenses table renders `amount` and `date` verbatim.** No `Intl.NumberFormat`,
+  no `new Date()`. The backend sends `amount` as `str(Decimal)` precisely so no float
+  round trip can drift a total by a cent, and formatting it client-side would put that
+  round trip back; `date` is a bare `YYYY-MM-DD`, which `new Date()` reads as UTC and
+  prints a day early west of Greenwich. `test_app.py`'s
+  `test_expense_amounts_are_strings_not_numbers` pins the backend half, and
+  `ExpensesTable.test.tsx`'s "shows an alert when an amount arrives as a number" the
+  frontend half - the shape guard in `frontend/src/api/expenses.ts` rejects a numeric
+  amount rather than coercing it.
 - **The HTTP suite never touches PostgreSQL.** `backend/tests/conftest.py` overrides
   both the `provide_greeting_repository` and `provide_expense_repository` dependencies
   with fake repositories; only `backend/tests/test_greeting_postgres.py` and
@@ -210,12 +221,13 @@ Break one of these and CI goes red on an otherwise correct change.
   Pinned by no test - `pixi run -e prod` is the check, described in `README.md` under
   "Environments".
 - **Six things are declared twice. Change both halves together:**
-  - the greeting *payload shape and path* - `backend/src/expense_tracker/__init__.py`
-    and `frontend/src/api/greeting.ts`, with nothing checking the agreement. The
-    greeting *wording* is not duplicated anywhere: it is one row of the `greeting`
-    table. The *expenses* payload is likewise declared exactly once, as the
-    `ExpensePayload` model - the route builds it and the tests parse responses back
-    into it, so there is no second half to go looking for;
+  - the two *payload shapes and paths* - `backend/src/expense_tracker/__init__.py`
+    against `frontend/src/api/greeting.ts` for the greeting and
+    `frontend/src/api/expenses.ts` for the expenses, with nothing checking either
+    agreement. Every expense field is a string on the wire, `amount` included, and the
+    frontend's guard rejects a number, so a change to `ExpensePayload` is a change to
+    the `Expense` interface. The greeting *wording* is not duplicated anywhere: it is
+    one row of the `greeting` table;
   - the three tables - `backend/schema.sql` and the `Greeting` model in
     `greeting_repository.py` plus `LoadedExpenseFile` and `Expense` in
     `expense_repository.py`, which never create them and only read them;
@@ -235,6 +247,17 @@ Break one of these and CI goes red on an otherwise correct change.
   handlers to the URL built from it. `frontend/vite.config.ts` also pins `envDir` to
   `frontend/`, because the `test` block moves vite's `root` to the repo root and
   `envDir` would otherwise follow it.
+- **Routes are code-based, in `frontend/src/router.ts`.** No `routeTree.gen.ts` and no
+  `@tanstack/router-plugin`: a generated route tree is a committed file that has to
+  satisfy prettier, eslint's type-aware pass, a tsconfig that owns it and the coverage
+  exclusions, and the plugin drags in `@babel/core`, `chokidar`, `zod` and `unplugin`
+  to produce it. `createAppRouter` is a factory rather than a module-level singleton so
+  the tests can hand it a `createMemoryHistory`, which is also what keeps `router.ts`
+  covered without a new exclusion. The `declare module` block registering `Register` is
+  what gives `Link` its typed `to`; without it a path matching no route compiles.
+  **Only `App.tsx` imports `Link` or `Outlet`** - the pages under `src/pages/` are
+  router-free, so each one's test mounts it in a bare `QueryClientProvider` and only
+  `routing.test.tsx` builds a router.
 - **Every linted file needs a tsconfig that owns it.** eslint runs type-aware via
   `parserOptions.projectService`, so a `.ts`/`.tsx` file outside every tsconfig's
   `include` fails to lint rather than being skipped. `src/` and `tests/` come from

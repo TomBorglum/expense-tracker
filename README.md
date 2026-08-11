@@ -296,6 +296,36 @@ payload *shape* is written out by hand on both sides and the two must be changed
 together; a mismatch shows up as a 404 or a failed shape guard at runtime. The wording
 itself is duplicated nowhere - it exists only in the database.
 
+`GET /api/expenses` is the app's second read, through `frontend/src/api/expenses.ts` and
+rendered by `frontend/src/components/ExpensesTable.tsx` as one table of amount, currency,
+date, category and details. Its shape is written out by hand here too, and every field is
+a string on the wire - `amount` included, because JSON has no decimal type - so the guard
+rejects a numeric amount rather than letting a float round trip through the page. Both
+values are rendered exactly as they arrive: formatting the amount client-side would put
+back the round trip `str(Decimal)` exists to prevent, and `new Date()` on a bare
+`YYYY-MM-DD` reads it as UTC and prints a day early west of Greenwich. The rows keep the
+order the API sends them in (newest first) and are never re-sorted, and an empty ledger
+arrives as a 200 with `[]`, so the table says so in a row instead of raising an alert.
+
+### Routing
+
+Two routes, declared in code in `frontend/src/router.ts`: `/` is the greeting and
+`/expenses` the table, with [TanStack Router](https://tanstack.com/router) and a nav
+between them. There is no `routeTree.gen.ts` - file-based routing would commit a
+generated file that has to clear prettier, type-aware eslint, a tsconfig and the coverage
+exclusions, and its vite plugin pulls in `@babel/core`, `chokidar`, `zod` and `unplugin`.
+The `declare module` block at the foot of `router.ts` is what makes `Link`'s `to` typed
+against the real route tree.
+
+`createAppRouter` takes an optional history so the tests can pass
+`createMemoryHistory()`; `frontend/src/main.tsx` calls it with none and gets the
+browser's. Only `frontend/src/App.tsx` - the layout, a nav plus an `<Outlet />` - touches
+`Link` or `Outlet`. The pages under `frontend/src/pages/` are router-free, which is why
+each page's test mounts it directly in a `QueryClientProvider` and only
+`frontend/tests/routing.test.tsx` builds a router. A deployed SPA needs its server to
+fall back to `index.html` so `/expenses` resolves on a cold load; vite's dev server does
+that already, and nothing in this repo serves `frontend/dist/`.
+
 Tests use vitest, live in `frontend/tests/`, and reach into the app through the `@`
 alias (`@/api/greeting`). The alias is declared twice - `resolve.alias` in
 `frontend/vite.config.ts` for the bundler and `paths` in `frontend/tsconfig.app.json`
@@ -304,9 +334,9 @@ at the same place. Imports *within* `src/` stay relative.
 
 The backend is stubbed with [MSW](https://mswjs.io). `frontend/tests/setup.ts` starts
 the server with `onUnhandledRequest: "error"`, so an unstubbed request fails the test
-instead of quietly reaching the network. Handlers bind to the absolute `GREETING_URL`
-exported by `frontend/src/api/greeting.ts`, because a path-only pattern would resolve
-against jsdom's origin rather than the API's and never match.
+instead of quietly reaching the network. Handlers bind to the absolute `GREETING_URL` and
+`EXPENSES_URL` exported by the modules under `frontend/src/api/`, because a path-only
+pattern would resolve against jsdom's origin rather than the API's and never match.
 
 `frontend/src/main.tsx` is excluded from coverage in both `frontend/vite.config.ts` and
 `sonar-project.properties` - it only wires React to the DOM. `frontend/vite.config.ts`
@@ -318,11 +348,11 @@ green build.
 
 ### Where the API lives
 
-`frontend/.env` holds `VITE_API_BASE_URL`, and `frontend/src/api/greeting.ts` resolves
-every request path against it. That one variable is the frontend's only knowledge of
-the backend; there is deliberately no vite proxy, so the dev-time request is a real
-cross-origin call over the same CORS path a deployed one would take. Override it in
-`frontend/.env.local` (gitignored) to point at a backend elsewhere.
+`frontend/.env` holds `VITE_API_BASE_URL`, and the modules under `frontend/src/api/`
+resolve every request path against it. That one variable is the frontend's only
+knowledge of the backend; there is deliberately no vite proxy, so the dev-time request
+is a real cross-origin call over the same CORS path a deployed one would take. Override
+it in `frontend/.env.local` (gitignored) to point at a backend elsewhere.
 
 Two details worth knowing:
 
