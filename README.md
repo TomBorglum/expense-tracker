@@ -62,17 +62,27 @@ reports the directives as unknown commands.
 ```sh
 cd expense-tracker          # direnv provisions the environment on entry
 pixi run frontend-install   # install frontend dependencies (pnpm)
-pixi run backend-db-init    # create, start and seed the local database
 ```
-
-`db-init` is idempotent, so it is also how you start the database again on any later
-day. Without it the API answers `503` and the page shows its error state.
 
 Then start both, in two terminals:
 
 ```sh
-pixi run backend-dev   # the REST API on http://localhost:8000
+pixi run backend-dev   # the database, then the REST API on http://localhost:8000
 pixi run frontend-dev  # the SPA on http://localhost:5173
+```
+
+`backend-dev` brings the database up itself - it depends on `db-init`, which creates the
+cluster if there is none, starts it if it is stopped and applies `backend/schema.sql`.
+Every link in that chain is idempotent, so it is the same one command on day one and on
+any later day, and uvicorn does not start if any of it fails.
+
+`pixi run backend-db-init` is still how you get the database *without* the API, which is
+what the `postgres`-marked tests in `pixi run backend-test` need. For the API without the
+database - work on routes that never touch it, or a cluster that will not start - poe has
+no flag to skip a dep, so run the server directly:
+
+```sh
+cd backend && uvicorn expense_tracker:create_app --factory --reload --reload-dir src
 ```
 
 Visit http://localhost:5173 and you should see `Hello, World!`, fetched from
@@ -159,7 +169,8 @@ public text, rebuildable at any moment from `backend/schema.sql`. Do not copy th
 `initdb` flags anywhere real.
 
 All five tasks are idempotent, and `db-init` depends on `db-start` depends on
-`db-create`, so `pixi run backend-db-init` is the only one you normally need.
+`db-create`, so `pixi run backend-db-init` is the only one you normally need - and
+`backend-dev` depends on it in turn, so for API work you need none of them.
 `db-reset` throws the cluster away - the cure if a test that edits the greeting row is
 killed before it can restore it.
 
@@ -412,12 +423,12 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 
 | Command | Delegates to | What it does |
 | --- | --- | --- |
-| `pixi run backend-db-init` | `poe db-init` | Create, start and seed the local database (the one you need) |
+| `pixi run backend-db-init` | `poe db-init` | Create, start and seed the local database (the one you need on its own) |
 | `pixi run backend-db-create` | `poe db-create` | `initdb` a cluster into `.pgdata/`, if there is not one |
 | `pixi run backend-db-start` | `poe db-start` | Start the cluster on 127.0.0.1:5433, if it is not running |
 | `pixi run backend-db-stop` | `poe db-stop` | Stop the cluster; succeeds if it is already stopped |
 | `pixi run backend-db-reset` | `poe db-reset` | Stop the cluster and delete `.pgdata/` entirely |
-| `pixi run backend-dev` | `poe dev` | Run the API on uvicorn, port 8000 (with reloader) |
+| `pixi run backend-dev` | `poe dev` | Bring up the database (`db-init`), then run the API on uvicorn, port 8000 (with reloader) |
 | `pixi run backend-test` | `poe test` | Run the test suite with coverage |
 | `pixi run backend-lint` | `poe lint` | Lint with ruff, then check the import graph with import-linter |
 | `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues (ruff only) |

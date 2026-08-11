@@ -69,8 +69,9 @@ test -f "$POE_ROOT/../.pgdata/PG_VERSION" ||
 # database does not exist - so there is nothing to grep. schema.sql is idempotent, which
 # is what makes re-running this against a live cluster a no-op.
 #
-# Deliberately not a dep of `test`: coupling them would hide the property this design is
-# built around, that the HTTP suite needs no database at all.
+# A dep of `dev`, which cannot answer a request without it, and deliberately not of
+# `test`: coupling it there would hide the property this design is built around, that the
+# HTTP suite needs no database at all.
 db-init.shell = """
 psql --tuples-only --output=/dev/null --command='SELECT 1' || createdb expense_tracker &&
   psql --set=ON_ERROR_STOP=1 --file="$POE_ROOT/schema.sql"
@@ -99,7 +100,11 @@ db-stop.shell = 'pg_ctl --pgdata="$POE_ROOT/../.pgdata" --mode=fast --wait stop 
 # and its stat reloader rglobs for *.py and stats every hit four times a second - which
 # here means walking .pixi/ and node_modules/ to find 1891 files when the only one that
 # can ever matter is src/expense_tracker/__init__.py.
-dev = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
+#
+# The db-init dep is what makes this the only command a developer runs: the cluster is
+# created, started and seeded first, and uvicorn does not start if any of that fails.
+dev.cmd = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
+dev.deps = ["db-init"]
 format = "ruff format"
 format-check = "ruff format --check"
 # Two linters, one gate: ruff over each file, then import-linter over the graph they

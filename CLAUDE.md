@@ -63,6 +63,13 @@ they are the **only** tasks that do. `backend-load-expenses` is not a sixth one:
 five are the cluster's lifecycle, this is data going into it, and its files live under
 `backend/data/expenses/` so it uses a plain relative path like every other task.
 
+`dev` declares `deps = ["db-init"]`, which makes `pixi run backend-dev` the one command
+that starts backend work: it cannot serve a request without a database, and every link in
+that chain is idempotent. The dep belongs in `backend/pyproject.toml` beside the rest of
+the graph rather than being a pixi `depends-on` - same rule as above, and it is what keeps
+`cd backend && poe dev` equivalent. `test` gets no such dep (see the HTTP suite invariant
+below), and neither does `load-expenses`.
+
 **The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Never
 put a command body there; that is what would make the layer a place definitions hide.
 Both stacks also stay runnable on their own terms (`cd backend && poe test`,
