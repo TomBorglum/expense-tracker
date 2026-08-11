@@ -26,12 +26,13 @@ packages = ["src/expense_tracker"]
 # the wrong interpreter - poe itself only exists inside the pixi environment, so if `poe`
 # resolves at all, that environment's pytest and ruff are already first on PATH.
 executor = "simple"
-# PGHOST, PGPORT, PGUSER and PGDATABASE, exported into every task below - which is what
-# lets the db-* tasks omit the --host/--port/--username flags. Both paths are relative to
-# this file, so they resolve the same from backend/ and from `poe -C backend`. The dict
-# form is what makes the second one's absence fine rather than fatal; it is gitignored,
-# and layering it over the first is how a developer moves the cluster off a taken port.
-envfile = { expected = ".env", optional = ".env.local" }
+# No `envfile` here, deliberately. PGHOST, PGPORT, PGUSER and PGDATABASE reach the db-*
+# tasks - which is what lets them omit --host/--port/--username - from the environment
+# direnv already built out of backend/.env, and poe loading the same file a second time
+# would be a second mechanism to keep in step for no gain. It would also overwrite the
+# ambient values, which is what stopped a one-off `PGPORT=6000 pixi run backend-db-init`
+# from working. `direnv allow` is therefore a precondition for every task here, not only
+# for the ones run outside pixi; .github/workflows/ci.yml says the same in its own way.
 
 # Alphabetical, matching the forwarder table in pixi.toml and what `poe` with no task
 # prints. Ordering by workflow instead would leave a new task no obviously right place.

@@ -22,6 +22,17 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    # Every `run:` step below executes under the repository's .envrc, exactly as a local
+    # shell does. setup-direnv activates it once, but only its custom use_* directives
+    # append to $GITHUB_PATH/$GITHUB_ENV - `dotenv_if_exists` is stock direnv, so without
+    # this the four PG* names would die with that step and `pixi run backend-db-init`
+    # would reach no cluster. Wrapping the shell rather than exporting the file into
+    # $GITHUB_ENV keeps direnv the single loader: nothing here re-parses backend/.env,
+    # and anything added to .envrc later applies in CI without another edit.
+    # `uses:` steps are unaffected - defaults.run covers `run:` only.
+    defaults:
+      run:
+        shell: direnv exec . bash -e {0}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
