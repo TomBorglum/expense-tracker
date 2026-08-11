@@ -553,15 +553,22 @@ PGDATABASE=expense_tracker
 
 **The application never opens that file.** `config.py` reads the environment and nothing
 else - no path is resolved in the package, and none needs to be. Loading a dotenv file is
-the job of whatever *launches* the process. **One** thing does it here: the two
-`dotenv_if_exists` lines in **`.envrc`**, which layer
-`backend/.env.local` over `backend/.env`. poe had an `envfile` doing the same job for the
-`db-*` tasks; it was removed, because a second loader of the same file is a second thing
-to keep in step, and because `envfile` overwrote the ambient environment - which made a
-one-off `PGPORT=6000 pixi run backend-db-init` impossible. With direnv alone it works.
+the job of whatever *launches* the process, and two things do it here:
 
-So `direnv allow` is a precondition for **everything**, `pixi run` included, rather than
-only for what runs outside a task. What it buys is that no command needs a wrapper:
+| Launcher | Mechanism | Covers |
+| --- | --- | --- |
+| poe | `envfile` in `[tool.poe]` | every `pixi run backend-*`, and `poe -C backend <task>` |
+| direnv | `dotenv_if_exists` in `.envrc` | anything else you run from a shell in the repo |
+
+The two overlap in a local shell, where both are loaded and agree - but neither is
+redundant, and **poe's is the one CI depends on**. `setup-direnv` activates `.envrc` with
+`direnv exec . true`, and only its custom `use_*` directives append to `$GITHUB_PATH` and
+`$GITHUB_ENV`; `dotenv_if_exists` is stock direnv, so the four names die with that step
+and every later `pixi run` sees none of them. `envfile` is what supplies them there, and
+it is also what keeps a task working in a shell where `direnv allow` was never run.
+
+direnv's half covers the things no task wraps, which is why `direnv allow` is a
+precondition rather than a convenience:
 
 ```sh
 psql                                              # the local cluster, no flags
@@ -573,14 +580,6 @@ python -m expense_tracker.expense_loader ~/exports # a directory other than data
 `psql`, `pg_dump` and friends need no arguments, and a test run started from your editor
 reaches the same cluster as `pixi run backend-test`. `pixi.toml` deliberately declares
 none of this - a second copy is exactly what `backend/.env` replaces.
-
-CI pays the same price rather than routing around it. `setup-direnv` activates `.envrc`
-once, but only its custom `use_*` directives append to `$GITHUB_PATH`/`$GITHUB_ENV` -
-`dotenv_if_exists` is stock direnv, so the four names would not survive that step. The
-`checks` job therefore sets `defaults.run.shell` to `direnv exec . bash -e {0}`, so every
-`run:` step executes under the same `.envrc` a local shell does. Exporting the file into
-`$GITHUB_ENV` would have worked too, and was rejected: it would make the workflow a
-second reader of `backend/.env`, which is the thing this arrangement exists to avoid.
 
 That split is the point rather than an implementation detail. A dotenv file is a
 developer convenience, and an application that parses one has to know where it lives -

@@ -163,23 +163,21 @@ Break one of these and CI goes red on an otherwise correct change.
   `parents[N]`. Reintroducing dotenv reading into the package is the specific regression
   this rule exists to prevent: a wheel-installed package has no project directory to
   derive a path from, so the code either finds nothing or finds a developer's settings,
-  depending on how it happened to be installed. **One launcher** puts the four names
-  there instead: direnv, through the two `dotenv_if_exists` lines in `.envrc`, which
-  layer `backend/.env.local` over `backend/.env` - gitignored, absent by default, and the
-  way to move the cluster off a taken port.
-  **`[tool.poe]` declares no `envfile`, and must not regain one.** It had one, and it was
-  removed on purpose: poe reading the same file a second time is a second mechanism to
-  keep in step for no gain, and because `envfile` *overwrites* the ambient environment it
-  also made a one-off `PGPORT=6000 pixi run backend-db-init` impossible. With direnv
-  alone the override reaches the process.
-  The consequence is that **`direnv allow` is a precondition for every task, not only for
-  what runs outside pixi** - `pixi run backend-db-init` in a shell without it reaches no
-  cluster, loudly. CI pays the same price and settles it in one place: the `checks` job
-  sets `defaults.run.shell` to `direnv exec . bash -e {0}`, because `setup-direnv`
-  activates `.envrc` once but only its custom `use_*` directives append to
-  `$GITHUB_PATH`/`$GITHUB_ENV`, and `dotenv_if_exists` is stock direnv. Exporting the
-  file into `$GITHUB_ENV` instead would have made CI a second reader of `backend/.env`,
-  which is the thing being avoided.
+  depending on how it happened to be installed. Two **launchers** put the four names
+  there instead: poe, through `envfile` in `[tool.poe]`, and direnv, through
+  `dotenv_if_exists` in `.envrc`. Both layer `backend/.env.local` over the top -
+  gitignored, absent by default, and the way to move the cluster off a taken port - and
+  both **overwrite** the ambient environment, so an `export PGPORT=...` is not how you
+  change the port.
+  **Neither is redundant, and `envfile` is the one that cannot go.** They look
+  interchangeable locally, where both are loaded and agree. They are not: `setup-direnv`
+  activates `.envrc` with `direnv exec . true`, and only its custom `use_*` directives
+  append to `$GITHUB_PATH`/`$GITHUB_ENV` - `dotenv_if_exists` is stock direnv, so in CI
+  the four names die with that step and every later `pixi run` sees none of them. poe's
+  `envfile` is the sole supplier there, and `db-create`'s `--set=port="$PGPORT"` is what
+  would break first. direnv's half is the one that cannot go either, for the opposite
+  reason: it covers everything no task wraps - a bare `psql`, an editor's test runner,
+  the loader pointed at another directory.
 - **`backend/.env` is the single source of the connection settings.** `PGHOST`, `PGPORT`,
   `PGUSER` and `PGDATABASE` live there and nowhere else - `pixi.toml` declares no
   `[activation.env]`, and that absence is deliberate rather than an omission. **The DSN
