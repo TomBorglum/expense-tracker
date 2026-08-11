@@ -38,19 +38,20 @@ asyncpg = "==0.31.0"
 # create_app() imports it directly for the ExpensePayload response model, and a direct
 # import should not rest on a transitive dependency.
 pydantic = "==2.13.4"
-# What config.py resolves the database settings with. Runtime rather than test-only: the
-# deployed API reads its own configuration. python-dotenv comes along behind it and is
-# deliberately NOT pinned here - config.py stopped importing it directly when this
-# replaced it, and only direct imports get a line in this file.
+# What config.py validates the database settings with. Runtime rather than test-only: the
+# deployed API reads its own configuration. Only the BaseSettings half is used - the
+# dotenv half is not, because loading backend/.env is a launcher's job here (poe's
+# `envfile`, direnv's `dotenv_if_exists`) and never the app's.
 pydantic-settings = "==2.15.0"
 
 # The app itself, in two flavours, because an editable install is a development tool and
 # not a production deliverable. Editable installs a redirect to backend/src, so the source
-# tree has to stay put and __file__ points into it - which is what lets a developer edit
-# and re-run with no reinstall, and exactly what an image must not do: it would drag
-# backend/.env, tests/ and data/ along and let a misconfigured container read the dev
-# settings instead of failing. prod gets a real wheel, built by hatchling from
-# backend/pyproject.toml, which packages src/expense_tracker and nothing else.
+# tree has to stay put - which is what lets a developer edit and re-run with no reinstall,
+# and exactly what an image must not do: it would drag tests/ and data/ along and pin the
+# container to a directory layout instead of an artifact. prod gets a real wheel, built by
+# hatchling from backend/pyproject.toml, which packages src/expense_tracker and nothing
+# else. No correctness property rests on the split - config.py reads the environment in
+# either - so this is about shipping the right thing, not about guarding against a bug.
 [feature.dev.pypi-dependencies]
 expense-tracker = { path = "backend", editable = true }
 

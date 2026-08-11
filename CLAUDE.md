@@ -158,33 +158,39 @@ Break one of these and CI goes red on an otherwise correct change.
   "Don't Do This" page advises against for new applications. `IF NOT EXISTS` adds what
   is missing but never renames or alters, so a change to an existing table means
   `backend-db-reset` and a reload, not another `db-init`.
-- **`backend/.env` is the single source of the database connection settings.** `PGHOST`,
-  `PGPORT`, `PGUSER` and `PGDATABASE` live there and nowhere else - `pixi.toml` declares
-  no `[activation.env]`, and that absence is deliberate rather than an omission. Two
-  readers consume the one file: poe, through `envfile` in `[tool.poe]`, which is what
-  lets every `db-*` task omit `--host`/`--port`/`--username`; and `config.py`, through
-  pydantic-settings, so a process launched outside poe resolves the same values. Both
-  read `backend/.env.local` over the top - gitignored, absent by default, and the way to
-  move the cluster off a taken port. They differ in one respect worth knowing: poe's
-  `envfile` **overwrites** the ambient environment, while `config.py` lets the
-  environment win, so an `export PGPORT=...` is honoured by `python -m` and ignored by
-  `poe`. **The DSN is stored nowhere**: `DatabaseSettings.dsn` builds it with
-  `sqlalchemy.URL`, which stops the port being written into a URL string a second time
-  and escapes parts containing `@`, `:` or `/`. `DATABASE_URL` overrides the four
-  wholesale. Do not reintroduce a literal DSN in any manifest, and do not go back to
-  f-string interpolation.
+- **The app reads the environment; loading `backend/.env` is a launcher's job.**
+  `config.py` opens no file and resolves no path - no `__file__`, no `env_file=`, no
+  `parents[N]`. Reintroducing dotenv reading into the package is the specific regression
+  this rule exists to prevent: a wheel-installed package has no project directory to
+  derive a path from, so the code either finds nothing or finds a developer's settings,
+  depending on how it happened to be installed. Two **launchers** put the four names
+  there instead: poe, through `envfile` in `[tool.poe]`, which is what lets every `db-*`
+  task omit `--host`/`--port`/`--username`; and direnv, through `dotenv_if_exists` in
+  `.envrc`, which covers everything started from a shell. Both layer
+  `backend/.env.local` over the top - gitignored, absent by default, and the way to move
+  the cluster off a taken port - and both **overwrite** the ambient environment, so an
+  `export PGPORT=...` is not how you change the port.
+- **`backend/.env` is the single source of the connection settings.** `PGHOST`, `PGPORT`,
+  `PGUSER` and `PGDATABASE` live there and nowhere else - `pixi.toml` declares no
+  `[activation.env]`, and that absence is deliberate rather than an omission. **The DSN
+  is stored nowhere**: `DatabaseSettings.dsn` builds it with `sqlalchemy.URL`, which
+  stops the port being written into a URL string a second time and escapes parts
+  containing `@`, `:` or `/`. `DATABASE_URL` overrides the four wholesale. Do not
+  reintroduce a literal DSN in any manifest, and do not go back to f-string
+  interpolation.
 - **`database_url()` returns a `URL`, not a `str`.** `str()` and `repr()` of it redact
   the password as `***`, which is what stops a deployment credential reaching a log or a
   traceback; a `str` return would silently give that up. `create_async_engine` and
   `load_directory` both take the `URL` unchanged.
 - **`prod` installs the app as a wheel; only `default` installs it editable.** The two
   `[feature.*.pypi-dependencies]` blocks in `pixi.toml` are why `[dependencies]` holds
-  runtime *libraries* and not the app. Moving `expense-tracker` back into the default
-  feature, or setting `editable = true` for prod, reopens a specific bug: an editable
-  install is a redirect to `backend/src`, so `config.py.__file__` points into the source
-  tree, and a container built that way finds the committed developer `backend/.env` and
-  dials `127.0.0.1` instead of refusing to start. Pinned by no test - `pixi run -e prod`
-  is the check, and it is described in `README.md` under "Environments".
+  runtime *libraries* and not the app. An editable install is a redirect to
+  `backend/src`, so it ships the source tree, `backend/tests/` and `backend/data/` and
+  pins a container to a directory layout rather than an artifact. **No correctness
+  property rests on this** - the app reads the environment either way, so a misconfigured
+  process refuses to start in both environments. It is about shipping the right thing.
+  Pinned by no test - `pixi run -e prod` is the check, described in `README.md` under
+  "Environments".
 - **Six things are declared twice. Change both halves together:**
   - the greeting *payload shape and path* - `backend/src/expense_tracker/__init__.py`
     and `frontend/src/api/greeting.ts`, with nothing checking the agreement. The
