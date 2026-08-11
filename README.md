@@ -558,12 +558,22 @@ the job of whatever *launches* the process, and two things do it here:
 | Launcher | Mechanism | Covers |
 | --- | --- | --- |
 | poe | `envfile` in `[tool.poe]` | every `pixi run backend-*`, and `poe -C backend <task>` |
-| direnv | `dotenv_if_exists` in `.envrc` | any shell in the repo: `uvicorn --factory`, `python -m`, an editor's test runner |
+| direnv | `dotenv_if_exists` in `.envrc` | anything else you run from a shell in the repo |
 
 poe's half is what lets the `db-*` tasks stay free of `--host`/`--port`/`--username`
-flags; direnv's is why `direnv allow` is a precondition for anything run outside a pixi
-task. `pixi.toml` deliberately declares none of this - a second copy is exactly what
-`backend/.env` replaces.
+flags. direnv's covers the things no task wraps, which is why `direnv allow` is a
+precondition rather than a convenience:
+
+```sh
+psql                                              # the local cluster, no flags
+pytest tests/test_expense_postgres.py -k truncate --pdb
+python -m expense_tracker.expense_loader ~/exports # a directory other than data/expenses
+```
+
+`PGHOST`, `PGPORT`, `PGUSER` and `PGDATABASE` are the variables libpq itself reads, so
+`psql`, `pg_dump` and friends need no arguments, and a test run started from your editor
+reaches the same cluster as `pixi run backend-test`. `pixi.toml` deliberately declares
+none of this - a second copy is exactly what `backend/.env` replaces.
 
 That split is the point rather than an implementation detail. A dotenv file is a
 developer convenience, and an application that parses one has to know where it lives -
