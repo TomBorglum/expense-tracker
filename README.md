@@ -57,6 +57,11 @@ Neither directive is built into direnv. Both come from the direnv library instal
 action CI uses to activate this same `.envrc`. Without that library, `direnv allow`
 reports the directives as unknown commands.
 
+Its last two lines are `dotenv_if_exists`, which put the database connection settings
+into the environment. Those are stock direnv, and they are how anything you launch from a
+shell rather than through `pixi run` finds the local cluster - see
+[Configuration](#configuration).
+
 ## Quickstart
 
 ```sh
@@ -148,9 +153,15 @@ the only code that talks to it. Three settings are baked into the generated
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `port` | `5433` | Cannot collide with a system PostgreSQL on 5432 |
+| `port` | `$PGPORT`, `5433` by default | Cannot collide with a system PostgreSQL on 5432 |
 | `listen_addresses` | `127.0.0.1` | Off the network entirely |
 | `unix_socket_directories` | `/tmp` | Nothing connects over it; the DSN is TCP |
+
+The port comes from `backend/.env` (see [Configuration](#configuration)); the other two
+are literals in the `db-create` task. Because all three are baked into the cluster rather
+than passed at launch, changing `PGPORT` takes a `pixi run backend-db-reset` and a fresh
+`backend-db-init` to take effect - `db-create` is a no-op against a `.pgdata/` that
+already exists.
 
 The superuser and the database are both named `expense_tracker`, so the DSN is
 identical on every machine and on CI. Authentication is `trust`, which is acceptable
@@ -186,7 +197,7 @@ Access is SQLAlchemy 2 async over asyncpg, split across six modules:
 | `expense_repository.py` | `LoadedExpenseFile`, `Expense`, and the expense repository |
 | `greeting_repository.py` | `Greeting` and the greeting repository |
 | `db.py` | the declarative `Base` the two repository modules share |
-| `config.py` | `DATABASE_URL`, and nothing else |
+| `config.py` | the database connection settings, and nothing else |
 
 Each repository module holds its models, an **abstract base class**, its `Postgres*`
 implementation and the `...UnavailableError` it raises, and imports nothing from
@@ -329,7 +340,10 @@ The flip side of `.env` loading in every mode is that `pixi run frontend-build` 
 `http://localhost:8000` into the bundle**. That is fine today, since the build exists
 as a CI gate and nothing deploys it, but a real deployment needs the value supplied for
 the production mode via a `.env.production` or a `VITE_API_BASE_URL` in the build
-environment. vite inlines it at build time; there is no runtime lookup to override.
+environment. vite inlines it at build time; there is no runtime lookup to override. Note
+that `.gitignore` ignores every `.env` variant but the two committed defaults, so a
+`.env.production` you add has to be named back in before it can be committed - deliberate,
+since that is the shape a real credential usually arrives in.
 
 ### Package manager
 
@@ -371,7 +385,10 @@ per-server reasoning.
 
 Preconditions: run `direnv allow` (for the basedpyright path under `.pixi/`) and
 `pixi run frontend-install` (for the frontend servers under `frontend/node_modules/`),
-or those paths do not exist yet and the servers will not start.
+or those paths do not exist yet and the servers will not start. `direnv allow` is also
+what puts the database settings into the environment, so a test runner launched from
+inside the editor reaches the local cluster only if the editor inherits that environment
+- one started from a shell direnv has blessed does.
 
 Formatting is not configured here: `format_on_save` is left to your own Zed settings.
 Formatting is applied by `pixi run frontend-format` and gated in CI by
@@ -414,7 +431,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | --- | --- | --- |
 | `pixi run backend-db-init` | `poe db-init` | Create, start and seed the local database (the one you need) |
 | `pixi run backend-db-create` | `poe db-create` | `initdb` a cluster into `backend/.pgdata/`, if there is not one |
-| `pixi run backend-db-start` | `poe db-start` | Start the cluster on 127.0.0.1:5433, if it is not running |
+| `pixi run backend-db-start` | `poe db-start` | Start the cluster on `$PGHOST:$PGPORT`, if it is not running |
 | `pixi run backend-db-stop` | `poe db-stop` | Stop the cluster; succeeds if it is already stopped |
 | `pixi run backend-db-reset` | `poe db-reset` | Stop the cluster and delete `backend/.pgdata/` entirely |
 | `pixi run backend-dev` | `poe dev` | Run the API on uvicorn, port 8000 (with reloader) |
@@ -476,23 +493,128 @@ The cost is that adding a command means two edits - define it in the stack's man
 then forward it from `pixi.toml`. Put the command body in the stack, never in the
 forwarder.
 
+## Environments
+
+`pixi.toml` declares two, on one solve-group so python is pinned identically across both:
+
+| Environment | Contains | Used by |
+| --- | --- | --- |
+| `default` | runtime libraries, test tooling, node, PostgreSQL, and the app **editable** | the editor, local dev, CI, every task |
+| `prod` | runtime libraries and the app as a **wheel** | what an image is built from |
+
+The install mode is the difference that matters. An editable install is a redirect to
+`backend/src`: nothing is copied, so the source tree has to stay where it was at install
+time. That is exactly what a developer wants - edit, re-run, no reinstall - and exactly
+what a deployment must not have, because it would ship the source tree, `backend/data/`
+and `backend/tests/` inside the image and pin the container to a directory layout rather
+than to an artifact.
+
+So the app is declared per feature rather than in the default feature, which is why
+`[dependencies]` holds runtime *libraries* only:
+
+```toml
+[feature.dev.pypi-dependencies]
+expense-tracker = { path = "backend", editable = true }
+
+[feature.prod.pypi-dependencies]
+expense-tracker = { path = "backend", editable = false }
+```
+
+`prod` gets a real wheel, built by hatchling, containing `src/expense_tracker` and
+nothing else. **No correctness property rests on the split.** The app reads its settings
+from the environment and opens no file, so a misconfigured process refuses to start in
+either environment - which you can check directly, clearing what direnv exported first:
+
+```sh
+pixi install -e prod
+env -u DATABASE_URL -u PGHOST -u PGPORT -u PGUSER -u PGDATABASE \
+  pixi run -e prod python -c "from expense_tracker.config import database_url; database_url()"
+# ValidationError: set DATABASE_URL, or all of PGUSER, PGHOST, PGPORT, PGDATABASE
+```
+
+Swap `-e prod` for `-e default` and it fails identically. This is a change from an
+earlier design in which the wheel was what kept a container away from the developer's
+`backend/.env`; the app no longer reads that file at all, so the guarantee no longer
+depends on how it was installed.
+
+Nothing in CI builds `prod` yet; it is verified by hand until there is an image to build.
+
 ## Configuration
 
-The backend reads exactly one environment variable, `DATABASE_URL`, resolved in
-`config.py` and used by both entry points - the app and the loader. It has **no
-default**: a process that cannot find the setting refuses to start rather than quietly
-dialling its own loopback.
+Where the local database lives is written down once, in **`backend/.env`**, as the four
+facts `psql` and `createdb` already read:
 
-`pixi.toml` supplies the development value from `[feature.test.activation.env]`, so
-`pixi run backend-dev`, `pixi run backend-test`, `pixi run backend-load-expenses` and
-the editor all get it without anyone exporting anything. That block is scoped to the `test` feature deliberately - a root
-`[activation.env]` would be folded into the `prod` environment too and hand a
-deployment a DSN pointing at its own loopback. **A deployment supplies its own.**
+```
+PGHOST=127.0.0.1
+PGPORT=5433
+PGUSER=expense_tracker
+PGDATABASE=expense_tracker
+```
 
-Alongside it sit `PGHOST`, `PGPORT`, `PGUSER` and `PGDATABASE`: the same four facts in
-the form `psql` and `createdb` read, which is what lets the `db-*` tasks stay free of
-`--host`/`--port`/`--username` flags. Change them together, and together with the
-`initdb` flags in `db-create` that create the cluster they describe.
+**The application never opens that file.** `config.py` reads the environment and nothing
+else - no path is resolved in the package, and none needs to be. Loading a dotenv file is
+the job of whatever *launches* the process, and two things do it here:
+
+| Launcher | Mechanism | Covers |
+| --- | --- | --- |
+| poe | `envfile` in `[tool.poe]` | every `pixi run backend-*`, and `poe -C backend <task>` |
+| direnv | `dotenv_if_exists` in `.envrc` | anything else you run from a shell in the repo |
+
+The two overlap in a local shell, where both are loaded and agree - but neither is
+redundant, and **poe's is the one CI depends on**. `setup-direnv` activates `.envrc` with
+`direnv exec . true`, and only its custom `use_*` directives append to `$GITHUB_PATH` and
+`$GITHUB_ENV`; `dotenv_if_exists` is stock direnv, so the four names die with that step
+and every later `pixi run` sees none of them. `envfile` is what supplies them there, and
+it is also what keeps a task working in a shell where `direnv allow` was never run.
+
+direnv's half covers the things no task wraps, which is why `direnv allow` is a
+precondition rather than a convenience:
+
+```sh
+psql                                              # the local cluster, no flags
+pytest tests/test_expense_postgres.py -k truncate --pdb
+python -m expense_tracker.expense_loader ~/exports # a directory other than data/expenses
+```
+
+`PGHOST`, `PGPORT`, `PGUSER` and `PGDATABASE` are the variables libpq itself reads, so
+`psql`, `pg_dump` and friends need no arguments, and a test run started from your editor
+reaches the same cluster as `pixi run backend-test`. `pixi.toml` deliberately declares
+none of this - a second copy is exactly what `backend/.env` replaces.
+
+That split is the point rather than an implementation detail. A dotenv file is a
+developer convenience, and an application that parses one has to know where it lives -
+which for a wheel-installed package means deriving a path from `__file__` and getting a
+directory that does not exist. Reading the environment is the 12-factor rule a container
+needs, and it makes the deployed path (`DATABASE_URL` from an orchestrator) and the local
+path (`backend/.env` via a launcher) the same code.
+
+Precedence follows from that: `.env.local` is loaded after `backend/.env` and wins, and
+both loaders *overwrite* what is already in the environment, so `export PGPORT=...` in
+your shell is not the way to change the port - `backend/.env.local` is.
+
+The DSN itself is stored nowhere. `config.py` builds it with `sqlalchemy.URL`, which
+keeps the port from being written into a URL string a second time and escapes any part
+containing `@`, `:` or `/` instead of emitting a URL that parses as something else.
+`database_url()` returns a `URL` rather than a `str`, so `str()` and `repr()` render any
+password as `***` - a DSN that reaches a log or a traceback cannot leak one.
+**`DATABASE_URL` overrides the four parts wholesale**, and that is the deployment path.
+**A deployment supplies its own.**
+
+None of it has a **default**. With no `DATABASE_URL` and none of the four names in the
+environment, the process refuses to start - naming every missing one - rather than
+quietly dialling its own loopback. Nothing on disk can answer for them, in any
+environment, because nothing on disk is consulted.
+
+To move the cluster off a port something else has taken, put `PGPORT` in
+**`backend/.env.local`** - gitignored, layered over `backend/.env` by both loaders, and
+the exact counterpart of `frontend/.env.local`. The port is baked into the cluster at
+`initdb` time, so follow it with `pixi run backend-db-reset && pixi run backend-db-init`.
+
+Two consequences worth knowing. These are no longer pixi activation variables, so a bare
+`psql` typed straight into a `pixi shell` needs its own `-p`; everything that goes through
+`pixi run backend-db-*` is unaffected. And `.gitignore` ignores **every** `.env` variant,
+naming back only the two committed defaults - so a `backend/.env.production` you create is
+untracked by default rather than by memory.
 
 The frontend has exactly one variable of its own, `VITE_API_BASE_URL` - see
 [Where the API lives](#where-the-api-lives).

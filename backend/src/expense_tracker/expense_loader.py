@@ -15,7 +15,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import NamedTuple
 
-from sqlalchemy import insert, select
+from sqlalchemy import URL, insert, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from .config import database_url
@@ -130,7 +130,7 @@ def _changed_file_error(
     )
 
 
-async def load_directory(directory: Path, url: str) -> LoadSummary:
+async def load_directory(directory: Path, url: URL) -> LoadSummary:
     """Loads every *.tsv in `directory`, in name order, one transaction per file."""
     # Before the engine is built, so a mistyped path fails without opening a socket.
     if not directory.is_dir():

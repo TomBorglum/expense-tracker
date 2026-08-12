@@ -26,6 +26,12 @@ packages = ["src/expense_tracker"]
 # the wrong interpreter - poe itself only exists inside the pixi environment, so if `poe`
 # resolves at all, that environment's pytest and ruff are already first on PATH.
 executor = "simple"
+# PGHOST, PGPORT, PGUSER and PGDATABASE, exported into every task below - which is what
+# lets the db-* tasks omit the --host/--port/--username flags. Both paths are relative to
+# this file, so they resolve the same from backend/ and from `poe -C backend`. The dict
+# form is what makes the second one's absence fine rather than fatal; it is gitignored,
+# and layering it over the first is how a developer moves the cluster off a taken port.
+envfile = { expected = ".env", optional = ".env.local" }
 
 # Alphabetical, matching the forwarder table in pixi.toml and what `poe` with no task
 # prints. Ordering by workflow instead would leave a new task no obviously right place.
@@ -33,10 +39,10 @@ executor = "simple"
 # --- The local PostgreSQL cluster -------------------------------------------------
 #
 # A cluster owned by this checkout: initdb'd into .pgdata/ beside this file (gitignored),
-# listening on 127.0.0.1:5433 so it can never collide with a system PostgreSQL on 5432,
-# with a superuser and a database both named after the project so the DSN in pixi.toml is
-# identical on every machine and on CI. No container, no compose file, no `services:`
-# block in ci.yml - the server comes out of the same conda-forge lock as python and node.
+# on the host and port backend/.env names, with a superuser and a database both named
+# after the project so the DSN is identical on every machine and on CI. No container, no
+# compose file, no `services:` block in ci.yml - the server comes out of the same
+# conda-forge lock as python and node.
 #
 # `shell`, not the default `cmd`: every one of them is idempotent - CI runs them on a bare
 # runner and a developer runs them again next week, and the two have to behave the same -
@@ -44,15 +50,17 @@ executor = "simple"
 
 # initdb refuses a non-empty directory, so the PG_VERSION probe is what makes a second
 # run a no-op. The three --set flags are written into the generated postgresql.conf,
-# which is why db-start needs no -o "-p 5433": the port, the loopback-only listener and
-# the socket directory are properties of the cluster, not of how it was launched.
+# which is why db-start needs no -o "-p $PGPORT": the port, the loopback-only listener
+# and the socket directory are properties of the cluster, not of how it was launched.
+# That also means the probe short-circuits a PGPORT change - an existing .pgdata/ keeps
+# the port it was created with until db-reset throws it away.
 # --auth=trust is safe only because of listen_addresses: this is a throwaway dev cluster
 # holding one row of public text, and the flags must not be copied anywhere real.
 db-create.shell = """
 test -f .pgdata/PG_VERSION ||
   initdb --pgdata=.pgdata --username=expense_tracker \
          --auth-local=trust --auth-host=trust --encoding=UTF8 --locale=C \
-         --no-instructions --set=port=5433 --set=listen_addresses=127.0.0.1 \
+         --no-instructions --set=port="$PGPORT" --set=listen_addresses=127.0.0.1 \
          --set=unix_socket_directories=/tmp
 """
 # The entry point: after this, `poe dev` and `poe test` both work. Reads as

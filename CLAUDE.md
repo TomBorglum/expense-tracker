@@ -158,6 +158,47 @@ Break one of these and CI goes red on an otherwise correct change.
   "Don't Do This" page advises against for new applications. `IF NOT EXISTS` adds what
   is missing but never renames or alters, so a change to an existing table means
   `backend-db-reset` and a reload, not another `db-init`.
+- **The app reads the environment; loading `backend/.env` is a launcher's job.**
+  `config.py` opens no file and resolves no path - no `__file__`, no `env_file=`, no
+  `parents[N]`. Reintroducing dotenv reading into the package is the specific regression
+  this rule exists to prevent: a wheel-installed package has no project directory to
+  derive a path from, so the code either finds nothing or finds a developer's settings,
+  depending on how it happened to be installed. Two **launchers** put the four names
+  there instead: poe, through `envfile` in `[tool.poe]`, and direnv, through
+  `dotenv_if_exists` in `.envrc`. Both layer `backend/.env.local` over the top -
+  gitignored, absent by default, and the way to move the cluster off a taken port - and
+  both **overwrite** the ambient environment, so an `export PGPORT=...` is not how you
+  change the port.
+  **Neither is redundant, and `envfile` is the one that cannot go.** They look
+  interchangeable locally, where both are loaded and agree. They are not: `setup-direnv`
+  activates `.envrc` with `direnv exec . true`, and only its custom `use_*` directives
+  append to `$GITHUB_PATH`/`$GITHUB_ENV` - `dotenv_if_exists` is stock direnv, so in CI
+  the four names die with that step and every later `pixi run` sees none of them. poe's
+  `envfile` is the sole supplier there, and `db-create`'s `--set=port="$PGPORT"` is what
+  would break first. direnv's half is the one that cannot go either, for the opposite
+  reason: it covers everything no task wraps - a bare `psql`, an editor's test runner,
+  the loader pointed at another directory.
+- **`backend/.env` is the single source of the connection settings.** `PGHOST`, `PGPORT`,
+  `PGUSER` and `PGDATABASE` live there and nowhere else - `pixi.toml` declares no
+  `[activation.env]`, and that absence is deliberate rather than an omission. **The DSN
+  is stored nowhere**: `DatabaseSettings.dsn` builds it with `sqlalchemy.URL`, which
+  stops the port being written into a URL string a second time and escapes parts
+  containing `@`, `:` or `/`. `DATABASE_URL` overrides the four wholesale. Do not
+  reintroduce a literal DSN in any manifest, and do not go back to f-string
+  interpolation.
+- **`database_url()` returns a `URL`, not a `str`.** `str()` and `repr()` of it redact
+  the password as `***`, which is what stops a deployment credential reaching a log or a
+  traceback; a `str` return would silently give that up. `create_async_engine` and
+  `load_directory` both take the `URL` unchanged.
+- **`prod` installs the app as a wheel; only `default` installs it editable.** The two
+  `[feature.*.pypi-dependencies]` blocks in `pixi.toml` are why `[dependencies]` holds
+  runtime *libraries* and not the app. An editable install is a redirect to
+  `backend/src`, so it ships the source tree, `backend/tests/` and `backend/data/` and
+  pins a container to a directory layout rather than an artifact. **No correctness
+  property rests on this** - the app reads the environment either way, so a misconfigured
+  process refuses to start in both environments. It is about shipping the right thing.
+  Pinned by no test - `pixi run -e prod` is the check, described in `README.md` under
+  "Environments".
 - **Six things are declared twice. Change both halves together:**
   - the greeting *payload shape and path* - `backend/src/expense_tracker/__init__.py`
     and `frontend/src/api/greeting.ts`, with nothing checking the agreement. The
@@ -168,9 +209,11 @@ Break one of these and CI goes red on an otherwise correct change.
   - the three tables - `backend/schema.sql` and the `Greeting` model in
     `greeting_repository.py` plus `LoadedExpenseFile` and `Expense` in
     `expense_repository.py`, which never create them and only read them;
-  - the local database connection - `DATABASE_URL` and the `PG*` variables in
-    `[feature.test.activation.env]`, against the port and username baked into
-    `db-create`'s `initdb` flags;
+  - what is left of the local database connection - `PGUSER` and `PGHOST` in
+    `backend/.env`, against `--username=expense_tracker` and
+    `--set=listen_addresses=127.0.0.1` in `db-create`'s `initdb` flags, and against
+    `createdb expense_tracker` in `db-init`. `PGPORT` is *not* in this list: `db-create`
+    takes it as `--set=port="$PGPORT"`, and the rest could follow the same way;
   - the `@` alias (`frontend/src`) - `frontend/vite.config.ts` and
     `frontend/tsconfig.app.json`, because vite does not read tsconfig `paths`;
   - the `frontend/src/main.tsx` coverage exclusion - `frontend/vite.config.ts` and

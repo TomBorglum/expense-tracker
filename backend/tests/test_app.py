@@ -1,8 +1,9 @@
 import pytest
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
+from sqlalchemy import make_url
 from starlette.testclient import TestClient
 
-from expense_tracker import ExpensePayload, create_app
+from expense_tracker import ExpensePayload, config, create_app
 from expense_tracker.expense_repository import ExpenseRecord
 
 # The origin a browser would send. Any value works against a wildcard policy.
@@ -165,11 +166,107 @@ def test_expenses_are_unavailable_when_the_database_is_down(
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
-def test_missing_database_url_is_refused_at_startup(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.fixture
+def clean_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
+    """The environment with every database setting removed.
+
+    Handed back so a test can set what it reads. Whatever launched pytest exported these
+    - poe does, from backend/.env - and none of it should reach a settings assertion.
+    """
+    for name in ("DATABASE_URL", "PGUSER", "PGHOST", "PGPORT", "PGDATABASE"):
+        monkeypatch.delenv(name, raising=False)
+    return monkeypatch
+
+
+def _set(env: pytest.MonkeyPatch, **values: str) -> None:
+    """Exports each value under its upper-cased name, as the app reads it."""
+    for name, value in values.items():
+        env.setenv(name.upper(), value)
+
+
+def test_the_dsn_is_composed_from_the_connection_settings(
+    clean_env: pytest.MonkeyPatch,
 ) -> None:
-    # No silent default: a deployment that forgets the setting fails to boot rather
-    # than dialling its own loopback.
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    with pytest.raises(RuntimeError, match="DATABASE_URL"), TestClient(create_app()):
+    _set(
+        clean_env,
+        pguser="someone",
+        pghost="10.0.0.1",
+        pgport="6000",
+        pgdatabase="somewhere",
+    )
+    assert config.DatabaseSettings().dsn.render_as_string() == (
+        "postgresql+asyncpg://someone@10.0.0.1:6000/somewhere"
+    )
+
+
+def test_dsn_parts_needing_escaping_are_encoded_not_interpolated(
+    clean_env: pytest.MonkeyPatch,
+) -> None:
+    """A username carrying @ is escaped rather than emitted raw.
+
+    Interpolating it would put a second @ in the authority and produce a URL that parses
+    as a different host, so the round-trip is the assertion that matters.
+    """
+    _set(
+        clean_env,
+        pguser="user@corp",
+        pghost="10.0.0.1",
+        pgport="6000",
+        pgdatabase="somewhere",
+    )
+    rendered = config.DatabaseSettings().dsn.render_as_string()
+    assert "user%40corp" in rendered
+    assert make_url(rendered).username == "user@corp"
+    assert make_url(rendered).host == "10.0.0.1"
+
+
+def test_a_password_is_redacted_when_the_dsn_is_rendered(
+    clean_env: pytest.MonkeyPatch,
+) -> None:
+    """What stops a deployment's credential reaching a log or a traceback."""
+    _set(
+        clean_env,
+        database_url="postgresql+asyncpg://someone:s3cret@10.0.0.1:6000/somewhere",
+    )
+    dsn = config.DatabaseSettings().dsn
+    assert "s3cret" not in str(dsn)
+    assert "s3cret" not in repr(dsn)
+    assert dsn.password == "s3cret"
+
+
+def test_database_url_overrides_the_connection_settings(
+    clean_env: pytest.MonkeyPatch,
+) -> None:
+    """Whole-DSN override, not a default: what a deployment is handed wins over the
+    parts, which is why this still sets one of them."""
+    _set(
+        clean_env,
+        database_url="postgresql+asyncpg://nobody@127.0.0.1:1/none",
+        pgport="6000",
+    )
+    assert (
+        config.DatabaseSettings().dsn.render_as_string()
+        == "postgresql+asyncpg://nobody@127.0.0.1:1/none"
+    )
+
+
+def test_a_non_numeric_port_is_refused(clean_env: pytest.MonkeyPatch) -> None:
+    _set(
+        clean_env,
+        pguser="someone",
+        pghost="10.0.0.1",
+        pgport="not-a-port",
+        pgdatabase="somewhere",
+    )
+    with pytest.raises(ValidationError):
+        _ = config.DatabaseSettings()
+
+
+@pytest.mark.usefixtures("clean_env")
+def test_missing_database_settings_are_refused_at_startup() -> None:
+    # No silent default: a deployment that forgets the settings fails to boot rather
+    # than dialling its own loopback. Nothing on disk can answer for them either - the
+    # app reads the environment and opens no file - so an empty environment is the whole
+    # of the case, in every pixi environment rather than only in prod.
+    with pytest.raises(ValidationError, match="PGUSER"), TestClient(create_app()):
         pass

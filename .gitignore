@@ -19,8 +19,14 @@ node_modules/
 # backend is a REST API and ships nothing from here.
 frontend/dist/
 
-# Local API-origin override; the committed frontend/.env holds the default.
-frontend/.env.local
+# Every .env variant is ignored, and the two committed defaults are named back in. Those
+# two hold development values only - an API origin and a loopback database - while any
+# other variant is the shape a real credential arrives in, so the default is to keep it
+# out. .envrc is committed and matches `.env*`, which is why it is excused too.
+.env*
+!.envrc
+!backend/.env
+!frontend/.env
 
 # Test/coverage artifacts
 .pytest_cache/
