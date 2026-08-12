@@ -164,11 +164,11 @@ Break one of these and CI goes red on an otherwise correct change.
   this rule exists to prevent: a wheel-installed package has no project directory to
   derive a path from, so the code either finds nothing or finds a developer's settings,
   depending on how it happened to be installed. **direnv is the one launcher that puts
-  the four names there**, through the two `dotenv_if_exists` lines in `.envrc`. The
-  second layers `backend/.env.local` over the first - gitignored, absent by default, and
-  the way to move the cluster off a taken port - and a dotenv **overwrites** the ambient
-  environment, so an `export PGPORT=...` is not how you change the port. `[tool.poe]`
-  declares **no `envfile`**, and adding one back would be a second loader for one file.
+  the four names there**, through the single `dotenv_if_exists` line in `.envrc`. There
+  is **no `.env.local` layer** - one file, loaded once - and a dotenv **overwrites** the
+  ambient environment, so `export PGPORT=...` is not an override; moving the cluster off
+  a taken port means editing `backend/.env` and rebuilding. `[tool.poe]` declares **no
+  `envfile`**, and adding one back would be a second loader for one file.
   **`direnv allow` is a prerequisite, not a convenience.** Nothing else supplies the
   settings - not `pixi run`, which reads no `.envrc` and declares no `[activation.env]`,
   and not poe. A shell that has not been blessed gets a `ValidationError` from the app

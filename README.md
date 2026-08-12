@@ -559,7 +559,6 @@ the job of whatever *launches* the process, and exactly one thing does it here:
 ```sh
 # .envrc
 dotenv_if_exists backend/.env
-dotenv_if_exists backend/.env.local
 ```
 
 **So `direnv allow` is a prerequisite, not a convenience.** Nothing else supplies the four
@@ -593,10 +592,10 @@ directory that does not exist. Reading the environment is the 12-factor rule a c
 needs, and it makes the deployed path (`DATABASE_URL` from an orchestrator) and the local
 path (`backend/.env` via a launcher) the same code.
 
-Precedence follows from that, and with one loader it is one rule: `.env.local` is loaded
-after `backend/.env` and wins, and a dotenv *overwrites* what is already in the
-environment - so `export PGPORT=...` in your shell is not the way to change the port,
-`backend/.env.local` is.
+Precedence barely exists, which is the point of one loader reading one file: `backend/.env`
+*overwrites* what is already in the environment, so `export PGPORT=...` in your shell does
+not change the port. Only `DATABASE_URL`, which the app prefers over the four parts, sits
+above it.
 
 The DSN itself is stored nowhere. `config.py` builds it with `sqlalchemy.URL`, which
 keeps the port from being written into a URL string a second time and escapes any part
@@ -611,16 +610,20 @@ environment, the process refuses to start - naming every missing one - rather th
 quietly dialling its own loopback. Nothing on disk can answer for them, in any
 environment, because nothing on disk is consulted.
 
-To move the cluster off a port something else has taken, put `PGPORT` in
-**`backend/.env.local`** - gitignored, layered over `backend/.env` by both loaders, and
-the exact counterpart of `frontend/.env.local`. The port is baked into the cluster at
-`initdb` time, so follow it with `pixi run backend-db-reset && pixi run backend-db-init`.
+To move the cluster off a port something else has taken, edit `PGPORT` in
+**`backend/.env`** itself. There is no `.env.local` layer on the backend side - one file,
+loaded once - and a dotenv overwrites the ambient environment, so `export PGPORT=...` in
+your shell is not an override. The port is baked into the cluster at `initdb` time, so
+follow the edit with `pixi run backend-db-reset && pixi run backend-db-init`.
 
-Two consequences worth knowing. These are no longer pixi activation variables, so a bare
-`psql` typed straight into a `pixi shell` needs its own `-p`; everything that goes through
-`pixi run backend-db-*` is unaffected. And `.gitignore` ignores **every** `.env` variant,
-naming back only the two committed defaults - so a `backend/.env.production` you create is
-untracked by default rather than by memory.
+That leaves the file as a committed default you edit in place, which shows up as a dirty
+working tree. Deliberate: the port is one of the four facts this file exists to state
+once, and a machine that needs a different one has genuinely changed a shared default
+rather than set a private preference.
+
+Worth knowing: `.gitignore` ignores **every** `.env` variant and names back only the two
+committed defaults, so a `backend/.env.production` you create is untracked by default
+rather than by memory.
 
 The frontend has exactly one variable of its own, `VITE_API_BASE_URL` - see
 [Where the API lives](#where-the-api-lives).
