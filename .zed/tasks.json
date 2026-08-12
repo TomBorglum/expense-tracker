@@ -1,0 +1,55 @@
+// Test runners for Zed's task palette (`task: spawn`) and the gutter play icon.
+//
+// Zed loads .envrc itself (load_direnv defaults to "direct"), so every task below runs
+// with the pixi environment on PATH and the four PG* names set. A shell that Zed opened
+// before `direnv allow` has neither.
+//
+// The two whole-suite entries forward to `pixi run`, like everything else that runs a
+// command in this repo. The four narrow ones call pytest and vitest directly, because
+// they take an argument the editor supplies - no task in backend/pyproject.toml or
+// frontend/package.json can be parameterised by the open file. They also pass --no-cov:
+// coverage.xml belongs to `pixi run backend-test`, not to a single-test loop.
+//
+// $ZED_SYMBOL is whatever the cursor sits in. Both runners take it as a name filter
+// rather than an exact id, so an empty one just runs the whole file.
+[
+  {
+    "label": "backend: test (full suite, coverage)",
+    "command": "pixi run backend-test",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    // Absolute $ZED_FILE with cwd=backend, so pytest reads its config from
+    // backend/pyproject.toml and writes nothing above it.
+    "label": "backend: pytest this file",
+    "command": "pytest \"$ZED_FILE\" --no-cov",
+    "cwd": "$ZED_WORKTREE_ROOT/backend"
+  },
+  {
+    "label": "backend: pytest $ZED_SYMBOL",
+    "command": "pytest \"$ZED_FILE\" -k \"$ZED_SYMBOL\" --no-cov",
+    "cwd": "$ZED_WORKTREE_ROOT/backend",
+    // Zed's own Python runnables emit these, which is what puts the play icon in the
+    // gutter beside a test_* function or a Test* class.
+    "tags": ["python-pytest-method", "python-pytest-class"]
+  },
+  {
+    "label": "frontend: test (full suite, coverage)",
+    "command": "pixi run frontend-test",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    // Repo-root-relative $ZED_RELATIVE_FILE, not $ZED_FILE: vitest's root is the repo
+    // root (the `test` block in frontend/vite.config.ts), so that is the form its file
+    // filter matches.
+    "label": "frontend: vitest this file",
+    "command": "pnpm exec vitest run \"$ZED_RELATIVE_FILE\"",
+    "cwd": "$ZED_WORKTREE_ROOT/frontend"
+  },
+  {
+    "label": "frontend: vitest $ZED_SYMBOL",
+    "command": "pnpm exec vitest run \"$ZED_RELATIVE_FILE\" -t \"$ZED_SYMBOL\"",
+    "cwd": "$ZED_WORKTREE_ROOT/frontend",
+    "tags": ["tsx-test", "js-test"]
+  }
+]
