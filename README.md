@@ -459,9 +459,12 @@ the two directories, and every one of them - the five `backend-db-*` included - 
 its files by a plain relative path. Nothing reaches above its own stack.
 
 That holds when you skip the forwarder too: poe runs a task from the directory of the
-`pyproject.toml` it loaded, so `poe -C backend db-start` from anywhere starts the cluster
-in `backend/.pgdata/`, exactly as `cd backend && poe db-start` does. `pixi task list`
-prints this table's first column.
+`pyproject.toml` it loaded, so `poe -C backend db-start` resolves `backend/.pgdata/`
+exactly as `cd backend && poe db-start` does. The *path* travels; the environment does
+not. Run it from inside the worktree, where direnv has loaded - invoked from outside, a
+`db-*` task resolves its paths correctly and then aborts on its `${PGPORT:?}` guard rather
+than reaching for whatever cluster answers on 5432. `pixi task list` prints this table's
+first column.
 
 CI runs every gate above except the two `dev` tasks, the two `-fix` variants,
 `backend-format`, `backend-load-expenses` and the four `backend-db-*` tasks other than

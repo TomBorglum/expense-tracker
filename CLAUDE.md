@@ -61,7 +61,9 @@ tasks like the rest, and the cluster they drive is initdb'd into `backend/.pgdat
 addressed by a plain relative path like every other task in that file. poe runs a task
 from the directory of the `pyproject.toml` it loaded, so that path holds however the task
 was invoked - `cd backend && poe db-init`, `poe -C backend db-init` from anywhere, or the
-pixi forwarder. Nothing in `backend/pyproject.toml` needs `$POE_ROOT`.
+pixi forwarder. Nothing in `backend/pyproject.toml` needs `$POE_ROOT`. That is the **path**
+only: the connection settings come from direnv, so the same invocation from outside the
+worktree resolves `.pgdata/` correctly and then aborts on the `${PGPORT:?}` guard.
 
 **The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Never
 put a command body there; that is what would make the layer a place definitions hide.
