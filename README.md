@@ -57,9 +57,10 @@ Neither directive is built into direnv. Both come from the direnv library instal
 action CI uses to activate this same `.envrc`. Without that library, `direnv allow`
 reports the directives as unknown commands.
 
-Its last two lines are `dotenv_if_exists`, which put the database connection settings
-into the environment. Those are stock direnv, and they are how anything you launch from a
-shell rather than through `pixi run` finds the local cluster - see
+Its last two lines are `dotenv_if_exists`, which put the database connection settings into
+the environment. Those are stock direnv, and they are the **only** thing that puts them
+there - `pixi run` and poe both supply nothing - so `direnv allow` is what makes the
+database reachable at all, not just a convenience for bare shell commands. See
 [Configuration](#configuration).
 
 ## Quickstart
@@ -553,22 +554,26 @@ PGDATABASE=expense_tracker
 
 **The application never opens that file.** `config.py` reads the environment and nothing
 else - no path is resolved in the package, and none needs to be. Loading a dotenv file is
-the job of whatever *launches* the process, and two things do it here:
+the job of whatever *launches* the process, and exactly one thing does it here:
 
-| Launcher | Mechanism | Covers |
-| --- | --- | --- |
-| poe | `envfile` in `[tool.poe]` | every `pixi run backend-*`, and `poe -C backend <task>` |
-| direnv | `dotenv_if_exists` in `.envrc` | anything else you run from a shell in the repo |
+```sh
+# .envrc
+dotenv_if_exists backend/.env
+dotenv_if_exists backend/.env.local
+```
 
-The two overlap in a local shell, where both are loaded and agree - but neither is
-redundant, and **poe's is the one CI depends on**. `setup-direnv` activates `.envrc` with
-`direnv exec . true`, and only its custom `use_*` directives append to `$GITHUB_PATH` and
-`$GITHUB_ENV`; `dotenv_if_exists` is stock direnv, so the four names die with that step
-and every later `pixi run` sees none of them. `envfile` is what supplies them there, and
-it is also what keeps a task working in a shell where `direnv allow` was never run.
+**So `direnv allow` is a prerequisite, not a convenience.** Nothing else supplies the four
+names. `pixi run` reads no `.envrc` and `pixi.toml` declares no `[activation.env]`; poe
+declares no `envfile`. In a shell direnv has not blessed, the app raises a
+`ValidationError` naming the missing settings and `pixi run backend-db-init` aborts on its
+`${PGPORT:?}` guard - neither falls back to a default.
 
-direnv's half covers the things no task wraps, which is why `direnv allow` is a
-precondition rather than a convenience:
+CI gets the same four names the same way: `setup-direnv` (v1.4.1 or newer) activates this
+`.envrc` and forwards the resulting environment to `$GITHUB_ENV` for the steps after it.
+That makes the action's pin in `.github/workflows/ci.yml` load-bearing - it is the first
+thing to check if CI ever fails to find `PGPORT`.
+
+One loader covers everything, including what no task wraps:
 
 ```sh
 psql                                              # the local cluster, no flags
@@ -588,9 +593,10 @@ directory that does not exist. Reading the environment is the 12-factor rule a c
 needs, and it makes the deployed path (`DATABASE_URL` from an orchestrator) and the local
 path (`backend/.env` via a launcher) the same code.
 
-Precedence follows from that: `.env.local` is loaded after `backend/.env` and wins, and
-both loaders *overwrite* what is already in the environment, so `export PGPORT=...` in
-your shell is not the way to change the port - `backend/.env.local` is.
+Precedence follows from that, and with one loader it is one rule: `.env.local` is loaded
+after `backend/.env` and wins, and a dotenv *overwrites* what is already in the
+environment - so `export PGPORT=...` in your shell is not the way to change the port,
+`backend/.env.local` is.
 
 The DSN itself is stored nowhere. `config.py` builds it with `sqlalchemy.URL`, which
 keeps the port from being written into a URL string a second time and escapes any part
