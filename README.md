@@ -57,9 +57,10 @@ Neither directive is built into direnv. Both come from the direnv library instal
 action CI uses to activate this same `.envrc`. Without that library, `direnv allow`
 reports the directives as unknown commands.
 
-Its last two lines are `dotenv_if_exists`, which put the database connection settings
-into the environment. Those are stock direnv, and they are how anything you launch from a
-shell rather than through `pixi run` finds the local cluster - see
+Its last two lines are `dotenv_if_exists`, which put the database connection settings into
+the environment. Those are stock direnv, and they are the **only** thing that puts them
+there - `pixi run` and poe both supply nothing - so `direnv allow` is what makes the
+database reachable at all, not just a convenience for bare shell commands. See
 [Configuration](#configuration).
 
 ## Quickstart
@@ -458,9 +459,12 @@ the two directories, and every one of them - the five `backend-db-*` included - 
 its files by a plain relative path. Nothing reaches above its own stack.
 
 That holds when you skip the forwarder too: poe runs a task from the directory of the
-`pyproject.toml` it loaded, so `poe -C backend db-start` from anywhere starts the cluster
-in `backend/.pgdata/`, exactly as `cd backend && poe db-start` does. `pixi task list`
-prints this table's first column.
+`pyproject.toml` it loaded, so `poe -C backend db-start` resolves `backend/.pgdata/`
+exactly as `cd backend && poe db-start` does. The *path* travels; the environment does
+not. Run it from inside the worktree, where direnv has loaded - invoked from outside, a
+`db-*` task resolves its paths correctly and then aborts on its `${PGPORT:?}` guard rather
+than reaching for whatever cluster answers on 5432. `pixi task list` prints this table's
+first column.
 
 CI runs every gate above except the two `dev` tasks, the two `-fix` variants,
 `backend-format`, `backend-load-expenses` and the four `backend-db-*` tasks other than
@@ -553,22 +557,25 @@ PGDATABASE=expense_tracker
 
 **The application never opens that file.** `config.py` reads the environment and nothing
 else - no path is resolved in the package, and none needs to be. Loading a dotenv file is
-the job of whatever *launches* the process, and two things do it here:
+the job of whatever *launches* the process, and exactly one thing does it here:
 
-| Launcher | Mechanism | Covers |
-| --- | --- | --- |
-| poe | `envfile` in `[tool.poe]` | every `pixi run backend-*`, and `poe -C backend <task>` |
-| direnv | `dotenv_if_exists` in `.envrc` | anything else you run from a shell in the repo |
+```sh
+# .envrc
+dotenv_if_exists backend/.env
+```
 
-The two overlap in a local shell, where both are loaded and agree - but neither is
-redundant, and **poe's is the one CI depends on**. `setup-direnv` activates `.envrc` with
-`direnv exec . true`, and only its custom `use_*` directives append to `$GITHUB_PATH` and
-`$GITHUB_ENV`; `dotenv_if_exists` is stock direnv, so the four names die with that step
-and every later `pixi run` sees none of them. `envfile` is what supplies them there, and
-it is also what keeps a task working in a shell where `direnv allow` was never run.
+**So `direnv allow` is a prerequisite, not a convenience.** Nothing else supplies the four
+names. `pixi run` reads no `.envrc` and `pixi.toml` declares no `[activation.env]`; poe
+declares no `envfile`. In a shell direnv has not blessed, the app raises a
+`ValidationError` naming the missing settings and `pixi run backend-db-init` aborts on its
+`${PGPORT:?}` guard - neither falls back to a default.
 
-direnv's half covers the things no task wraps, which is why `direnv allow` is a
-precondition rather than a convenience:
+CI gets the same four names the same way: `setup-direnv` (v1.4.1 or newer) activates this
+`.envrc` and forwards the resulting environment to `$GITHUB_ENV` for the steps after it.
+That makes the action's pin in `.github/workflows/ci.yml` load-bearing - it is the first
+thing to check if CI ever fails to find `PGPORT`.
+
+One loader covers everything, including what no task wraps:
 
 ```sh
 psql                                              # the local cluster, no flags
@@ -588,9 +595,10 @@ directory that does not exist. Reading the environment is the 12-factor rule a c
 needs, and it makes the deployed path (`DATABASE_URL` from an orchestrator) and the local
 path (`backend/.env` via a launcher) the same code.
 
-Precedence follows from that: `.env.local` is loaded after `backend/.env` and wins, and
-both loaders *overwrite* what is already in the environment, so `export PGPORT=...` in
-your shell is not the way to change the port - `backend/.env.local` is.
+Precedence barely exists, which is the point of one loader reading one file: `backend/.env`
+*overwrites* what is already in the environment, so `export PGPORT=...` in your shell does
+not change the port. Only `DATABASE_URL`, which the app prefers over the four parts, sits
+above it.
 
 The DSN itself is stored nowhere. `config.py` builds it with `sqlalchemy.URL`, which
 keeps the port from being written into a URL string a second time and escapes any part
@@ -605,16 +613,20 @@ environment, the process refuses to start - naming every missing one - rather th
 quietly dialling its own loopback. Nothing on disk can answer for them, in any
 environment, because nothing on disk is consulted.
 
-To move the cluster off a port something else has taken, put `PGPORT` in
-**`backend/.env.local`** - gitignored, layered over `backend/.env` by both loaders, and
-the exact counterpart of `frontend/.env.local`. The port is baked into the cluster at
-`initdb` time, so follow it with `pixi run backend-db-reset && pixi run backend-db-init`.
+To move the cluster off a port something else has taken, edit `PGPORT` in
+**`backend/.env`** itself. There is no `.env.local` layer on the backend side - one file,
+loaded once - and a dotenv overwrites the ambient environment, so `export PGPORT=...` in
+your shell is not an override. The port is baked into the cluster at `initdb` time, so
+follow the edit with `pixi run backend-db-reset && pixi run backend-db-init`.
 
-Two consequences worth knowing. These are no longer pixi activation variables, so a bare
-`psql` typed straight into a `pixi shell` needs its own `-p`; everything that goes through
-`pixi run backend-db-*` is unaffected. And `.gitignore` ignores **every** `.env` variant,
-naming back only the two committed defaults - so a `backend/.env.production` you create is
-untracked by default rather than by memory.
+That leaves the file as a committed default you edit in place, which shows up as a dirty
+working tree. Deliberate: the port is one of the four facts this file exists to state
+once, and a machine that needs a different one has genuinely changed a shared default
+rather than set a private preference.
+
+Worth knowing: `.gitignore` ignores **every** `.env` variant and names back only the two
+committed defaults, so a `backend/.env.production` you create is untracked by default
+rather than by memory.
 
 The frontend has exactly one variable of its own, `VITE_API_BASE_URL` - see
 [Where the API lives](#where-the-api-lives).

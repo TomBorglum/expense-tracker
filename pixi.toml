@@ -40,8 +40,8 @@ asyncpg = "==0.31.0"
 pydantic = "==2.13.4"
 # What config.py validates the database settings with. Runtime rather than test-only: the
 # deployed API reads its own configuration. Only the BaseSettings half is used - the
-# dotenv half is not, because loading backend/.env is a launcher's job here (poe's
-# `envfile`, direnv's `dotenv_if_exists`) and never the app's.
+# dotenv half is not, because loading backend/.env is direnv's job here
+# (`dotenv_if_exists` in .envrc) and never the app's.
 pydantic-settings = "==2.15.0"
 
 # The app itself, in two flavours, because an editable install is a development tool and

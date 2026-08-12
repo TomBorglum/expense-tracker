@@ -26,12 +26,9 @@ packages = ["src/expense_tracker"]
 # the wrong interpreter - poe itself only exists inside the pixi environment, so if `poe`
 # resolves at all, that environment's pytest and ruff are already first on PATH.
 executor = "simple"
-# PGHOST, PGPORT, PGUSER and PGDATABASE, exported into every task below - which is what
-# lets the db-* tasks omit the --host/--port/--username flags. Both paths are relative to
-# this file, so they resolve the same from backend/ and from `poe -C backend`. The dict
-# form is what makes the second one's absence fine rather than fatal; it is gitignored,
-# and layering it over the first is how a developer moves the cluster off a taken port.
-envfile = { expected = ".env", optional = ".env.local" }
+# No `envfile`: PGHOST, PGPORT, PGUSER and PGDATABASE reach a task from the environment
+# direnv already built, which is what lets the db-* tasks omit the --host/--port/--username
+# flags.
 
 # Alphabetical, matching the forwarder table in pixi.toml and what `poe` with no task
 # prints. Ordering by workflow instead would leave a new task no obviously right place.

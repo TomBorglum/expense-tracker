@@ -61,7 +61,9 @@ tasks like the rest, and the cluster they drive is initdb'd into `backend/.pgdat
 addressed by a plain relative path like every other task in that file. poe runs a task
 from the directory of the `pyproject.toml` it loaded, so that path holds however the task
 was invoked - `cd backend && poe db-init`, `poe -C backend db-init` from anywhere, or the
-pixi forwarder. Nothing in `backend/pyproject.toml` needs `$POE_ROOT`.
+pixi forwarder. Nothing in `backend/pyproject.toml` needs `$POE_ROOT`. That is the **path**
+only: the connection settings come from direnv, so the same invocation from outside the
+worktree resolves `.pgdata/` correctly and then aborts on the `${PGPORT:?}` guard.
 
 **The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Never
 put a command body there; that is what would make the layer a place definitions hide.
@@ -163,21 +165,21 @@ Break one of these and CI goes red on an otherwise correct change.
   `parents[N]`. Reintroducing dotenv reading into the package is the specific regression
   this rule exists to prevent: a wheel-installed package has no project directory to
   derive a path from, so the code either finds nothing or finds a developer's settings,
-  depending on how it happened to be installed. Two **launchers** put the four names
-  there instead: poe, through `envfile` in `[tool.poe]`, and direnv, through
-  `dotenv_if_exists` in `.envrc`. Both layer `backend/.env.local` over the top -
-  gitignored, absent by default, and the way to move the cluster off a taken port - and
-  both **overwrite** the ambient environment, so an `export PGPORT=...` is not how you
-  change the port.
-  **Neither is redundant, and `envfile` is the one that cannot go.** They look
-  interchangeable locally, where both are loaded and agree. They are not: `setup-direnv`
-  activates `.envrc` with `direnv exec . true`, and only its custom `use_*` directives
-  append to `$GITHUB_PATH`/`$GITHUB_ENV` - `dotenv_if_exists` is stock direnv, so in CI
-  the four names die with that step and every later `pixi run` sees none of them. poe's
-  `envfile` is the sole supplier there, and `db-create`'s `--set=port="$PGPORT"` is what
-  would break first. direnv's half is the one that cannot go either, for the opposite
-  reason: it covers everything no task wraps - a bare `psql`, an editor's test runner,
-  the loader pointed at another directory.
+  depending on how it happened to be installed. **direnv is the one launcher that puts
+  the four names there**, through the single `dotenv_if_exists` line in `.envrc`. There
+  is **no `.env.local` layer** - one file, loaded once - and a dotenv **overwrites** the
+  ambient environment, so `export PGPORT=...` is not an override; moving the cluster off
+  a taken port means editing `backend/.env` and rebuilding. `[tool.poe]` declares **no
+  `envfile`**, and adding one back would be a second loader for one file.
+  **`direnv allow` is a prerequisite, not a convenience.** Nothing else supplies the
+  settings - not `pixi run`, which reads no `.envrc` and declares no `[activation.env]`,
+  and not poe. A shell that has not been blessed gets a `ValidationError` from the app
+  and a `PGPORT` abort from the db tasks.
+  **CI is a cross-repo dependency, and that is the price of the single loader.**
+  `setup-direnv` activates `.envrc` and then forwards the resulting environment to
+  `$GITHUB_ENV`; that forwarding arrived in **v1.4.1**, and the pin in `ci.yml` is what
+  every later `pixi run` depends on for the four names. A `PGPORT` failure in CI means
+  checking that pin first, before anything in this repo.
 - **`backend/.env` is the single source of the connection settings.** `PGHOST`, `PGPORT`,
   `PGUSER` and `PGDATABASE` live there and nowhere else - `pixi.toml` declares no
   `[activation.env]`, and that absence is deliberate rather than an omission. **The DSN
