@@ -47,6 +47,11 @@ envfile = { expected = ".env", optional = ".env.local" }
 # `shell`, not the default `cmd`: every one of them is idempotent - CI runs them on a bare
 # runner and a developer runs them again next week, and the two have to behave the same -
 # and the `||` guards that buy that need a real shell to interpret them.
+#
+# The two that reach a server open with a `${PGPORT:?}` guard, which aborts the task when
+# the name is unset. initdb, psql and createdb each carry their own fallback - port 5432
+# and the OS username - so without it a lost environment reaches whatever cluster answers
+# there instead of failing.
 
 # initdb refuses a non-empty directory, so the PG_VERSION probe is what makes a second
 # run a no-op. The three --set flags are written into the generated postgresql.conf,
@@ -57,6 +62,7 @@ envfile = { expected = ".env", optional = ".env.local" }
 # --auth=trust is safe only because of listen_addresses: this is a throwaway dev cluster
 # holding one row of public text, and the flags must not be copied anywhere real.
 db-create.shell = """
+: "${PGPORT:?unset - run 'direnv allow'}"
 test -f .pgdata/PG_VERSION ||
   initdb --pgdata=.pgdata --username=expense_tracker \
          --auth-local=trust --auth-host=trust --encoding=UTF8 --locale=C \
@@ -72,6 +78,7 @@ test -f .pgdata/PG_VERSION ||
 # Deliberately not a dep of `test`: coupling them would hide the property this design is
 # built around, that the HTTP suite needs no database at all.
 db-init.shell = """
+: "${PGPORT:?unset - run 'direnv allow'}"
 psql --tuples-only --output=/dev/null --command='SELECT 1' || createdb expense_tracker &&
   psql --set=ON_ERROR_STOP=1 --file=schema.sql
 """
