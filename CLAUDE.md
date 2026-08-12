@@ -186,6 +186,14 @@ Break one of these and CI goes red on an otherwise correct change.
   containing `@`, `:` or `/`. `DATABASE_URL` overrides the four wholesale. Do not
   reintroduce a literal DSN in any manifest, and do not go back to f-string
   interpolation.
+- **Nothing here falls back to port 5432.** `config.py` refuses to start without its
+  settings (`_needs_a_source`), and `db-create` and `db-init` open with a
+  `: "${PGPORT:?...}"` guard for the same reason: initdb, psql and createdb each default
+  to 5432 and the OS username on their own, so a task that lost the four names would
+  reach whatever cluster answers there - applying `schema.sql` to it and reporting
+  success - instead of failing. Any new task that reaches a server without passing
+  `--port` explicitly takes the guard too. The three `pg_ctl` tasks do not need it: the
+  port is baked into `.pgdata/postgresql.conf` by `db-create`, not passed at launch.
 - **`database_url()` returns a `URL`, not a `str`.** `str()` and `repr()` of it redact
   the password as `***`, which is what stops a deployment credential reaching a log or a
   traceback; a `str` return would silently give that up. `create_async_engine` and
