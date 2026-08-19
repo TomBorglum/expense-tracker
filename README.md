@@ -444,14 +444,17 @@ Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`, `10.8.1`. One nested entry 
 expected and is not drift: `@vtsls/language-server` bundles its own `typescript@5.9.3`,
 which the `tsdk` setting in `.zed/settings.json` redirects to the pinned top-level copy.
 
-To confirm Zed is using them, run this while Zed is open:
+To confirm Zed is using them, open a `.tsx` file **and** `frontend/src/styles/app.css`
+first - Zed starts a language server only when a buffer of a language it serves is open,
+so a server you have given nothing to do is absent from the list below rather than
+broken - then run:
 
 ```sh
 ps -eo pid,args | grep -E '[v]tsls|[c]ss-language-server|[e]slintServer'
 ```
 
-`@tailwindcss/language-server` ships **two** binaries and this repo runs both, so that
-middle pattern is deliberately loose enough to match each:
+Expect four processes. `@tailwindcss/language-server` ships **two** binaries and this
+repo runs both, so that middle pattern is deliberately loose enough to match each:
 `tailwindcss-language-server` completes class names in TSX, and `css-language-server`
 is the Tailwind-aware CSS server that replaces `vscode-css-language-server` in the
 `CSS` block. The second one needs Zed **1.16.1 or newer**, which is where the
