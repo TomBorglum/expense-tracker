@@ -15,5 +15,5 @@
    dark: variant left anywhere in src/. The theme declares color-scheme: dark itself,
    which is what makes the scrollbar and native controls match the page. */
 @plugin "daisyui" {
-  themes: night --default;
+  themes: dim --default;
 }
