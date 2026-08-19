@@ -31,7 +31,7 @@ jobs:
 
       # Activate the environment declared in .envrc (use pixi), exposing pixi to
       # the steps below - the same .envrc used for local development.
-      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@7823d83c64795945f41111716373bda3c0ae5d45 # v1.4.0
+      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@57a8f1298e33b3dd5c5c4b25df01f9144d9a2f48 # v1.4.4
 
       - name: Check for a newer stable Python
         id: check
