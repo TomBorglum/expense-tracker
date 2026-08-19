@@ -285,6 +285,13 @@ resetting the cluster, not re-running `db-init`.
 A React 19 SPA built by vite and styled with Tailwind CSS v4, configured in CSS via
 `frontend/src/styles/app.css` - there is no `tailwind.config.js`.
 
+The palette and the component classes come from [daisyUI](https://daisyui.com), enabled
+as a `@plugin` in that same stylesheet. One theme is named, `night`, and `--default`
+applies it at `:root`, so the app is dark and there is nothing to switch: no
+`data-theme` attribute, no theme provider, and no `dark:` variant in `src/`. Colours are
+written by role - `bg-base-100`, `text-base-content`, `alert-error` - which is what keeps
+a theme swap a one-word edit.
+
 `pixi run frontend-build` writes to `frontend/dist/`, vite's default. It is **gitignored**
 and nothing in this repo consumes it. CI runs the build as a gate because tsc and
 vitest never exercise the bundler, but keeps nothing from it.

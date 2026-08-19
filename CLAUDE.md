@@ -252,6 +252,17 @@ Break one of these and CI goes red on an otherwise correct change.
     `sonar-project.properties`;
   - `VITE_API_BASE_URL` - set in `frontend/.env`, typed in
     `frontend/src/vite-env.d.ts`.
+- **One theme, and it is dark.** daisyUI is enabled by the single `@plugin "daisyui"`
+  block in `frontend/src/styles/app.css`, naming one theme - `night --default`, which
+  applies it at `:root`. So there is no `data-theme` attribute, no theme provider, no
+  `@custom-variant dark`, and no `dark:` variant anywhere in `src/`. The theme declares
+  its own `color-scheme: dark` but paints nothing, so the surface is `bg-base-200` on
+  `<body>` in `frontend/index.html` - a body background is what propagates to the canvas
+  beyond the app shell, and moving it onto a `<div>` is what leaves an unpainted band
+  below short content. Colours are referenced by role - `bg-base-100`, `bg-base-200`,
+  `text-base-content`, `alert-error` - and a hard-coded shade like `slate-700` is what
+  would stop a theme swap being a one-word edit. Enabling a second theme means also
+  deciding how it gets selected, which nothing here does.
 - **The API origin lives in bare `frontend/.env`, not `.env.development`.** vite loads
   `.env` in every mode, including the `test` mode vitest runs in, where MSW binds its
   handlers to the URL built from it. `frontend/vite.config.ts` also pins `envDir` to

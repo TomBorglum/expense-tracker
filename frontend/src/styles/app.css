@@ -9,3 +9,11 @@
 @import "tailwindcss" source(none);
 @source "../../index.html";
 @source "../";
+
+/* daisyUI supplies the palette and the component classes. One theme, always on:
+   --default applies it at :root, so there is no data-theme attribute to set and no
+   dark: variant left anywhere in src/. The theme declares color-scheme: dark itself,
+   which is what makes the scrollbar and native controls match the page. */
+@plugin "daisyui" {
+  themes: night --default;
+}

@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Expense Tracker</title>
   </head>
-  <body class="h-full">
+  <!-- The theme surface sits on <body>: daisyUI sets color-scheme and the theme
+       variables on :root but paints nothing, and a body background is what
+       propagates to the canvas beyond the app shell. -->
+  <body class="h-full bg-base-200 text-base-content">
     <div id="root"></div>
     <script type="module" src="./src/main.tsx"></script>
   </body>
