@@ -8,38 +8,14 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from expense_tracker import create_app
-from expense_tracker.deps import provide_expense_repository, provide_greeting_repository
+from expense_tracker.deps import provide_expense_repository
 from expense_tracker.expense_repository import ExpenseRecord, ExpenseRepository
-from expense_tracker.greeting_repository import GreetingRepository
-
-
-class _FakeGreetingRepository(GreetingRepository):
-    """Stands in for the real repository without a session or a server."""
-
-    # Annotated at class level for reportUnannotatedClassAttribute.
-    _message: str
-
-    def __init__(self, message: str) -> None:
-        self._message = message
-
-    @override
-    async def get_current_greeting(self) -> str:
-        return self._message
-
-
-@pytest.fixture
-def greeting_text() -> str:
-    """The fake greeting the HTTP suite asserts against.
-
-    Deliberately not the wording schema.sql seeds: a matching value here would let
-    these tests pass against an endpoint that served a constant.
-    """
-    return "Hello from the test double!"
 
 
 class _FakeExpenseRepository(ExpenseRepository):
     """Stands in for the real repository without a session or a server."""
 
+    # Annotated at class level for reportUnannotatedClassAttribute.
     _records: Sequence[ExpenseRecord]
 
     def __init__(self, records: Sequence[ExpenseRecord]) -> None:
@@ -74,16 +50,13 @@ def expense_records() -> list[ExpenseRecord]:
 
 
 @pytest.fixture
-def app(greeting_text: str, expense_records: list[ExpenseRecord]) -> FastAPI:
+def app(expense_records: list[ExpenseRecord]) -> FastAPI:
     """An app whose data comes from memory instead of PostgreSQL.
 
-    provide_session is upstream of both overrides, so it never runs and no session is
+    provide_session is upstream of the override, so it never runs and no session is
     ever opened.
     """
     application = create_app()
-    application.dependency_overrides[provide_greeting_repository] = lambda: (
-        _FakeGreetingRepository(greeting_text)
-    )
     application.dependency_overrides[provide_expense_repository] = lambda: (
         _FakeExpenseRepository(expense_records)
     )

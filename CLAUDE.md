@@ -97,8 +97,8 @@ gates.
 Break one of these and CI goes red on an otherwise correct change.
 
 - **The backend serves no frontend.** It is a REST API whose whole surface is
-  `GET /api/greeting` and `GET /api/expenses`: no `/` route, no `StaticFiles` mount, no
-  build artifact under `backend/`. Pinned by `test_root_is_not_served`,
+  `GET /api/expenses`: no `/` route, no `StaticFiles` mount, no build artifact under
+  `backend/`. Pinned by `test_root_is_not_served`,
   `test_static_files_are_not_served` and `test_unknown_api_routes_404`.
 - **Expenses are read-only over HTTP.** Rows arrive through
   `pixi run backend-load-expenses` and nowhere else, so there is no POST, PUT or DELETE
@@ -116,38 +116,35 @@ Break one of these and CI goes red on an otherwise correct change.
   `TestClient(app)` (without `with`) database-free and `uvicorn --factory` working.
   Moving engine creation into `create_app()` breaks the entire HTTP suite.
 - **Only `deps.py` imports fastapi, and nothing imports `deps`.** The wiring points one
-  way: `deps.py` imports `greeting_repository` and `expense_repository`, never the
-  reverse, and those two plus `db.py`, `config.py` and `expense_loader.py` know no HTTP
-  at all. A failed read leaves the repository as `GreetingUnavailableError` or
-  `ExpensesUnavailableError`, and the handlers registered in `create_app()` are the only
-  place that turn them into a 503. Putting an `HTTPException` back in a repository is
-  what this split exists to prevent. Pinned by the import-linter contracts in
-  `backend/pyproject.toml`, not by a test.
+  way: `deps.py` imports `expense_repository`, never the reverse, and that module plus
+  `db.py`, `config.py` and `expense_loader.py` know no HTTP at all. A failed read leaves
+  the repository as `ExpensesUnavailableError`, and the handler registered in
+  `create_app()` is the only place that turns it into a 503. Putting an `HTTPException`
+  back in a repository is what this split exists to prevent. Pinned by the
+  import-linter contracts in `backend/pyproject.toml`, not by a test.
   A **new module** under `src/expense_tracker/` has to be added to **three** lists, not
   one: the `layers` contract (where `exhaustive = true` fails the gate by itself), and
   the `source_modules` of *both* `forbidden` contracts - a `forbidden` contract has no
   `exhaustive` option, so an unnamed module is silently uncovered by them.
-- **`db.py` holds `Base` and nothing else.** Both repository modules need one shared
-  `DeclarativeBase`, and giving it a module of its own is what keeps them from importing
-  each other - which the `expense_repository | greeting_repository` layer forbids. A new
+- **`db.py` holds `Base` and nothing else.** Every repository module needs the same
+  `DeclarativeBase`, and giving it a module of its own is what lets a second one arrive
+  without importing the first - which the `|` between siblings in a layer forbids. A new
   model goes in the repository module that reads it, not in `db.py`.
 - **Every repository subclasses its ABC and carries `@override`.**
-  `PostgresGreetingRepository` and `PostgresExpenseRepository`, and
-  `_FakeGreetingRepository` and `_FakeExpenseRepository` in `conftest.py`, all do; a new
-  implementation or test double does too. The base classes are `ABC`s, so this is
+  `PostgresExpenseRepository`, and `_FakeExpenseRepository` in `conftest.py`, both do; a
+  new implementation or test double does too. The base class is an `ABC`, so this is
   enforced, not a convention - a look-alike that matches the shape without inheriting is
   rejected. It has to be enforced somewhere, because `dependency_overrides` is an
   untyped dict and would accept anything.
-- **`@abstractmethod` on `GreetingRepository` and `ExpenseRepository` is load-bearing.**
+- **`@abstractmethod` on `ExpenseRepository` is load-bearing.**
   Without it the `...` body is an ordinary method returning `None` and an empty subclass
   passes. Removing it fails `pixi run backend-lint` three ways: `B027` on the method,
   `B024` on the class, `F401` on the unused import. That gate is why no test asserts it.
   Keep the body a same-line `...`; `raise NotImplementedError` would be a statement
   coverage counts and nothing executes.
-- **An empty `expense` table is 200 with `[]`, not 503.** Deliberately asymmetric with
-  the greeting, whose missing row *is* a fault because exactly one row is required. A
-  database nobody has run the loader against yet is a legitimate state, and a 503 would
-  train a client to retry forever against a server that is working perfectly. So
+- **An empty `expense` table is 200 with `[]`, not 503.** A database nobody has run the
+  loader against yet is a legitimate state and not a fault, and a 503 would train a
+  client to retry forever against a server that is working perfectly. So
   `PostgresExpenseRepository` raises only from its `except` arm, with no
   `if not rows: raise` counterpart. Pinned by
   `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` in both
@@ -164,11 +161,10 @@ Break one of these and CI goes red on an otherwise correct change.
   frontend half - the shape guard in `frontend/src/api/expenses.ts` rejects a numeric
   amount rather than coercing it.
 - **The HTTP suite never touches PostgreSQL.** `backend/tests/conftest.py` overrides
-  both the `provide_greeting_repository` and `provide_expense_repository` dependencies
-  with fake repositories; only `backend/tests/test_greeting_postgres.py` and
+  the `provide_expense_repository` dependency with a fake repository; only
   `backend/tests/test_expense_postgres.py`, behind the registered `postgres` marker,
-  connect. A new test that hits an endpoint takes the `client` fixture. Those modules
-  skip when no server answers and **fail** under `CI=true`, so a database that did not
+  connects. A new test that hits an endpoint takes the `client` fixture. That module
+  skips when no server answers and **fails** under `CI=true`, so a database that did not
   come up cannot go green. `test_expense_postgres.py` TRUNCATEs both expense tables
   before and after every test, so running the suite empties a developer's loaded data -
   `pixi run backend-load-expenses` puts it back.
@@ -239,16 +235,12 @@ Break one of these and CI goes red on an otherwise correct change.
   Pinned by no test - `pixi run -e prod` is the check, described in `README.md` under
   "Environments".
 - **Six things are declared twice. Change both halves together:**
-  - the two *payload shapes and paths* - `backend/src/expense_tracker/__init__.py`
-    against `frontend/src/api/greeting.ts` for the greeting and
-    `frontend/src/api/expenses.ts` for the expenses, with nothing checking either
-    agreement. Every expense field is a string on the wire, `amount` included, and the
-    frontend's guard rejects a number, so a change to `ExpensePayload` is a change to
-    the `Expense` interface. The greeting *wording* is not duplicated anywhere: it is
-    one row of the `greeting` table;
-  - the three tables - `backend/schema.sql` and the `Greeting` model in
-    `greeting_repository.py` plus `LoadedExpenseFile` and `Expense` in
-    `expense_repository.py`, which never create them and only read them;
+  - the *payload shape and path* - `backend/src/expense_tracker/__init__.py` against
+    `frontend/src/api/expenses.ts`, with nothing checking the agreement. Every expense
+    field is a string on the wire, `amount` included, and the frontend's guard rejects a
+    number, so a change to `ExpensePayload` is a change to the `Expense` interface;
+  - the two tables - `backend/schema.sql` and the `LoadedExpenseFile` and `Expense`
+    models in `expense_repository.py`, which never create them and only read them;
   - what is left of the local database connection - `PGUSER` and `PGHOST` in
     `backend/.env`, against `--username=expense_tracker` and
     `--set=listen_addresses=127.0.0.1` in `db-create`'s `initdb` flags, and against
@@ -265,17 +257,18 @@ Break one of these and CI goes red on an otherwise correct change.
   handlers to the URL built from it. `frontend/vite.config.ts` also pins `envDir` to
   `frontend/`, because the `test` block moves vite's `root` to the repo root and
   `envDir` would otherwise follow it.
-- **Routes are code-based, in `frontend/src/router.ts`.** No `routeTree.gen.ts` and no
-  `@tanstack/router-plugin`: a generated route tree is a committed file that has to
+- **The one route is code-based, in `frontend/src/router.ts`.** No `routeTree.gen.ts`
+  and no `@tanstack/router-plugin`: a generated route tree is a committed file that has to
   satisfy prettier, eslint's type-aware pass, a tsconfig that owns it and the coverage
   exclusions, and the plugin drags in `@babel/core`, `chokidar`, `zod` and `unplugin`
   to produce it. `createAppRouter` is a factory rather than a module-level singleton so
   the tests can hand it a `createMemoryHistory`, which is also what keeps `router.ts`
   covered without a new exclusion. The `declare module` block registering `Register` is
-  what gives `Link` its typed `to`; without it a path matching no route compiles.
-  **Only `App.tsx` imports `Link` or `Outlet`** - the pages under `src/pages/` are
-  router-free, so each one's test mounts it in a bare `QueryClientProvider` and only
-  `routing.test.tsx` builds a router.
+  what would give `Link` a typed `to`; without it a path matching no route compiles.
+  **Only `App.tsx` imports `Outlet`, and nothing imports `Link`** - it is the layout
+  shell and no more, because a nav over a single route would be dead UI. The pages under
+  `src/pages/` are router-free, so each one's test mounts it in a bare
+  `QueryClientProvider` and only `routing.test.tsx` builds a router.
 - **Every linted file needs a tsconfig that owns it.** eslint runs type-aware via
   `parserOptions.projectService`, so a `.ts`/`.tsx` file outside every tsconfig's
   `include` fails to lint rather than being skipped. `src/` and `tests/` come from
@@ -308,7 +301,7 @@ Break one of these and CI goes red on an otherwise correct change.
   artifact to lint, so they get no gate of their own; `lint-fix` is ruff alone, because
   where a new module belongs in the layer order is a design decision, not a mechanical
   edit. Four contracts: the three-tier `deps | expense_loader` above
-  `expense_repository | greeting_repository` above `db | config` layering, the
+  `expense_repository` above `db | config` layering, the
   fastapi/starlette ban on everything but `deps`, a ban on importing the package root,
   and `acyclic_siblings` for cycles at any depth. In a layer list `|` joins siblings
   that may **not** import each other and `:` joins siblings that **may** - the two are

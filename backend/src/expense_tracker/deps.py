@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import (
 
 from .config import database_url
 from .expense_repository import ExpenseRepository, PostgresExpenseRepository
-from .greeting_repository import GreetingRepository, PostgresGreetingRepository
 
 
 class AppState(TypedDict):
@@ -44,13 +43,6 @@ async def provide_session(request: Request) -> AsyncGenerator[AsyncSession]:
     sessions = cast("async_sessionmaker[AsyncSession]", request.state["sessions"])
     async with sessions() as session:
         yield session
-
-
-def provide_greeting_repository(
-    session: Annotated[AsyncSession, Depends(provide_session)],
-) -> GreetingRepository:
-    """The seam tests/conftest.py overrides with a fake."""
-    return PostgresGreetingRepository(session)
 
 
 def provide_expense_repository(

@@ -21,10 +21,10 @@ expense-tracker/
   .github/                      # CI, release-please, dependabot
   backend/
     pyproject.toml              # hatchling, ruff, pytest, basedpyright, poe tasks
-    schema.sql                  # the whole schema: three tables, one seeded row
+    schema.sql                  # the whole schema: two tables and an index
     data/expenses/              # the committed expense files, loaded into the database
     src/expense_tracker/        # __init__ (the API), deps, config, db,
-                                #   {greeting,expense}_repository, expense_loader
+                                #   expense_repository, expense_loader
     tests/
     .pgdata/                    # the local PostgreSQL cluster, gitignored
   frontend/
@@ -77,17 +77,19 @@ pixi run backend-dev   # the local database, then the REST API on http://localho
 pixi run frontend-dev  # the SPA on http://localhost:5173
 ```
 
-`backend-dev` creates, starts and seeds the local database before it launches the API,
-and every part of that is idempotent, so it is the same one command on the first day and
-on any later one. The `backend-db-*` tasks drive the cluster on its own when you want
-that; see [Database](#database). Sample expenses are a separate, explicit step -
-`pixi run backend-load-expenses`, described under [Loading expenses](#loading-expenses) -
-because an empty table is a legitimate state the API answers `200` with `[]`.
+`backend-dev` creates the local database, starts it and applies the schema before it
+launches the API, and every part of that is idempotent, so it is the same one command on
+the first day and on any later one. The `backend-db-*` tasks drive the cluster on its
+own when you want that; see [Database](#database). Sample expenses are a separate,
+explicit step - `pixi run backend-load-expenses`, described under
+[Loading expenses](#loading-expenses) - because an empty table is a legitimate state the
+API answers `200` with `[]`.
 
-Visit http://localhost:5173 and you should see `Hello, World!`, fetched from
-`http://localhost:8000/api/greeting` - a genuine cross-origin request, which works
-only because the API allows it (see [CORS](#cors)) - and read in turn out of the
-`greeting` table (see [Database](#database)).
+Visit http://localhost:5173 and you should see the **Expenses** table, fetched from
+`http://localhost:8000/api/expenses` - a genuine cross-origin request, which works only
+because the API allows it (see [CORS](#cors)) - and read in turn out of the `expense`
+table (see [Database](#database)). Until you run the loader it says
+`No expenses loaded.`, which is the empty state and not an error.
 
 The API alone is enough for backend work. The SPA alone runs too; it just renders its
 error state until something answers on 8000.
@@ -96,13 +98,9 @@ error state until something answers on 8000.
 
 | Route | What it serves |
 | --- | --- |
-| `GET /api/greeting` | `{"greeting": "<the message column of the greeting table>"}` |
 | `GET /api/expenses` | `[{"amount", "currency", "date", "category", "details"}, ...]` - the `ExpensePayload` model |
 
-Both send `Cache-Control: no-store`.
-
-The greeting answers `503 {"detail": "greeting unavailable"}` when the database is
-unreachable or the seed row is missing - both server faults, not client ones.
+It sends `Cache-Control: no-store`.
 
 Expenses come back **newest first**, and `amount` is a **string**, not a number: the
 column is `numeric(12, 2)`, JSON has no decimal type, and a decimal has no exact binary
@@ -111,14 +109,14 @@ as the `ExpensePayload` pydantic model in `backend/src/expense_tracker/__init__.
 the tests parse responses back into it rather than into untyped dicts. An unreachable
 database answers `503 {"detail": "expenses unavailable"}`, but an **empty table answers
 `200 []`** - a database nobody has run the loader against yet is a legitimate state, not
-a fault, which is where this differs from the greeting's missing row.
+a fault, and a 503 would train a client to retry forever against a working server.
 
 Expenses are read-only over HTTP. Rows arrive through `pixi run backend-load-expenses`
 and nowhere else, so there is no POST, PUT or DELETE.
 
 That is the whole surface. There is no page route and no static mount - the frontend
-is a separate app - and no OpenAPI schema, `/docs` or `/redoc`: two hand-written routes
-do not earn a generated document, and the schema would be public surface advertising
+is a separate app - and no OpenAPI schema, `/docs` or `/redoc`: one hand-written route
+does not earn a generated document, and the schema would be public surface advertising
 it. `backend/tests/test_app.py` asserts that `/`, `/static/*`, any other `/api` path
 and the three docs routes all return 404, so none of it can come back by accident.
 
@@ -138,9 +136,8 @@ than passing it to a router with no such route.
 
 ## Database
 
-PostgreSQL, holding three tables: `greeting` (one row - changing the wording is an
-`UPDATE`, not a deploy), and `loaded_expense_file` and `expense`, which together are a
-view of the files in `backend/data/expenses/`. See
+PostgreSQL, holding two tables: `loaded_expense_file` and `expense`, which together are
+a view of the files in `backend/data/expenses/`. See
 [Loading expenses](#loading-expenses).
 
 The server is a **pixi dependency**, not a container. `postgresql` is pinned in
@@ -178,39 +175,38 @@ All five tasks are idempotent, and the chain is `dev` depends on `db-init` depen
 its way to the API and none of the five is one you normally run by hand.
 `pixi run backend-db-init` is the one to reach for when you want the database up without
 a server: the `postgres`-marked tests need it, and `backend-load-expenses` does too.
-`db-reset` throws the cluster away - the cure if a test that edits the greeting row is
-killed before it can restore it.
+`db-reset` throws the cluster away - the cure for a change to an existing table, which
+`schema.sql`'s `IF NOT EXISTS` statements cannot apply.
 
 ### Schema and access
 
-`backend/schema.sql` is the entire schema and the only DDL. There is no Alembic - three
-tables do not earn a migration tool when two of them are append-only and rebuildable
-from `backend/data/expenses/` - and the app issues no DDL of its own, so nothing but
-`db-init` ever runs it. Every statement in it is idempotent, and the seed uses
-`ON CONFLICT DO NOTHING` so re-running never stamps on an edited row. Generated keys use
-`GENERATED ALWAYS AS IDENTITY` rather than `bigserial`, which PostgreSQL's own
+`backend/schema.sql` is the entire schema and the only DDL. There is no Alembic - two
+append-only tables rebuildable from `backend/data/expenses/` do not earn a migration
+tool - and the app issues no DDL of its own, so nothing but `db-init` ever runs it.
+Every statement in it is idempotent, because `db-init` re-runs against live clusters.
+Generated keys use `GENERATED ALWAYS AS IDENTITY` rather than `bigserial`, which
+PostgreSQL's own
 [Don't Do This](https://wiki.postgresql.org/wiki/Don%27t_Do_This) page advises against
-for new applications. The `Greeting`, `LoadedExpenseFile` and `Expense` models declare
-the same tables a second time, in Python, with nothing checking the agreement; change
-both together.
+for new applications. The `LoadedExpenseFile` and `Expense` models declare the same
+tables a second time, in Python, with nothing checking the agreement; change both
+together.
 
-Access is SQLAlchemy 2 async over asyncpg, split across six modules:
+Access is SQLAlchemy 2 async over asyncpg, split across five modules:
 
 | Module | Holds |
 | --- | --- |
-| `__init__.py` | `create_app()`, both routes, both exception handlers, `ExpensePayload` |
-| `deps.py` | the lifespan, the per-request session, and the two `provide_*_repository` seams |
+| `__init__.py` | `create_app()`, the route, the exception handler, `ExpensePayload` |
+| `deps.py` | the lifespan, the per-request session, and the `provide_expense_repository` seam |
 | `expense_loader.py` | the TSV parser and the `python -m` entry point - the only thing that writes |
 | `expense_repository.py` | `LoadedExpenseFile`, `Expense`, and the expense repository |
-| `greeting_repository.py` | `Greeting` and the greeting repository |
-| `db.py` | the declarative `Base` the two repository modules share |
+| `db.py` | the declarative `Base` every repository module builds on |
 | `config.py` | the database connection settings, and nothing else |
 
-Each repository module holds its models, an **abstract base class**, its `Postgres*`
+A repository module holds its models, an **abstract base class**, its `Postgres*`
 implementation and the `...UnavailableError` it raises, and imports nothing from
-FastAPI - so neither knows a status code. Callers depend on the base classes and never
-name an implementation; implementations subclass them and carry `@override`, so the
-coupling is visible at the class declaration and drift fails `backend-typecheck`.
+FastAPI - so it knows no status code. Callers depend on the base class and never name an
+implementation; implementations subclass it and carry `@override`, so the coupling is
+visible at the class declaration and drift fails `backend-typecheck`.
 `expense_loader.py` is a *sibling* of `deps.py`, not something below it, and may not
 import it - which is what keeps FastAPI out of `python -m`.
 
@@ -218,19 +214,18 @@ The dependency arrows run one way, and are checked rather than merely intended: 
 run backend-lint` runs import-linter after ruff, against the contracts in
 `backend/pyproject.toml`, which fail the build on an import pointing back up the stack,
 on anything but `deps.py` learning about FastAPI, and on a cycle anywhere in the
-package. `create_app()` holds the only two handlers that map an exception to a 503.
+package. `create_app()` holds the only handler that maps an exception to a 503.
 
 The engine is owned by the app's **lifespan** rather than built at import time, and
 handed to requests as lifespan state, from which a session is opened per request. That
 is not incidental: it means `create_app()` opens no socket, which is what lets most of
 the test suite construct a real app with no database anywhere.
 
-`backend/tests/test_app.py` overrides both repository dependencies with fakes and never
-connects. Only `backend/tests/test_greeting_postgres.py` and
-`backend/tests/test_expense_postgres.py` talk to the real server, behind the `postgres`
-marker registered in `backend/pyproject.toml`; they skip when nothing answers, so a
-developer who has not run `db-init` does not face a red suite, and **fail** under
-`CI=true`, so a database that did not come up cannot go green.
+`backend/tests/test_app.py` overrides the repository dependency with a fake and never
+connects. Only `backend/tests/test_expense_postgres.py` talks to the real server, behind
+the `postgres` marker registered in `backend/pyproject.toml`; it skips when nothing
+answers, so a developer who has not run `db-init` does not face a red suite, and
+**fails** under `CI=true`, so a database that did not come up cannot go green.
 
 ### Loading expenses
 
@@ -294,19 +289,14 @@ A React 19 SPA built by vite and styled with Tailwind CSS v4, configured in CSS 
 and nothing in this repo consumes it. CI runs the build as a gate because tsc and
 vitest never exercise the bundler, but keeps nothing from it.
 
-Row 1 of the `greeting` table is the single source of truth for the greeting: the
-backend reads it and serves it from `GET /api/greeting`, and
-the page fetches it at runtime with [TanStack Query](https://tanstack.com/query) in
-`frontend/src/api/greeting.ts`. Nothing generates a client from a schema, so the
-payload *shape* is written out by hand on both sides and the two must be changed
-together; a mismatch shows up as a 404 or a failed shape guard at runtime. The wording
-itself is duplicated nowhere - it exists only in the database.
-
-`GET /api/expenses` is the app's second read, through `frontend/src/api/expenses.ts` and
+`GET /api/expenses` is the app's whole read, fetched at runtime with
+[TanStack Query](https://tanstack.com/query) in `frontend/src/api/expenses.ts` and
 rendered by `frontend/src/components/ExpensesTable.tsx` as one table of amount, currency,
-date, category and details. Its shape is written out by hand here too, and every field is
-a string on the wire - `amount` included, because JSON has no decimal type - so the guard
-rejects a numeric amount rather than letting a float round trip through the page. Both
+date, category and details. Nothing generates a client from a schema, so the payload
+*shape* is written out by hand on both sides and the two must be changed together; a
+mismatch shows up as a 404 or a failed shape guard at runtime. Every field is a string on
+the wire - `amount` included, because JSON has no decimal type - so the guard rejects a
+numeric amount rather than letting a float round trip through the page. Both
 values are rendered exactly as they arrive: formatting the amount client-side would put
 back the round trip `str(Decimal)` exists to prevent, and `new Date()` on a bare
 `YYYY-MM-DD` reads it as UTC and prints a day early west of Greenwich. The rows keep the
@@ -315,34 +305,35 @@ arrives as a 200 with `[]`, so the table says so in a row instead of raising an 
 
 ### Routing
 
-Two routes, declared in code in `frontend/src/router.ts`: `/` is the greeting and
-`/expenses` the table, with [TanStack Router](https://tanstack.com/router) and a nav
-between them. There is no `routeTree.gen.ts` - file-based routing would commit a
-generated file that has to clear prettier, type-aware eslint, a tsconfig and the coverage
-exclusions, and its vite plugin pulls in `@babel/core`, `chokidar`, `zod` and `unplugin`.
-The `declare module` block at the foot of `router.ts` is what makes `Link`'s `to` typed
-against the real route tree.
+One route, declared in code in `frontend/src/router.ts` with
+[TanStack Router](https://tanstack.com/router): `/` is the expenses table. There is no
+`routeTree.gen.ts` - file-based routing would commit a generated file that has to clear
+prettier, type-aware eslint, a tsconfig and the coverage exclusions, and its vite plugin
+pulls in `@babel/core`, `chokidar`, `zod` and `unplugin`. The `declare module` block at
+the foot of `router.ts` is what would make a `Link`'s `to` typed against the real route
+tree, and it stays for the second route.
 
 `createAppRouter` takes an optional history so the tests can pass
 `createMemoryHistory()`; `frontend/src/main.tsx` calls it with none and gets the
-browser's. Only `frontend/src/App.tsx` - the layout, a nav plus an `<Outlet />` - touches
-`Link` or `Outlet`. The pages under `frontend/src/pages/` are router-free, which is why
-each page's test mounts it directly in a `QueryClientProvider` and only
+browser's. Only `frontend/src/App.tsx` - the layout wrapped around an `<Outlet />` -
+touches the router; there is no nav, because one over a single route would be dead UI.
+The pages under `frontend/src/pages/` are router-free, which is why each page's test
+mounts it directly in a `QueryClientProvider` and only
 `frontend/tests/routing.test.tsx` builds a router. A deployed SPA needs its server to
-fall back to `index.html` so `/expenses` resolves on a cold load; vite's dev server does
-that already, and nothing in this repo serves `frontend/dist/`.
+fall back to `index.html` so a non-root path resolves on a cold load; vite's dev server
+does that already, and nothing in this repo serves `frontend/dist/`.
 
 Tests use vitest, live in `frontend/tests/`, and reach into the app through the `@`
-alias (`@/api/greeting`). The alias is declared twice - `resolve.alias` in
+alias (`@/api/expenses`). The alias is declared twice - `resolve.alias` in
 `frontend/vite.config.ts` for the bundler and `paths` in `frontend/tsconfig.app.json`
 for the type checker, because vite does not read tsconfig `paths` - so both must point
 at the same place. Imports *within* `src/` stay relative.
 
 The backend is stubbed with [MSW](https://mswjs.io). `frontend/tests/setup.ts` starts
 the server with `onUnhandledRequest: "error"`, so an unstubbed request fails the test
-instead of quietly reaching the network. Handlers bind to the absolute `GREETING_URL` and
-`EXPENSES_URL` exported by the modules under `frontend/src/api/`, because a path-only
-pattern would resolve against jsdom's origin rather than the API's and never match.
+instead of quietly reaching the network. Handlers bind to the absolute `EXPENSES_URL`
+exported by the module under `frontend/src/api/`, because a path-only pattern would
+resolve against jsdom's origin rather than the API's and never match.
 
 `frontend/src/main.tsx` is excluded from coverage in both `frontend/vite.config.ts` and
 `sonar-project.properties` - it only wires React to the DOM. `frontend/vite.config.ts`
@@ -466,7 +457,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 
 | Command | Delegates to | What it does |
 | --- | --- | --- |
-| `pixi run backend-db-init` | `poe db-init` | Create, start and seed the local database, without a server in front of it |
+| `pixi run backend-db-init` | `poe db-init` | Create, start and apply the schema to the local database, without a server in front of it |
 | `pixi run backend-db-create` | `poe db-create` | `initdb` a cluster into `backend/.pgdata/`, if there is not one |
 | `pixi run backend-db-start` | `poe db-start` | Start the cluster on `$PGHOST:$PGPORT`, if it is not running |
 | `pixi run backend-db-stop` | `poe db-stop` | Stop the cluster; succeeds if it is already stopped |

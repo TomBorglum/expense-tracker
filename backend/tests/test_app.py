@@ -14,17 +14,8 @@ _ORIGIN = "http://localhost:5173"
 _EXPENSES = TypeAdapter(list[ExpensePayload])
 
 
-def test_greeting_endpoint_returns_json(client: TestClient, greeting_text: str) -> None:
-    response = client.get("/api/greeting")
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("application/json")
-    assert response.json() == {"greeting": greeting_text}
-    # The wording is a row somebody can UPDATE, so a cached copy would outlive it.
-    assert response.headers["Cache-Control"] == "no-store"
-
-
 def test_security_headers_present(client: TestClient) -> None:
-    response = client.get("/api/greeting")
+    response = client.get("/api/expenses")
     csp = response.headers["Content-Security-Policy"]
     # The API serves no document, so the policy grants nothing at all.
     assert "default-src 'none'" in csp
@@ -37,7 +28,7 @@ def test_security_headers_present(client: TestClient) -> None:
 def test_cors_allows_any_origin(client: TestClient) -> None:
     # Every real call is cross-origin, so this header is what makes the response
     # readable to the frontend.
-    response = client.get("/api/greeting", headers={"Origin": _ORIGIN})
+    response = client.get("/api/expenses", headers={"Origin": _ORIGIN})
     assert response.status_code == 200
     assert response.headers["Access-Control-Allow-Origin"] == "*"
 
@@ -45,7 +36,7 @@ def test_cors_allows_any_origin(client: TestClient) -> None:
 def test_cors_preflight_is_answered(client: TestClient) -> None:
     # Answered by the CORS middleware itself; the router has no OPTIONS route.
     response = client.options(
-        "/api/greeting",
+        "/api/expenses",
         headers={"Origin": _ORIGIN, "Access-Control-Request-Method": "GET"},
     )
     assert response.status_code == 200
@@ -56,7 +47,7 @@ def test_cors_preflight_is_answered(client: TestClient) -> None:
 def test_cors_does_not_allow_credentials(client: TestClient) -> None:
     # The spec forbids credentials alongside a wildcard origin, and browsers reject the
     # pair silently.
-    response = client.get("/api/greeting", headers={"Origin": _ORIGIN})
+    response = client.get("/api/expenses", headers={"Origin": _ORIGIN})
     assert "Access-Control-Allow-Credentials" not in response.headers
 
 
@@ -70,7 +61,7 @@ def test_static_files_are_not_served(client: TestClient) -> None:
 
 
 def test_unknown_api_routes_404(client: TestClient) -> None:
-    # /api is two routes, not a namespace to grow into by accident.
+    # /api is one route, not a namespace to grow into by accident.
     assert client.get("/api/hello").status_code == 404
 
 
@@ -78,20 +69,6 @@ def test_openapi_docs_are_disabled(client: TestClient) -> None:
     assert client.get("/openapi.json").status_code == 404
     assert client.get("/docs").status_code == 404
     assert client.get("/redoc").status_code == 404
-
-
-def test_greeting_is_unavailable_when_the_database_is_down(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Port 1 refuses instantly. Context-managed on purpose: that is what runs the
-    # lifespan and builds the engine.
-    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://nobody@127.0.0.1:1/none")
-    with TestClient(create_app()) as client:
-        response = client.get("/api/greeting")
-    assert response.status_code == 503
-    assert response.json() == {"detail": "greeting unavailable"}
-    # An error response is still decorated by the security-headers middleware.
-    assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
 def test_expenses_endpoint_returns_json(
@@ -144,9 +121,9 @@ def test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded(
 ) -> None:
     """200 and [], deliberately not 503.
 
-    A greeting's missing row is a fault, because exactly one row is required. An empty
-    expense table is a database nobody has run the loader against, which is a
-    legitimate state.
+    An empty expense table is a database nobody has run the loader against yet, which
+    is a legitimate state and not a fault. A 503 would train a client to retry forever
+    against a server that is working perfectly.
     """
     response = empty_expenses_client.get("/api/expenses")
     assert response.status_code == 200
@@ -157,12 +134,14 @@ def test_expenses_are_unavailable_when_the_database_is_down(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The real dependency this time, not the fake, against a port that refuses
-    # instantly.
+    # instantly. Context-managed on purpose: that is what runs the lifespan and builds
+    # the engine.
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://nobody@127.0.0.1:1/none")
     with TestClient(create_app()) as client:
         response = client.get("/api/expenses")
     assert response.status_code == 503
     assert response.json() == {"detail": "expenses unavailable"}
+    # An error response is still decorated by the security-headers middleware.
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 

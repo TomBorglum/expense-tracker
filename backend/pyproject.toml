@@ -84,8 +84,8 @@ psql --tuples-only --output=/dev/null --command='SELECT 1' || createdb expense_t
 """
 db-init.deps = ["db-start"]
 # The escape hatch: throw the cluster away and start over. Nothing in .pgdata/ is
-# precious - schema.sql can rebuild all of it - and this is the documented cure when a
-# test that edits the greeting row is killed before it can restore it.
+# precious - schema.sql can rebuild all of it - and this is the documented cure for a
+# change to an existing table, which the file's IF NOT EXISTS statements cannot apply.
 db-reset.shell = "rm -rf .pgdata"
 db-reset.deps = ["db-stop"]
 # `pg_ctl status` exits 3 when nothing is running and 0 when something is, which is the
@@ -185,7 +185,7 @@ type = "layers"
 containers = ["expense_tracker"]
 layers = [
   "deps | expense_loader",
-  "expense_repository | greeting_repository",
+  "expense_repository",
   "db | config",
 ]
 # A module added under src/expense_tracker/ that is not named above breaks this contract.
@@ -210,7 +210,6 @@ source_modules = [
   "expense_tracker.db",
   "expense_tracker.expense_loader",
   "expense_tracker.expense_repository",
-  "expense_tracker.greeting_repository",
 ]
 forbidden_modules = ["fastapi", "starlette"]
 
@@ -230,7 +229,6 @@ source_modules = [
   "expense_tracker.deps",
   "expense_tracker.expense_loader",
   "expense_tracker.expense_repository",
-  "expense_tracker.greeting_repository",
 ]
 forbidden_modules = ["expense_tracker"]
 as_packages = false
