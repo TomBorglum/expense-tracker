@@ -66,14 +66,17 @@ test -f .pgdata/PG_VERSION ||
          --no-instructions --set=port="$PGPORT" --set=listen_addresses=127.0.0.1 \
          --set=unix_socket_directories=/tmp
 """
-# The entry point: after this, `poe dev` and `poe test` both work. Reads as
+# The whole cluster, ready to answer: `dev` depends on this, so a developer reaches for
+# it by hand only to have a database up without a server. Reads as
 # (probe || createdb) && apply-schema, which is left-associative, so the schema is
 # applied down either branch. The probe is psql's own exit code - it fails when the
 # database does not exist - so there is nothing to grep. schema.sql is idempotent, which
 # is what makes re-running this against a live cluster a no-op.
 #
-# Deliberately not a dep of `test`: coupling them would hide the property this design is
-# built around, that the HTTP suite needs no database at all.
+# Deliberately not a dep of `test`, which `dev` is the instructive contrast to: a dev
+# server that cannot reach a database answers 503 to everything, while the HTTP suite
+# needs no database at all - tests/conftest.py overrides both repository dependencies.
+# Chaining it onto `test` too would hide the property this design is built around.
 db-init.shell = """
 : "${PGPORT:?unset - run 'direnv allow'}"
 psql --tuples-only --output=/dev/null --command='SELECT 1' || createdb expense_tracker &&
@@ -103,7 +106,16 @@ db-stop.shell = "pg_ctl --pgdata=.pgdata --mode=fast --wait stop || exit 0"
 # and its stat reloader rglobs for *.py and stats every hit four times a second - which
 # here means walking .pixi/ and node_modules/ to find 1891 files when the only one that
 # can ever matter is src/expense_tracker/__init__.py.
-dev = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
+#
+# The db-init dep is what makes this the one command a backend developer needs: the three
+# cluster tasks behind it are idempotent, so a bare checkout gets an initdb and a running
+# server and every later run gets three no-ops. They run once, before uvicorn - the
+# reloader restarts the app subprocess, not poe - and a failure in one aborts before the
+# server binds. The cluster is left running afterwards: db-stop and db-reset own its
+# lifecycle, and stopping it here would pull it out from under whatever else is using it.
+# load-expenses is not in the chain; an empty expense table is a legitimate 200.
+dev.cmd = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
+dev.deps = ["db-init"]
 format = "ruff format"
 format-check = "ruff format --check"
 # Two linters, one gate: ruff over each file, then import-linter over the graph they

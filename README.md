@@ -68,18 +68,21 @@ database reachable at all, not just a convenience for bare shell commands. See
 ```sh
 cd expense-tracker          # direnv provisions the environment on entry
 pixi run frontend-install   # install frontend dependencies (pnpm)
-pixi run backend-db-init    # create, start and seed the local database
 ```
-
-`db-init` is idempotent, so it is also how you start the database again on any later
-day. Without it the API answers `503` and the page shows its error state.
 
 Then start both, in two terminals:
 
 ```sh
-pixi run backend-dev   # the REST API on http://localhost:8000
+pixi run backend-dev   # the local database, then the REST API on http://localhost:8000
 pixi run frontend-dev  # the SPA on http://localhost:5173
 ```
+
+`backend-dev` creates, starts and seeds the local database before it launches the API,
+and every part of that is idempotent, so it is the same one command on the first day and
+on any later one. The `backend-db-*` tasks drive the cluster on its own when you want
+that; see [Database](#database). Sample expenses are a separate, explicit step -
+`pixi run backend-load-expenses`, described under [Loading expenses](#loading-expenses) -
+because an empty table is a legitimate state the API answers `200` with `[]`.
 
 Visit http://localhost:5173 and you should see `Hello, World!`, fetched from
 `http://localhost:8000/api/greeting` - a genuine cross-origin request, which works
@@ -170,8 +173,11 @@ identical on every machine and on CI. Authentication is `trust`, which is accept
 public text, rebuildable at any moment from `backend/schema.sql`. Do not copy the
 `initdb` flags anywhere real.
 
-All five tasks are idempotent, and `db-init` depends on `db-start` depends on
-`db-create`, so `pixi run backend-db-init` is the only one you normally need.
+All five tasks are idempotent, and the chain is `dev` depends on `db-init` depends on
+`db-start` depends on `db-create` - so `pixi run backend-dev` brings the cluster up on
+its way to the API and none of the five is one you normally run by hand.
+`pixi run backend-db-init` is the one to reach for when you want the database up without
+a server: the `postgres`-marked tests need it, and `backend-load-expenses` does too.
 `db-reset` throws the cluster away - the cure if a test that edits the greeting row is
 killed before it can restore it.
 
@@ -460,12 +466,12 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 
 | Command | Delegates to | What it does |
 | --- | --- | --- |
-| `pixi run backend-db-init` | `poe db-init` | Create, start and seed the local database (the one you need) |
+| `pixi run backend-db-init` | `poe db-init` | Create, start and seed the local database, without a server in front of it |
 | `pixi run backend-db-create` | `poe db-create` | `initdb` a cluster into `backend/.pgdata/`, if there is not one |
 | `pixi run backend-db-start` | `poe db-start` | Start the cluster on `$PGHOST:$PGPORT`, if it is not running |
 | `pixi run backend-db-stop` | `poe db-stop` | Stop the cluster; succeeds if it is already stopped |
 | `pixi run backend-db-reset` | `poe db-reset` | Stop the cluster and delete `backend/.pgdata/` entirely |
-| `pixi run backend-dev` | `poe dev` | Run the API on uvicorn, port 8000 (with reloader) |
+| `pixi run backend-dev` | `poe dev` | Start the database if it is not up, then run the API on uvicorn, port 8000 (with reloader) |
 | `pixi run backend-test` | `poe test` | Run the test suite with coverage |
 | `pixi run backend-lint` | `poe lint` | Lint with ruff, then check the import graph with import-linter |
 | `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues (ruff only) |
@@ -597,8 +603,10 @@ dotenv_if_exists backend/.env
 **So `direnv allow` is a prerequisite, not a convenience.** Nothing else supplies the four
 names. `pixi run` reads no `.envrc` and `pixi.toml` declares no `[activation.env]`; poe
 declares no `envfile`. In a shell direnv has not blessed, the app raises a
-`ValidationError` naming the missing settings and `pixi run backend-db-init` aborts on its
-`${PGPORT:?}` guard - neither falls back to a default.
+`ValidationError` naming the missing settings and every task that reaches a server aborts
+on a `${PGPORT:?}` guard first - `backend-db-init` on its own, and `backend-dev` on the
+one in the `db-create` behind it, before uvicorn ever binds. Nothing falls back to a
+default.
 
 CI gets the same four names the same way: `setup-direnv` (v1.4.1 or newer) activates this
 `.envrc` and forwards the resulting environment to `$GITHUB_ENV` for the steps after it.

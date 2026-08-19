@@ -65,6 +65,14 @@ pixi forwarder. Nothing in `backend/pyproject.toml` needs `$POE_ROOT`. That is t
 only: the connection settings come from direnv, so the same invocation from outside the
 worktree resolves `.pgdata/` correctly and then aborts on the `${PGPORT:?}` guard.
 
+**`dev` depends on `db-init`**, so `pixi run backend-dev` is the single command that gets a
+backend developer a working API: the cluster chain behind it is idempotent, runs once
+before uvicorn, and leaves the cluster up afterwards. `load-expenses` is deliberately not
+in that chain - an empty `expense` table is a legitimate `200`, and putting the loader
+there would work around that invariant rather than honour it. `test` stays out of that
+chain, because "The HTTP suite never touches PostgreSQL" below is a property chaining
+`db-init` onto it would hide.
+
 **The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Never
 put a command body there; that is what would make the layer a place definitions hide.
 Both stacks also stay runnable on their own terms (`cd backend && poe test`,

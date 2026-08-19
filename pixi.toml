@@ -130,6 +130,8 @@ backend-db-init = { cmd = "poe db-init", cwd = "backend" }
 backend-db-reset = { cmd = "poe db-reset", cwd = "backend" }
 backend-db-start = { cmd = "poe db-start", cwd = "backend" }
 backend-db-stop = { cmd = "poe db-stop", cwd = "backend" }
+# Brings the local cluster up first, through the poe task's db-init dep - the five db
+# forwarders above stay for driving it on its own.
 backend-dev = { cmd = "poe dev", cwd = "backend" }
 backend-format = { cmd = "poe format", cwd = "backend" }
 backend-format-check = { cmd = "poe format-check", cwd = "backend" }
