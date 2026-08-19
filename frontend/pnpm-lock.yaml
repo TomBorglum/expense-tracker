@@ -96,6 +96,9 @@ importers:
       prettier:
         specifier: 3.9.6
         version: 3.9.6
+      tailwind-csstree:
+        specifier: 0.3.3
+        version: 0.3.3(@eslint/css@1.4.0)
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -1763,6 +1766,15 @@ packages:
   tagged-tag@1.0.0:
     resolution: {integrity: sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==}
     engines: {node: '>=20'}
+
+  tailwind-csstree@0.3.3:
+    resolution: {integrity: sha512-je9J5UYRsTJqAjYrIBMMlge8T/rreRd44pJxgG5Zx/zeo4kAC/liUKqzztRZrGlYRJLvIf2Cb1DVJMTXSzEShA==}
+    engines: {node: '>=18.18'}
+    peerDependencies:
+      '@eslint/css': '>=1.0.0'
+    peerDependenciesMeta:
+      '@eslint/css':
+        optional: true
 
   tailwindcss@4.3.3:
     resolution: {integrity: sha512-gOhV3P7ufE62QDGg1zVaTgCR+EtPv92k2nIhVcVKcLmxT1sUBsQGhnZj175j+MqRt4zLF7ic+sCYjfhxMxj7YQ==}
@@ -3691,6 +3703,10 @@ snapshots:
   symbol-tree@3.2.4: {}
 
   tagged-tag@1.0.0: {}
+
+  tailwind-csstree@0.3.3(@eslint/css@1.4.0):
+    optionalDependencies:
+      '@eslint/css': 1.4.0
 
   tailwindcss@4.3.3: {}
 

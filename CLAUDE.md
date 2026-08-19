@@ -234,7 +234,7 @@ Break one of these and CI goes red on an otherwise correct change.
   process refuses to start in both environments. It is about shipping the right thing.
   Pinned by no test - `pixi run -e prod` is the check, described in `README.md` under
   "Environments".
-- **Six things are declared twice. Change both halves together:**
+- **Seven things are declared twice. Change both halves together:**
   - the *payload shape and path* - `backend/src/expense_tracker/__init__.py` against
     `frontend/src/api/expenses.ts`, with nothing checking the agreement. Every expense
     field is a string on the wire, `amount` included, and the frontend's guard rejects a
@@ -251,7 +251,11 @@ Break one of these and CI goes red on an otherwise correct change.
   - the `frontend/src/main.tsx` coverage exclusion - `frontend/vite.config.ts` and
     `sonar-project.properties`;
   - `VITE_API_BASE_URL` - set in `frontend/.env`, typed in
-    `frontend/src/vite-env.d.ts`.
+    `frontend/src/vite-env.d.ts`;
+  - daisyUI's `@plugin` descriptors - the block in `frontend/src/styles/app.css`
+    against the `plugin` override in `frontend/eslint.config.ts`, because
+    `tailwind-csstree` models core Tailwind's blockless `@plugin` and rejects any
+    descriptor this repo does not name. See the CSS bullet under "Quality gates".
 - **The theme follows the OS, and nothing can override it.** daisyUI is enabled by the
   single `@plugin "daisyui"` block in `frontend/src/styles/app.css`, naming two themes:
   `nord --default`, bound at `:where(:root)`, and `dim --prefersdark`, bound at
@@ -330,14 +334,26 @@ Break one of these and CI goes red on an otherwise correct change.
   to the eslint config.
 - **CSS is linted by eslint too, not by a second tool.** `@eslint/css` adds a
   `**/*.css` block to the same config and rides the same `frontend-lint` task, so there
-  is no stylelint, no third manifest layer and no new pixi task. Two things in that
-  block are load-bearing and neither is a preference: `tolerant: true`, because
-  css-tree's dedicated `@import` parser rejects Tailwind's `source(none)` and would turn
-  the whole file into one parse error, and the `customSyntax.atrules` map, which
-  **teaches** the parser Tailwind's at-rules instead of exempting them - so `@sourse`
-  and a misspelled `@plugin` descriptor still fail. A Tailwind at-rule this repo starts
-  using has to be added to that map. `css/no-duplicate-imports` is off because it
-  throws on the tolerant parse, and that is the only suppression.
+  is no stylelint, no third manifest layer and no new pixi task. The block carries no
+  rule suppressions, and Tailwind's syntax is **not** hand-written here: it comes from
+  `tailwind-csstree`'s `tailwind4`, the extension `@eslint/css` points at for this, so a
+  Tailwind at-rule this repo starts using needs no config change. Nothing is exempted -
+  `@sourse` and a misspelled `@plugin` descriptor both still fail.
+  Two things in that block are load-bearing and neither is a preference:
+  - **The `@plugin` `descriptors` override is the one local addition.** daisyUI's
+    `@plugin` takes a block; core Tailwind's does not, so `tailwind4` gives it no
+    descriptors and css-tree then rejects *every* declaration inside one. It is the
+    seventh pair in "declared twice" above. Drop it once
+    [tailwind-csstree#63](https://github.com/humanwhocodes/tailwind-csstree/issues/63)
+    lands.
+  - **`tolerant: true` stays**, for a subtler reason than an unparseable file.
+    `tailwind4` reads `source(none)` by trying `<string>` and falling back to `<ident>`,
+    and css-tree reports that recovered first attempt through `onParseError` regardless;
+    `@eslint/css` promotes every such call to a fatal parse error unless it is
+    tolerating them. The prelude itself parses correctly, which is what lets
+    `css/no-duplicate-imports` read it - under the old hand-written map it threw on a
+    `Raw` prelude and had to be switched off. The cost is that unbalanced braces go
+    unreported, because that check is skipped under `tolerant` too.
 - **Neither stack has a warn tier.** `recommended` sets `failOnWarnings`, and the
   frontend `lint` script passes `--max-warnings 0`; a warning fails the build like an
   error. Without them roughly 45 frontend rules would be advisory, including the XSS,

@@ -10,6 +10,7 @@ import perfectionist from "eslint-plugin-perfectionist";
 import reactHooks from "eslint-plugin-react-hooks";
 import { reactRefresh } from "eslint-plugin-react-refresh";
 import { defineConfig, globalIgnores } from "eslint/config";
+import { tailwind4 } from "tailwind-csstree";
 import tseslint from "typescript-eslint";
 
 // Authored as .ts (loaded through the pinned jiti) and listed in tsconfig.node.json,
@@ -123,34 +124,30 @@ export default defineConfig(
     language: "css/css",
     extends: [css.configs.recommended],
     languageOptions: {
-      // Required, not a preference. css-tree parses an @import prelude with a dedicated
-      // parser that rejects Tailwind's `source(none)` argument outright, and a
-      // customSyntax override cannot reach it - the whole file then reports as one
-      // parse error and no rule runs at all.
+      // Required, not a preference. tailwind-csstree parses `source(none)` by trying
+      // <string> and falling back to <ident>, and css-tree reports the recovered
+      // first attempt through onParseError anyway; @eslint/css turns every one of
+      // those into a fatal parse error unless it is tolerating them. The prelude
+      // itself comes out correct, which is why css/no-duplicate-imports reads it.
       tolerant: true,
-      // Teaching the parser Tailwind's at-rules rather than exempting them: an unknown
-      // name still fails, so `@sourse` and a misspelled `themes:` descriptor are both
-      // caught. Listed here are the at-rules this repo may use, not every one Tailwind
-      // defines - an unlisted one fails the gate until it is added, which is the point.
-      customSyntax: {
-        atrules: {
-          apply: { prelude: "<any-value>" },
-          "custom-variant": { prelude: "<any-value>" },
-          plugin: { prelude: "<string>", descriptors: { themes: "<any-value>" } },
-          reference: { prelude: "<string>" },
-          source: { prelude: "<string>" },
-          theme: { descriptors: {} },
-          utility: { prelude: "<ident>" },
-          variant: { prelude: "<any-value>" },
-        },
+      // The parameter is not inferred: eslint's `defineConfig` resolves
+      // languageOptions per language, and this block's language is named as a string.
+      customSyntax: (prev: Parameters<typeof tailwind4>[0]) => {
+        const tailwind = tailwind4(prev);
+        return {
+          ...tailwind,
+          atrules: {
+            ...tailwind.atrules,
+            // daisyUI's @plugin takes a block; core Tailwind's does not, so
+            // tailwind-csstree gives it no descriptors and css-tree rejects every
+            // declaration inside one. https://github.com/humanwhocodes/tailwind-csstree/issues/63
+            plugin: {
+              ...tailwind.atrules.plugin,
+              descriptors: { themes: "<any-value>" },
+            },
+          },
+        };
       },
-    },
-    rules: {
-      // Off because it crashes, not because it is unwanted: the rule reads the @import
-      // prelude assuming a node the tolerant parse above does not produce, and throws a
-      // TypeError on `@import "tailwindcss" source(none)`. One @import exists here, so
-      // there is nothing for it to find. Reinstate it if @eslint/css fixes the crash.
-      "css/no-duplicate-imports": "off",
     },
   },
 
