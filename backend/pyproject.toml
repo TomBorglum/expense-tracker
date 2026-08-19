@@ -91,9 +91,19 @@ db-reset.deps = ["db-stop"]
 # `pg_ctl status` exits 3 when nothing is running and 0 when something is, which is the
 # whole idempotency check. It also sees through a stale postmaster.pid, so a cluster left
 # behind by a hard reboot recovers by re-running this.
+#
+# On a failed start pg_ctl says only "Examine the log output.", so the third arm examines
+# it: `tail -c +` from the size measured beforehand prints the bytes this attempt appended
+# and no earlier run's, which is what keeps a stale "ready to accept connections" from
+# appearing under a failure. The usual reason is a port another cluster already holds.
+# The `test -f` guard is for the first start of a fresh cluster, which has no log yet -
+# a bare redirection would have the shell itself report the missing file.
 db-start.shell = """
+size=0
+test -f .pgdata/server.log && size=$(wc -c < .pgdata/server.log)
 pg_ctl --pgdata=.pgdata status ||
-  pg_ctl --pgdata=.pgdata --log=.pgdata/server.log --wait start
+  pg_ctl --pgdata=.pgdata --log=.pgdata/server.log --wait start ||
+  { tail -c +$((size + 1)) .pgdata/server.log >&2; exit 1; }
 """
 db-start.deps = ["db-create"]
 # Tolerant of an already-stopped cluster, so it is safe to run blind and safe to chain.
