@@ -49,13 +49,22 @@
     // agrees with - "Unknown at rule" on @source and @plugin, plus a
     // "semi-colon expected" / "{ expected" pair on `@import "tailwindcss"
     // source(none)`. Only the first three are lint rules css.lint.unknownAtRules could
-    // silence; the other two are parse errors no setting reaches. Nothing is lost -
-    // that file is the repo's only stylesheet and holds no ordinary CSS - and "..."
-    // leaves Zed's remaining CSS servers, tailwindcss-language-server included, in
-    // place.
+    // silence; the other two are parse errors no setting reaches.
+    //
+    // tailwindcss-intellisense-css is what replaces it rather than merely doing
+    // without: same standard CSS IntelliSense, but Tailwind-aware, so the at-rules
+    // above are understood instead of flagged. It has to be named explicitly - Zed
+    // registers it as an AVAILABLE adapter, so "..." does not pull it in - and it is
+    // not tailwindcss-language-server, which stays on for class-name completion in
+    // TSX. The two are separate servers shipped by one package; see the pins below.
     "CSS": {
       "tab_size": 2,
-      "language_servers": ["eslint", "!vscode-css-language-server", "..."]
+      "language_servers": [
+        "eslint",
+        "tailwindcss-intellisense-css",
+        "!vscode-css-language-server",
+        "..."
+      ]
     },
     "HTML": { "tab_size": 2 },
     "JSON": { "tab_size": 2 },
@@ -105,10 +114,22 @@
         "workingDirectories": ["frontend"]
       }
     },
+    // The two servers below are two binaries out of the ONE package pinned in
+    // frontend/package.json (@tailwindcss/language-server). Each adapter installs its
+    // own @latest copy when unpinned, so each needs its own entry.
+    "tailwindcss-intellisense-css": {
+      "binary": {
+        // Drives the "CSS" block above. Added in Zed 1.16.1; on an older Zed the
+        // server name resolves to nothing and CSS falls back to no server at all.
+        "path": "frontend/node_modules/.bin/css-language-server",
+        "arguments": ["--stdio"],
+        "ignore_system_version": true
+      }
+    },
     "tailwindcss-language-server": {
       "binary": {
-        // Pinned by frontend/package.json. Without this, Zed installs
-        // @tailwindcss/language-server@latest.
+        // Class-name completion in TSX. Pinned by frontend/package.json; without
+        // this, Zed installs @tailwindcss/language-server@latest.
         "path": "frontend/node_modules/.bin/tailwindcss-language-server",
         "arguments": ["--stdio"],
         "ignore_system_version": true

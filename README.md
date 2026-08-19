@@ -440,15 +440,23 @@ To confirm the declared pins match what is installed:
 cd frontend && pnpm ls @tailwindcss/language-server @vtsls/language-server typescript tailwindcss prettier eslint
 ```
 
-Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`, `10.8.0`. One nested entry is
+Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`, `10.8.1`. One nested entry is
 expected and is not drift: `@vtsls/language-server` bundles its own `typescript@5.9.3`,
 which the `tsdk` setting in `.zed/settings.json` redirects to the pinned top-level copy.
 
 To confirm Zed is using them, run this while Zed is open:
 
 ```sh
-ps -eo pid,args | grep -E '[v]tsls|[t]ailwindcss-language-server|[e]slintServer'
+ps -eo pid,args | grep -E '[v]tsls|[c]ss-language-server|[e]slintServer'
 ```
+
+`@tailwindcss/language-server` ships **two** binaries and this repo runs both, so that
+middle pattern is deliberately loose enough to match each:
+`tailwindcss-language-server` completes class names in TSX, and `css-language-server`
+is the Tailwind-aware CSS server that replaces `vscode-css-language-server` in the
+`CSS` block. The second one needs Zed **1.16.1 or newer**, which is where the
+`tailwindcss-intellisense-css` adapter was added; on an older Zed the name resolves to
+nothing and `.css` files get no language server at all.
 
 Paths under `frontend/node_modules/` mean the pins took effect; paths under
 `~/.local/share/zed/` mean they did not - usually a missing `node_modules` or no `node`
