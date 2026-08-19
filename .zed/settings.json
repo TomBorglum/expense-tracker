@@ -117,6 +117,14 @@
     // The two servers below are two binaries out of the ONE package pinned in
     // frontend/package.json (@tailwindcss/language-server). Each adapter installs its
     // own @latest copy when unpinned, so each needs its own entry.
+    // Zed underlines this key as "Property tailwindcss-intellisense-css is not
+    // allowed". Ignore it - the setting is applied. It is a Zed schema bug, not a bad
+    // name: json_schema_store builds the PROJECT settings schema from all_lsp_adapters()
+    // alone, while the USER settings schema chains available_lsp_adapter_names() onto it
+    // (zed#46766). This server is registered only as an available adapter, so it is
+    // missing from the first list and present in the second - the identical key in your
+    // own settings.json draws no warning. tailwindcss-language-server below escapes it
+    // by also being registered against languages. Confirm with `ps`, per README.
     "tailwindcss-intellisense-css": {
       "binary": {
         // Drives the "CSS" block above. Added in Zed 1.16.1; on an older Zed the

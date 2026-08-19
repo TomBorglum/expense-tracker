@@ -465,10 +465,16 @@ on PATH for Zed's remote server. `eslintServer.js` is the exception and always r
 pinned; check it by putting `const x: any = 1;` in a `.tsx` file and confirming
 `@typescript-eslint/no-explicit-any` fires.
 
-Two things that look like faults but are not: over a remote/WSL backend, Server Info
+Three things that look like faults but are not. Over a remote/WSL backend, Server Info
 reports `Binary: Unknown` and `Version: Unknown` for `vtsls` however healthy it is, and
 the per-server Logs tab is usually empty because most servers never send
-`window/logMessage`. Use the `ps` command above instead. If your editor ever disagrees
+`window/logMessage`. Use the `ps` command above instead. Zed also underlines
+`tailwindcss-intellisense-css` in `.zed/settings.json` as **"Property
+tailwindcss-intellisense-css is not allowed"** - the setting is applied regardless, and
+the same key in your own `settings.json` draws no warning at all. It is an upstream
+schema bug: Zed builds the *project* settings schema from its language-attached servers
+only, where the *user* settings schema also includes opt-in ones (zed#46766), and this
+server is opt-in. `ps` is the check that settles it. If your editor ever disagrees
 with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the authority.
 
 ## Development tasks
