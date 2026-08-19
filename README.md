@@ -286,11 +286,16 @@ A React 19 SPA built by vite and styled with Tailwind CSS v4, configured in CSS 
 `frontend/src/styles/app.css` - there is no `tailwind.config.js`.
 
 The palette and the component classes come from [daisyUI](https://daisyui.com), enabled
-as a `@plugin` in that same stylesheet. One theme is named, `night`, and `--default`
-applies it at `:root`, so the app is dark and there is nothing to switch: no
-`data-theme` attribute, no theme provider, and no `dark:` variant in `src/`. Colours are
-written by role - `bg-base-100`, `text-base-content`, `alert-error` - which is what keeps
-a theme swap a one-word edit.
+as a `@plugin` in that same stylesheet. Two themes are named and the operating system
+picks between them: `nord --default` is the baseline, and `dim --prefersdark` takes over
+under `prefers-color-scheme: dark`. There is no `data-theme` attribute, no theme
+provider, no toggle, and no `dark:` variant in `src/` - colours are written by role
+(`bg-base-100`, `text-base-content`, `alert-error`) and the two themes repoint them.
+
+The pair is chosen to match: both sit in the same desaturated blue-grey family (base hues
+260.7 and 264.1), and both are soft - `dim` is the lightest dark theme daisyUI ships, and
+`nord` is one of the few light ones that stops short of pure white. Swapping either half
+means checking that still holds.
 
 `pixi run frontend-build` writes to `frontend/dist/`, vite's default. It is **gitignored**
 and nothing in this repo consumes it. CI runs the build as a gate because tsc and

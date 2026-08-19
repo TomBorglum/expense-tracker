@@ -10,10 +10,13 @@
 @source "../../index.html";
 @source "../";
 
-/* daisyUI supplies the palette and the component classes. One theme, always on:
-   --default applies it at :root, so there is no data-theme attribute to set and no
-   dark: variant left anywhere in src/. The theme declares color-scheme: dark itself,
-   which is what makes the scrollbar and native controls match the page. */
+/* daisyUI supplies the palette and the component classes. Two themes and no switch:
+   --default binds nord at :where(:root), --prefersdark binds dim at :root:not([data-theme])
+   inside @media (prefers-color-scheme: dark), so the OS setting picks. Each theme
+   declares its own color-scheme, which is what makes the scrollbar follow. No
+   data-theme attribute, no toggle, and no dark: variant anywhere in src/. */
 @plugin "daisyui" {
-  themes: nord --default, dim --prefersdark;
+  themes:
+    nord --default,
+    dim --prefersdark;
 }

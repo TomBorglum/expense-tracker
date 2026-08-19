@@ -252,17 +252,22 @@ Break one of these and CI goes red on an otherwise correct change.
     `sonar-project.properties`;
   - `VITE_API_BASE_URL` - set in `frontend/.env`, typed in
     `frontend/src/vite-env.d.ts`.
-- **One theme, and it is dark.** daisyUI is enabled by the single `@plugin "daisyui"`
-  block in `frontend/src/styles/app.css`, naming one theme - `night --default`, which
-  applies it at `:root`. So there is no `data-theme` attribute, no theme provider, no
-  `@custom-variant dark`, and no `dark:` variant anywhere in `src/`. The theme declares
-  its own `color-scheme: dark` but paints nothing, so the surface is `bg-base-200` on
-  `<body>` in `frontend/index.html` - a body background is what propagates to the canvas
-  beyond the app shell, and moving it onto a `<div>` is what leaves an unpainted band
-  below short content. Colours are referenced by role - `bg-base-100`, `bg-base-200`,
-  `text-base-content`, `alert-error` - and a hard-coded shade like `slate-700` is what
-  would stop a theme swap being a one-word edit. Enabling a second theme means also
-  deciding how it gets selected, which nothing here does.
+- **The theme follows the OS, and nothing can override it.** daisyUI is enabled by the
+  single `@plugin "daisyui"` block in `frontend/src/styles/app.css`, naming two themes:
+  `nord --default`, bound at `:where(:root)`, and `dim --prefersdark`, bound at
+  `:root:not([data-theme])` inside `@media (prefers-color-scheme: dark)`. There is no
+  `data-theme` attribute, no theme provider, no `@custom-variant dark`, and no `dark:`
+  variant anywhere in `src/` - the pair is the whole mechanism, and a user-facing toggle
+  would be a feature on top of it, not a config change. A theme paints nothing on its
+  own, so the surface is `bg-base-200 text-base-content` on `<body>` in
+  `frontend/index.html`: a body background is what propagates to the canvas beyond the
+  app shell, and moving it onto a `<div>` is what leaves an unpainted band below short
+  content. **Every colour is referenced by role** - `bg-base-100`, `bg-base-200`,
+  `text-base-content`, `alert-error` - because a hard-coded shade like `slate-700` is not
+  merely awkward with two themes, it is wrong in one of them. jsdom evaluates no CSS, so
+  no test covers either half; both are checked by eye, and Chromium's
+  `prefers-color-scheme` emulation under *Rendering* is how you reach the one your OS is
+  not set to.
 - **The API origin lives in bare `frontend/.env`, not `.env.development`.** vite loads
   `.env` in every mode, including the `test` mode vitest runs in, where MSW binds its
   handlers to the URL built from it. `frontend/vite.config.ts` also pins `envDir` to
