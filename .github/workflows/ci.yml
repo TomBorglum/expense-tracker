@@ -31,8 +31,14 @@ jobs:
       # development. `use pixi` exposes pixi on $GITHUB_PATH, and the action forwards the
       # rest of the resulting environment to $GITHUB_ENV, which is how the four PG* names
       # `dotenv_if_exists` loads reach every step below. v1.4.1 is the release that added
-      # that forwarding; nothing else here supplies them.
-      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@0139912378b5354e1e219ac99f7c5b381948695b # v1.4.1
+      # that forwarding, so the pin may move forward but never below it; nothing else
+      # here supplies them.
+      #
+      # v1.4.4 also stopped installing direnv from the runner's apt repos, which is what
+      # hung this job for up to 37 minutes on 2026-08-19 when azure.archive.ubuntu.com
+      # degraded. It now fetches a version-pinned release binary and checks it against a
+      # recorded sha256, so the job no longer depends on that mirror at all.
+      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@57a8f1298e33b3dd5c5c4b25df01f9144d9a2f48 # v1.4.4
       # Every step below calls pixi, which forwards to the stack that owns the command
       # (poe in backend/pyproject.toml, pnpm scripts in frontend/package.json). CI knows
       # one entry point, not two.
