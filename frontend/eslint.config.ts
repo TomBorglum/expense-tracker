@@ -1,4 +1,5 @@
 import eslintReact from "@eslint-react/eslint-plugin";
+import css from "@eslint/css";
 import js from "@eslint/js";
 import vitest from "@vitest/eslint-plugin";
 // The /flat entrypoint is the same rule set as the bare import, plus a config `name`,
@@ -109,6 +110,47 @@ export default defineConfig(
         },
       ],
       "perfectionist/sort-named-imports": "error",
+    },
+  },
+
+  // CSS. src/styles/app.css is the repo's only stylesheet and its whole content is
+  // Tailwind at-rules, which is exactly why it needs a gate: nothing else validates it.
+  // prettier reformats CSS without understanding it, and tsc and the rules above never
+  // see the file.
+  {
+    files: ["**/*.css"],
+    plugins: { css },
+    language: "css/css",
+    extends: [css.configs.recommended],
+    languageOptions: {
+      // Required, not a preference. css-tree parses an @import prelude with a dedicated
+      // parser that rejects Tailwind's `source(none)` argument outright, and a
+      // customSyntax override cannot reach it - the whole file then reports as one
+      // parse error and no rule runs at all.
+      tolerant: true,
+      // Teaching the parser Tailwind's at-rules rather than exempting them: an unknown
+      // name still fails, so `@sourse` and a misspelled `themes:` descriptor are both
+      // caught. Listed here are the at-rules this repo may use, not every one Tailwind
+      // defines - an unlisted one fails the gate until it is added, which is the point.
+      customSyntax: {
+        atrules: {
+          apply: { prelude: "<any-value>" },
+          "custom-variant": { prelude: "<any-value>" },
+          plugin: { prelude: "<string>", descriptors: { themes: "<any-value>" } },
+          reference: { prelude: "<string>" },
+          source: { prelude: "<string>" },
+          theme: { descriptors: {} },
+          utility: { prelude: "<ident>" },
+          variant: { prelude: "<any-value>" },
+        },
+      },
+    },
+    rules: {
+      // Off because it crashes, not because it is unwanted: the rule reads the @import
+      // prelude assuming a node the tolerant parse above does not produce, and throws a
+      // TypeError on `@import "tailwindcss" source(none)`. One @import exists here, so
+      // there is nothing for it to find. Reinstate it if @eslint/css fixes the crash.
+      "css/no-duplicate-imports": "off",
     },
   },
 

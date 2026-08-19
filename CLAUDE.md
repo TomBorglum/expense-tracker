@@ -328,6 +328,16 @@ Break one of these and CI goes red on an otherwise correct change.
   `frontend/eslint.config.ts`. `eslint-config-prettier` is applied last, so **the
   linter owns correctness and prettier owns formatting** - never add a formatting rule
   to the eslint config.
+- **CSS is linted by eslint too, not by a second tool.** `@eslint/css` adds a
+  `**/*.css` block to the same config and rides the same `frontend-lint` task, so there
+  is no stylelint, no third manifest layer and no new pixi task. Two things in that
+  block are load-bearing and neither is a preference: `tolerant: true`, because
+  css-tree's dedicated `@import` parser rejects Tailwind's `source(none)` and would turn
+  the whole file into one parse error, and the `customSyntax.atrules` map, which
+  **teaches** the parser Tailwind's at-rules instead of exempting them - so `@sourse`
+  and a misspelled `@plugin` descriptor still fail. A Tailwind at-rule this repo starts
+  using has to be added to that map. `css/no-duplicate-imports` is off because it
+  throws on the tolerant parse, and that is the only suppression.
 - **Neither stack has a warn tier.** `recommended` sets `failOnWarnings`, and the
   frontend `lint` script passes `--max-warnings 0`; a warning fails the build like an
   error. Without them roughly 45 frontend rules would be advisory, including the XSS,

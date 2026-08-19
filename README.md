@@ -486,7 +486,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run frontend-dev` | `pnpm run dev` | Run vite's dev server on port 5173 (hot reload) |
 | `pixi run frontend-build` | `pnpm run build` | Build the frontend into `frontend/dist/` |
 | `pixi run frontend-typecheck` | `pnpm run typecheck` | Type-check the frontend with tsc |
-| `pixi run frontend-lint` | `pnpm run lint` | Lint the frontend with eslint (type-aware, `--max-warnings 0`) |
+| `pixi run frontend-lint` | `pnpm run lint` | Lint the frontend with eslint (type-aware, plus CSS, `--max-warnings 0`) |
 | `pixi run frontend-lint-fix` | `pnpm run lint-fix` | Auto-fix frontend lint issues |
 | `pixi run frontend-test` | `pnpm run test` | Run the frontend tests (vitest) with coverage |
 | `pixi run frontend-format` | `pnpm run format` | Format the frontend with prettier |
