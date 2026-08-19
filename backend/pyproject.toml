@@ -26,9 +26,9 @@ packages = ["src/expense_tracker"]
 # the wrong interpreter - poe itself only exists inside the pixi environment, so if `poe`
 # resolves at all, that environment's pytest and ruff are already first on PATH.
 executor = "simple"
-# No `envfile`: PGHOST, PGPORT, PGUSER and PGDATABASE reach a task from the environment
-# direnv already built, which is what lets the db-* tasks omit the --host/--port/--username
-# flags.
+# No `envfile`: PGHOST, PGPORT, PGUSER, PGDATABASE and UVICORN_PORT reach a task from the
+# environment direnv already built, which is what lets the db-* tasks omit the
+# --host/--port/--username flags and `dev` omit --port.
 
 # Alphabetical, matching the forwarder table in pixi.toml and what `poe` with no task
 # prints. Ordering by workflow instead would leave a new task no obviously right place.
@@ -99,9 +99,11 @@ db-start.deps = ["db-create"]
 # Tolerant of an already-stopped cluster, so it is safe to run blind and safe to chain.
 db-stop.shell = "pg_ctl --pgdata=.pgdata --mode=fast --wait stop || exit 0"
 
-# The REST API with the reloader, on uvicorn's default port 8000. It serves JSON and
-# nothing else - the page comes from `pixi run frontend-dev`, its counterpart on vite's
-# own port, and CORS is what lets the two talk. --factory lets create_app be the target.
+# The REST API with the reloader, on the port UVICORN_PORT names in backend/.env. No
+# --port below and none needed: uvicorn's own CLI reads that name, the way psql reads
+# PGHOST. It serves JSON and nothing else - the page comes from `pixi run frontend-dev`,
+# its counterpart on vite's own port, and CORS is what lets the two talk. --factory lets
+# create_app be the target.
 # --reload-dir is not optional: without it uvicorn watches the whole working directory,
 # and its stat reloader rglobs for *.py and stats every hit four times a second - which
 # here means walking .pixi/ and node_modules/ to find 1891 files when the only one that

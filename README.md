@@ -57,11 +57,11 @@ Neither directive is built into direnv. Both come from the direnv library instal
 action CI uses to activate this same `.envrc`. Without that library, `direnv allow`
 reports the directives as unknown commands.
 
-Its last two lines are `dotenv_if_exists`, which put the database connection settings into
-the environment. Those are stock direnv, and they are the **only** thing that puts them
-there - `pixi run` and poe both supply nothing - so `direnv allow` is what makes the
-database reachable at all, not just a convenience for bare shell commands. See
-[Configuration](#configuration).
+Its last line is `dotenv_if_exists`, which puts the database connection settings and the
+port the API serves on into the environment. That is stock direnv, and it is the **only**
+thing that puts them there - `pixi run` and poe both supply nothing - so `direnv allow` is
+what makes the database reachable at all, not just a convenience for bare shell commands.
+See [Configuration](#configuration).
 
 ## Quickstart
 
@@ -471,7 +471,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run backend-db-start` | `poe db-start` | Start the cluster on `$PGHOST:$PGPORT`, if it is not running |
 | `pixi run backend-db-stop` | `poe db-stop` | Stop the cluster; succeeds if it is already stopped |
 | `pixi run backend-db-reset` | `poe db-reset` | Stop the cluster and delete `backend/.pgdata/` entirely |
-| `pixi run backend-dev` | `poe dev` | Start the database if it is not up, then run the API on uvicorn, port 8000 (with reloader) |
+| `pixi run backend-dev` | `poe dev` | Start the database if it is not up, then run the API on uvicorn, port `$UVICORN_PORT` (with reloader) |
 | `pixi run backend-test` | `poe test` | Run the test suite with coverage |
 | `pixi run backend-lint` | `poe lint` | Lint with ruff, then check the import graph with import-linter |
 | `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues (ruff only) |
@@ -581,15 +581,23 @@ Nothing in CI builds `prod` yet; it is verified by hand until there is an image 
 
 ## Configuration
 
-Where the local database lives is written down once, in **`backend/.env`**, as the four
-facts `psql` and `createdb` already read:
+Where this checkout's backend listens is written down once, in **`backend/.env`**: the
+four facts `psql` and `createdb` already read, and the port `uvicorn` already reads.
 
 ```
 PGHOST=127.0.0.1
 PGPORT=5433
 PGUSER=expense_tracker
 PGDATABASE=expense_tracker
+UVICORN_PORT=8000
 ```
+
+Every one of them is a name the tool itself looks for, which is why no task passes
+`--host`, `--port` or `--username`. `UVICORN_PORT` is the API's half of that: uvicorn's
+CLI is a click command carrying `auto_envvar_prefix="UVICORN"`, so it resolves `--port`
+from the environment on its own, and `poe dev` stays the same command it was. That is
+what lets a second checkout run its API beside the first the same way it runs its cluster
+beside the first - by editing this one file.
 
 **The application never opens that file.** `config.py` reads the environment and nothing
 else - no path is resolved in the package, and none needs to be. Loading a dotenv file is
@@ -600,7 +608,7 @@ the job of whatever *launches* the process, and exactly one thing does it here:
 dotenv_if_exists backend/.env
 ```
 
-**So `direnv allow` is a prerequisite, not a convenience.** Nothing else supplies the four
+**So `direnv allow` is a prerequisite, not a convenience.** Nothing else supplies these
 names. `pixi run` reads no `.envrc` and `pixi.toml` declares no `[activation.env]`; poe
 declares no `envfile`. In a shell direnv has not blessed, the app raises a
 `ValidationError` naming the missing settings and every task that reaches a server aborts
@@ -608,7 +616,7 @@ on a `${PGPORT:?}` guard first - `backend-db-init` on its own, and `backend-dev`
 one in the `db-create` behind it, before uvicorn ever binds. Nothing falls back to a
 default.
 
-CI gets the same four names the same way: `setup-direnv` (v1.4.1 or newer) activates this
+CI gets the same names the same way: `setup-direnv` (v1.4.1 or newer) activates this
 `.envrc` and forwards the resulting environment to `$GITHUB_ENV` for the steps after it.
 That makes the action's pin in `.github/workflows/ci.yml` load-bearing - it is the first
 thing to check if CI ever fails to find `PGPORT`.
@@ -651,16 +659,17 @@ environment, the process refuses to start - naming every missing one - rather th
 quietly dialling its own loopback. Nothing on disk can answer for them, in any
 environment, because nothing on disk is consulted.
 
-To move the cluster off a port something else has taken, edit `PGPORT` in
-**`backend/.env`** itself. There is no `.env.local` layer on the backend side - one file,
-loaded once - and a dotenv overwrites the ambient environment, so `export PGPORT=...` in
-your shell is not an override. The port is baked into the cluster at `initdb` time, so
-follow the edit with `pixi run backend-db-reset && pixi run backend-db-init`.
+To move either port off something else has taken, edit **`backend/.env`** itself. There
+is no `.env.local` layer on the backend side - one file, loaded once - and a dotenv
+overwrites the ambient environment, so `export PGPORT=...` in your shell is not an
+override. `PGPORT` is baked into the cluster at `initdb` time, so follow that edit with
+`pixi run backend-db-reset && pixi run backend-db-init`; `UVICORN_PORT` is baked into
+nothing and takes effect on the next `pixi run backend-dev`.
 
 That leaves the file as a committed default you edit in place, which shows up as a dirty
-working tree. Deliberate: the port is one of the four facts this file exists to state
-once, and a machine that needs a different one has genuinely changed a shared default
-rather than set a private preference.
+working tree. Deliberate: a port is one of the facts this file exists to state once, and
+a machine that needs a different one has genuinely changed a shared default rather than
+set a private preference.
 
 Worth knowing: `.gitignore` ignores **every** `.env` variant and names back only the two
 committed defaults, so a `backend/.env.production` you create is untracked by default
