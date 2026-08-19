@@ -185,7 +185,7 @@ Break one of these and CI goes red on an otherwise correct change.
   this rule exists to prevent: a wheel-installed package has no project directory to
   derive a path from, so the code either finds nothing or finds a developer's settings,
   depending on how it happened to be installed. **direnv is the one launcher that puts
-  the four names there**, through the single `dotenv_if_exists` line in `.envrc`. There
+  those names there**, through the single `dotenv_if_exists` line in `.envrc`. There
   is **no `.env.local` layer** - one file, loaded once - and a dotenv **overwrites** the
   ambient environment, so `export PGPORT=...` is not an override; moving the cluster off
   a taken port means editing `backend/.env` and rebuilding. `[tool.poe]` declares **no
@@ -197,7 +197,7 @@ Break one of these and CI goes red on an otherwise correct change.
   **CI is a cross-repo dependency, and that is the price of the single loader.**
   `setup-direnv` activates `.envrc` and then forwards the resulting environment to
   `$GITHUB_ENV`; that forwarding arrived in **v1.4.1**, and the pin in `ci.yml` is what
-  every later `pixi run` depends on for the four names. A `PGPORT` failure in CI means
+  every later `pixi run` depends on for those names. A `PGPORT` failure in CI means
   checking that pin first, before anything in this repo.
 - **`backend/.env` is the single source of the connection settings.** `PGHOST`, `PGPORT`,
   `PGUSER` and `PGDATABASE` live there and nowhere else - `pixi.toml` declares no
@@ -207,6 +207,16 @@ Break one of these and CI goes red on an otherwise correct change.
   containing `@`, `:` or `/`. `DATABASE_URL` overrides the four wholesale. Do not
   reintroduce a literal DSN in any manifest, and do not go back to f-string
   interpolation.
+- **The dev server's port is `UVICORN_PORT` in `backend/.env`, and `dev` passes no
+  `--port`.** uvicorn's CLI is a click command carrying
+  `context_settings={"auto_envvar_prefix": "UVICORN"}`, so uvicorn itself resolves
+  `--port` from that name - the same shape as `PGHOST` and `psql`, which is the whole
+  reason the port belongs in that file rather than in a flag. It is not a connection
+  setting: `DatabaseSettings` never sees it and `DATABASE_URL` has nothing to do with
+  it. It also takes **no `${UVICORN_PORT:?}` guard**, unlike the db tasks: a lost name
+  makes uvicorn *bind* 8000 rather than silently *reach* the wrong server, and `dev`
+  aborts on the `${PGPORT:?}` in the `db-init` behind it before uvicorn is ever
+  reached.
 - **Nothing here falls back to port 5432.** `config.py` refuses to start without its
   settings (`_needs_a_source`), and `db-create` and `db-init` open with a
   `: "${PGPORT:?...}"` guard for the same reason: initdb, psql and createdb each default

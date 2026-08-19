@@ -93,7 +93,7 @@ postgresql = "==18.4"
 
 # No [activation.env] here, and deliberately none: where the local cluster lives is
 # declared once, in backend/.env, which poe exports into every task and config.py reads
-# directly. A block here would be a second source for the same four facts - and a root
+# directly. A block here would be a second source for the same facts - and a root
 # one would belong to the default feature, folding into prod too and handing a deployment
 # a DSN pointing at its own loopback.
 
