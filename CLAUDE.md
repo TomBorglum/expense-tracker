@@ -2,6 +2,17 @@
 
 Guidance for Claude Code when working in this repository.
 
+## Rule files
+
+Two path-scoped rule files carry the stack-specific invariants. They load themselves the
+moment you read a file they cover, which is before you can edit one:
+
+- `.claude/rules/backend.md` - `backend/**` and `pixi.toml`
+- `.claude/rules/frontend.md` - `frontend/**`
+
+**Do not open them speculatively.** Reading one here spends the context that split
+exists to save, and gets you nothing you would not have been handed anyway.
+
 ## Branch and merge rules
 
 The rationale is in [`CONTRIBUTING.md`](CONTRIBUTING.md). This repo is on the GitHub
@@ -28,16 +39,19 @@ hand-edit versions, git tags, or `CHANGELOG.md`.**
   includes the sample data under `backend/data/expenses/`. The loader decodes
   `utf-8-sig`, so a developer's own (uncommitted) exports carry Danish text and
   byte-order marks fine.
-- **Comments say what the code does**, and only where that is not plain from reading it.
-  No rationale essays, no rejected alternatives, no explaining why a module exists or
-  where it sits in the layer order - that reasoning lives in this file and in
-  `README.md`, and repeating it in the source gives one fact two places to drift apart.
-  Module docstrings are one line; function docstrings are one line, and only where the
-  name and signature do not already say it. This is about code, SQL and config comments;
-  the prose in `README.md` and this file keeps its current density.
+- **Comments say what the code does**, and only where that is not plain from reading
+  it. Module docstrings are one line; function docstrings are one line, and only where
+  the name and signature do not already say it. No rationale essays in Python or
+  TypeScript source.
+  **The manifests are the exception, deliberately.** `pixi.toml`, `.envrc`,
+  `schema.sql`, `backend/pyproject.toml`, `vite.config.ts`, `pnpm-workspace.yaml` and
+  `.zed/settings.json` carry the reasoning for what they pin and for what they
+  deliberately leave out, because a setting's justification is no use anywhere but
+  beside the setting. Match the density already there when you edit one.
 - **Pin versions exactly** - `==` in `pixi.toml`, in both its conda tables and
-  `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
-  Actions by SHA with a version comment.
+  `[feature.test.pypi-dependencies]`; `==` for `hatchling` in
+  `backend/pyproject.toml`'s `[build-system]`, which `pixi.lock` does not capture; bare
+  versions in `frontend/package.json`; GitHub Actions by SHA with a version comment.
 - **Every suppression carries a reason** beside the pragma: a comment next to
   `# pyright: ignore[...]` (see `backend/src/expense_tracker/__init__.py`), or on/above
   an `// eslint-disable-next-line <rule>`. A bare disable is not acceptable.
@@ -52,31 +66,24 @@ hand-edit versions, git tags, or `CHANGELOG.md`.**
 2. **`pixi.toml` forwards to it**, one prefixed one-liner per command, so `pixi run`
    stays the single entry point spanning both stacks.
 
-`pixi run <task>` is what CI calls and what you should reach for. Every task declares
-its own `cwd`, so it behaves identically wherever you invoke it. Full table in
-[`README.md`](README.md#development-tasks).
-
-The five `backend-db-*` tasks are no exception to either layer: their bodies are poe
-tasks like the rest, and the cluster they drive is initdb'd into `backend/.pgdata/`,
-addressed by a plain relative path like every other task in that file. poe runs a task
-from the directory of the `pyproject.toml` it loaded, so that path holds however the task
-was invoked - `cd backend && poe db-init`, `poe -C backend db-init` from anywhere, or the
-pixi forwarder. Nothing in `backend/pyproject.toml` needs `$POE_ROOT`. That is the **path**
-only: the connection settings come from direnv, so the same invocation from outside the
-worktree resolves `.pgdata/` correctly and then aborts on the `${PGPORT:?}` guard.
-
-**`dev` depends on `db-init`**, so `pixi run backend-dev` is the single command that gets a
-backend developer a working API: the cluster chain behind it is idempotent, runs once
-before uvicorn, and leaves the cluster up afterwards. `load-expenses` is deliberately not
-in that chain - an empty `expense` table is a legitimate `200`, and putting the loader
-there would work around that invariant rather than honour it. `test` stays out of that
-chain, because "The HTTP suite never touches PostgreSQL" below is a property chaining
-`db-init` onto it would hide.
-
 **The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Never
 put a command body there; that is what would make the layer a place definitions hide.
 Both stacks also stay runnable on their own terms (`cd backend && poe test`,
 `cd frontend && pnpm build`), which is what keeps each directory a standalone project.
+
+`pixi run <task>` is what CI calls and what you should reach for. Every task declares
+its own `cwd`, so it behaves identically wherever you invoke it: poe runs a task from
+the directory of the `pyproject.toml` it loaded, so a relative path like `.pgdata/`
+holds however the task was invoked and nothing needs `$POE_ROOT`. Full table in
+[`README.md`](README.md#development-tasks).
+
+**`dev` depends on `db-init`**, so `pixi run backend-dev` is the single command that
+gets a backend developer a working API: the cluster chain behind it is idempotent, runs
+once before uvicorn, and leaves the cluster up afterwards. `load-expenses` is
+deliberately not in that chain - an empty `expense` table is a legitimate `200`, and
+putting the loader there would work around that invariant rather than honour it. `test`
+stays out of it too, because "the HTTP suite never touches PostgreSQL" is a property
+chaining `db-init` onto it would hide.
 
 Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in order
 (cheapest first, so it fails fast):
@@ -92,236 +99,45 @@ pixi run frontend-build
 The two halves are independent, so a change to one stack can only fail that stack's
 gates.
 
-## Build invariants
+## direnv
 
-Break one of these and CI goes red on an otherwise correct change.
+**`direnv allow` is a prerequisite, not a convenience.** `backend/.env` holds `PGHOST`,
+`PGPORT`, `PGUSER`, `PGDATABASE` and `UVICORN_PORT`, and the single `dotenv_if_exists`
+line in `.envrc` is the only thing that puts them in the environment. Not `pixi run`,
+which reads no `.envrc` and declares no `[activation.env]`; not poe, whose `[tool.poe]`
+declares no `envfile`, and adding one back would be a second loader for one file. A
+shell that has not been blessed gets a `ValidationError` from the app and a `PGPORT`
+abort from the db tasks.
 
-- **The backend serves no frontend.** It is a REST API whose whole surface is
-  `GET /api/greeting` and `GET /api/expenses`: no `/` route, no `StaticFiles` mount, no
-  build artifact under `backend/`. Pinned by `test_root_is_not_served`,
-  `test_static_files_are_not_served` and `test_unknown_api_routes_404`.
-- **Expenses are read-only over HTTP.** Rows arrive through
-  `pixi run backend-load-expenses` and nowhere else, so there is no POST, PUT or DELETE
-  and no plan for one. The database is a view of the files in `backend/data/expenses/`,
-  which are `*.tsv`: tab-separated, five named columns, dates `DD/MM/YYYY`.
-- **No OpenAPI.** `docs_url`, `redoc_url` and `openapi_url` stay `None` in
-  `create_app()`. Pinned by `test_openapi_docs_are_disabled`.
-- **CORS is wildcard with `allow_credentials=False`.** The spec forbids the pair, so
-  the day the API grows cookies or an `Authorization` header the wildcard is what has
-  to become a real origin list. Pinned by `test_cors_does_not_allow_credentials`. It
-  is registered after the security-headers middleware, which makes it outermost and
-  lets it answer preflights itself.
-- **`create_app()` opens no socket.** The engine is built by the lifespan in
-  `backend/src/expense_tracker/deps.py`, not by the factory, which is what keeps
-  `TestClient(app)` (without `with`) database-free and `uvicorn --factory` working.
-  Moving engine creation into `create_app()` breaks the entire HTTP suite.
-- **Only `deps.py` imports fastapi, and nothing imports `deps`.** The wiring points one
-  way: `deps.py` imports `greeting_repository` and `expense_repository`, never the
-  reverse, and those two plus `db.py`, `config.py` and `expense_loader.py` know no HTTP
-  at all. A failed read leaves the repository as `GreetingUnavailableError` or
-  `ExpensesUnavailableError`, and the handlers registered in `create_app()` are the only
-  place that turn them into a 503. Putting an `HTTPException` back in a repository is
-  what this split exists to prevent. Pinned by the import-linter contracts in
-  `backend/pyproject.toml`, not by a test.
-  A **new module** under `src/expense_tracker/` has to be added to **three** lists, not
-  one: the `layers` contract (where `exhaustive = true` fails the gate by itself), and
-  the `source_modules` of *both* `forbidden` contracts - a `forbidden` contract has no
-  `exhaustive` option, so an unnamed module is silently uncovered by them.
-- **`db.py` holds `Base` and nothing else.** Both repository modules need one shared
-  `DeclarativeBase`, and giving it a module of its own is what keeps them from importing
-  each other - which the `expense_repository | greeting_repository` layer forbids. A new
-  model goes in the repository module that reads it, not in `db.py`.
-- **Every repository subclasses its ABC and carries `@override`.**
-  `PostgresGreetingRepository` and `PostgresExpenseRepository`, and
-  `_FakeGreetingRepository` and `_FakeExpenseRepository` in `conftest.py`, all do; a new
-  implementation or test double does too. The base classes are `ABC`s, so this is
-  enforced, not a convention - a look-alike that matches the shape without inheriting is
-  rejected. It has to be enforced somewhere, because `dependency_overrides` is an
-  untyped dict and would accept anything.
-- **`@abstractmethod` on `GreetingRepository` and `ExpenseRepository` is load-bearing.**
-  Without it the `...` body is an ordinary method returning `None` and an empty subclass
-  passes. Removing it fails `pixi run backend-lint` three ways: `B027` on the method,
-  `B024` on the class, `F401` on the unused import. That gate is why no test asserts it.
-  Keep the body a same-line `...`; `raise NotImplementedError` would be a statement
-  coverage counts and nothing executes.
-- **An empty `expense` table is 200 with `[]`, not 503.** Deliberately asymmetric with
-  the greeting, whose missing row *is* a fault because exactly one row is required. A
-  database nobody has run the loader against yet is a legitimate state, and a 503 would
-  train a client to retry forever against a server that is working perfectly. So
-  `PostgresExpenseRepository` raises only from its `except` arm, with no
-  `if not rows: raise` counterpart. Pinned by
-  `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` in both
-  `test_app.py` and `test_expense_postgres.py`. The frontend keeps its half of that
-  asymmetry: `ExpensesTable` renders `[]` as a row reading `No expenses loaded.` and
-  reserves its `role="alert"` for a request that actually failed.
-- **The expenses table renders `amount` and `date` verbatim.** No `Intl.NumberFormat`,
-  no `new Date()`. The backend sends `amount` as `str(Decimal)` precisely so no float
-  round trip can drift a total by a cent, and formatting it client-side would put that
-  round trip back; `date` is a bare `YYYY-MM-DD`, which `new Date()` reads as UTC and
-  prints a day early west of Greenwich. `test_app.py`'s
-  `test_expense_amounts_are_strings_not_numbers` pins the backend half, and
-  `ExpensesTable.test.tsx`'s "shows an alert when an amount arrives as a number" the
-  frontend half - the shape guard in `frontend/src/api/expenses.ts` rejects a numeric
-  amount rather than coercing it.
-- **The HTTP suite never touches PostgreSQL.** `backend/tests/conftest.py` overrides
-  both the `provide_greeting_repository` and `provide_expense_repository` dependencies
-  with fake repositories; only `backend/tests/test_greeting_postgres.py` and
-  `backend/tests/test_expense_postgres.py`, behind the registered `postgres` marker,
-  connect. A new test that hits an endpoint takes the `client` fixture. Those modules
-  skip when no server answers and **fail** under `CI=true`, so a database that did not
-  come up cannot go green. `test_expense_postgres.py` TRUNCATEs both expense tables
-  before and after every test, so running the suite empties a developer's loaded data -
-  `pixi run backend-load-expenses` puts it back.
-- **`backend/schema.sql` is the only DDL.** No Alembic, no `Base.metadata.create_all`,
-  and every statement in it stays idempotent because `db-init` re-runs against live
-  clusters. The loader issues DML only. New tables use
-  `GENERATED ALWAYS AS IDENTITY`, not `serial`/`bigserial`, which PostgreSQL's own
-  "Don't Do This" page advises against for new applications. `IF NOT EXISTS` adds what
-  is missing but never renames or alters, so a change to an existing table means
-  `backend-db-reset` and a reload, not another `db-init`.
-- **The app reads the environment; loading `backend/.env` is a launcher's job.**
-  `config.py` opens no file and resolves no path - no `__file__`, no `env_file=`, no
-  `parents[N]`. Reintroducing dotenv reading into the package is the specific regression
-  this rule exists to prevent: a wheel-installed package has no project directory to
-  derive a path from, so the code either finds nothing or finds a developer's settings,
-  depending on how it happened to be installed. **direnv is the one launcher that puts
-  those names there**, through the single `dotenv_if_exists` line in `.envrc`. There
-  is **no `.env.local` layer** - one file, loaded once - and a dotenv **overwrites** the
-  ambient environment, so `export PGPORT=...` is not an override; moving the cluster off
-  a taken port means editing `backend/.env` and rebuilding. `[tool.poe]` declares **no
-  `envfile`**, and adding one back would be a second loader for one file.
-  **`direnv allow` is a prerequisite, not a convenience.** Nothing else supplies the
-  settings - not `pixi run`, which reads no `.envrc` and declares no `[activation.env]`,
-  and not poe. A shell that has not been blessed gets a `ValidationError` from the app
-  and a `PGPORT` abort from the db tasks.
-  **CI is a cross-repo dependency, and that is the price of the single loader.**
-  `setup-direnv` activates `.envrc` and then forwards the resulting environment to
-  `$GITHUB_ENV`; that forwarding arrived in **v1.4.1**, and the pin in `ci.yml` is what
-  every later `pixi run` depends on for those names. A `PGPORT` failure in CI means
-  checking that pin first, before anything in this repo.
-- **`backend/.env` is the single source of the connection settings.** `PGHOST`, `PGPORT`,
-  `PGUSER` and `PGDATABASE` live there and nowhere else - `pixi.toml` declares no
-  `[activation.env]`, and that absence is deliberate rather than an omission. **The DSN
-  is stored nowhere**: `DatabaseSettings.dsn` builds it with `sqlalchemy.URL`, which
-  stops the port being written into a URL string a second time and escapes parts
-  containing `@`, `:` or `/`. `DATABASE_URL` overrides the four wholesale. Do not
-  reintroduce a literal DSN in any manifest, and do not go back to f-string
-  interpolation.
-- **The dev server's port is `UVICORN_PORT` in `backend/.env`, and `dev` passes no
-  `--port`.** uvicorn's CLI is a click command carrying
-  `context_settings={"auto_envvar_prefix": "UVICORN"}`, so uvicorn itself resolves
-  `--port` from that name - the same shape as `PGHOST` and `psql`, which is the whole
-  reason the port belongs in that file rather than in a flag. It is not a connection
-  setting: `DatabaseSettings` never sees it and `DATABASE_URL` has nothing to do with
-  it. It also takes **no `${UVICORN_PORT:?}` guard**, unlike the db tasks: a lost name
-  makes uvicorn *bind* 8000 rather than silently *reach* the wrong server, and `dev`
-  aborts on the `${PGPORT:?}` in the `db-init` behind it before uvicorn is ever
-  reached.
-- **Nothing here falls back to port 5432.** `config.py` refuses to start without its
-  settings (`_needs_a_source`), and `db-create` and `db-init` open with a
-  `: "${PGPORT:?...}"` guard for the same reason: initdb, psql and createdb each default
-  to 5432 and the OS username on their own, so a task that lost the four names would
-  reach whatever cluster answers there - applying `schema.sql` to it and reporting
-  success - instead of failing. Any new task that reaches a server without passing
-  `--port` explicitly takes the guard too. The three `pg_ctl` tasks do not need it: the
-  port is baked into `.pgdata/postgresql.conf` by `db-create`, not passed at launch.
-- **`database_url()` returns a `URL`, not a `str`.** `str()` and `repr()` of it redact
-  the password as `***`, which is what stops a deployment credential reaching a log or a
-  traceback; a `str` return would silently give that up. `create_async_engine` and
-  `load_directory` both take the `URL` unchanged.
-- **`prod` installs the app as a wheel; only `default` installs it editable.** The two
-  `[feature.*.pypi-dependencies]` blocks in `pixi.toml` are why `[dependencies]` holds
-  runtime *libraries* and not the app. An editable install is a redirect to
-  `backend/src`, so it ships the source tree, `backend/tests/` and `backend/data/` and
-  pins a container to a directory layout rather than an artifact. **No correctness
-  property rests on this** - the app reads the environment either way, so a misconfigured
-  process refuses to start in both environments. It is about shipping the right thing.
-  Pinned by no test - `pixi run -e prod` is the check, described in `README.md` under
-  "Environments".
-- **Six things are declared twice. Change both halves together:**
-  - the two *payload shapes and paths* - `backend/src/expense_tracker/__init__.py`
-    against `frontend/src/api/greeting.ts` for the greeting and
-    `frontend/src/api/expenses.ts` for the expenses, with nothing checking either
-    agreement. Every expense field is a string on the wire, `amount` included, and the
-    frontend's guard rejects a number, so a change to `ExpensePayload` is a change to
-    the `Expense` interface. The greeting *wording* is not duplicated anywhere: it is
-    one row of the `greeting` table;
-  - the three tables - `backend/schema.sql` and the `Greeting` model in
-    `greeting_repository.py` plus `LoadedExpenseFile` and `Expense` in
-    `expense_repository.py`, which never create them and only read them;
-  - what is left of the local database connection - `PGUSER` and `PGHOST` in
-    `backend/.env`, against `--username=expense_tracker` and
-    `--set=listen_addresses=127.0.0.1` in `db-create`'s `initdb` flags, and against
-    `createdb expense_tracker` in `db-init`. `PGPORT` is *not* in this list: `db-create`
-    takes it as `--set=port="$PGPORT"`, and the rest could follow the same way;
-  - the `@` alias (`frontend/src`) - `frontend/vite.config.ts` and
-    `frontend/tsconfig.app.json`, because vite does not read tsconfig `paths`;
-  - the `frontend/src/main.tsx` coverage exclusion - `frontend/vite.config.ts` and
-    `sonar-project.properties`;
-  - `VITE_API_BASE_URL` - set in `frontend/.env`, typed in
-    `frontend/src/vite-env.d.ts`.
-- **The API origin lives in bare `frontend/.env`, not `.env.development`.** vite loads
-  `.env` in every mode, including the `test` mode vitest runs in, where MSW binds its
-  handlers to the URL built from it. `frontend/vite.config.ts` also pins `envDir` to
-  `frontend/`, because the `test` block moves vite's `root` to the repo root and
-  `envDir` would otherwise follow it.
-- **Routes are code-based, in `frontend/src/router.ts`.** No `routeTree.gen.ts` and no
-  `@tanstack/router-plugin`: a generated route tree is a committed file that has to
-  satisfy prettier, eslint's type-aware pass, a tsconfig that owns it and the coverage
-  exclusions, and the plugin drags in `@babel/core`, `chokidar`, `zod` and `unplugin`
-  to produce it. `createAppRouter` is a factory rather than a module-level singleton so
-  the tests can hand it a `createMemoryHistory`, which is also what keeps `router.ts`
-  covered without a new exclusion. The `declare module` block registering `Register` is
-  what gives `Link` its typed `to`; without it a path matching no route compiles.
-  **Only `App.tsx` imports `Link` or `Outlet`** - the pages under `src/pages/` are
-  router-free, so each one's test mounts it in a bare `QueryClientProvider` and only
-  `routing.test.tsx` builds a router.
-- **Every linted file needs a tsconfig that owns it.** eslint runs type-aware via
-  `parserOptions.projectService`, so a `.ts`/`.tsx` file outside every tsconfig's
-  `include` fails to lint rather than being skipped. `src/` and `tests/` come from
-  `tsconfig.app.json`; `vite.config.ts` and `eslint.config.ts` from
-  `tsconfig.node.json`, where a new file at the `frontend/` root has to be added too.
-  Same reason `frontend/eslint.config.ts` opens with `globalIgnores(["dist"])`.
-- **`frontend/package.json` must not gain a `packageManager` field**, and
-  `frontend/pnpm-lock.yaml` must stay at `lockfileVersion: 9.0`. The first bypasses the
-  pnpm pin in `pixi.toml`; both break Dependabot's lockfile parsing. That lockfile
-  version is also what Dependabot reads its pnpm major from, which is why the next
-  invariant exists. See [`README.md`](README.md#package-manager).
-- **`frontend/pnpm-workspace.yaml` states `minimumReleaseAge: 1440` and must never gain
-  a `minimumReleaseAgeExclude`.** Stating the value and excusing a package from it are
-  opposites: 1440 is already pnpm 11's default, written down because Dependabot resolves
-  this lockfile with pnpm 10 (per the `lockfileVersion: 9.0` pin above), where the
-  default is 0 - so without it the 24-hour guard covers CI's *verification* but not
-  Dependabot's *resolution*. An exclusion, by contrast, disables the guard for the
-  least-vetted release there is; pick a version that already clears the window. Naming
-  the value also turns on `minimumReleaseAgeStrict`, which is intended. The file's two
-  settings are the whole of it - the other is `allowBuilds`.
+**CI is a cross-repo dependency, and that is the price of the single loader.**
+`setup-direnv` activates `.envrc` and then forwards the resulting environment to
+`$GITHUB_ENV`; that forwarding arrived in **v1.4.1**, and the pin in `ci.yml` is what
+every later `pixi run` depends on for those names. A `PGPORT` failure in CI means
+checking that pin first, before anything in this repo.
 
-## Quality gates
+## Six things are declared twice. Change both halves together
 
-- **Python:** basedpyright in `recommended` mode and ruff with
-  `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]`, both in
-  `backend/pyproject.toml`. There is no config file at the repo root and no Python
-  setting duplicated in the editor config.
-- **Module layering:** import-linter, `[tool.importlinter]` in the same file, run by
-  `pixi run backend-lint` as the second half of that task. Imports are just another
-  artifact to lint, so they get no gate of their own; `lint-fix` is ruff alone, because
-  where a new module belongs in the layer order is a design decision, not a mechanical
-  edit. Four contracts: the three-tier `deps | expense_loader` above
-  `expense_repository | greeting_repository` above `db | config` layering, the
-  fastapi/starlette ban on everything but `deps`, a ban on importing the package root,
-  and `acyclic_siblings` for cycles at any depth. In a layer list `|` joins siblings
-  that may **not** import each other and `:` joins siblings that **may** - the two are
-  easy to transpose and only one of them enforces anything. ruff cannot cover this -
-  `TID251` bans a name project-wide rather than per-module, and ruff builds no
-  cross-module graph, so it detects no cycles.
-- **Frontend:** `tsc -b` against a `strict` tsconfig, prettier, and eslint 10 in
-  `frontend/eslint.config.ts`. `eslint-config-prettier` is applied last, so **the
-  linter owns correctness and prettier owns formatting** - never add a formatting rule
-  to the eslint config.
-- **Neither stack has a warn tier.** `recommended` sets `failOnWarnings`, and the
-  frontend `lint` script passes `--max-warnings 0`; a warning fails the build like an
-  error. Without them roughly 45 frontend rules would be advisory, including the XSS,
-  `target="_blank"` and leaked-timer rules, `exhaustive-deps`, and
-  `reportUnusedDisableDirectives`. Demote a rule deliberately in its config if you
-  disagree with it; do not let either flag go.
+- the two *payload shapes and paths* - `backend/src/expense_tracker/__init__.py`
+  against `frontend/src/api/greeting.ts` for the greeting and
+  `frontend/src/api/expenses.ts` for the expenses, with nothing checking either
+  agreement. **Every expense field is a string on the wire, `amount` included**: the
+  backend sends `str(Decimal)` so no float round trip can drift a total by a cent, and
+  `date` is a bare `YYYY-MM-DD`. `test_expense_amounts_are_strings_not_numbers` pins
+  that on the backend; the frontend's shape guard rejects a numeric amount rather than
+  coercing it, so a change to `ExpensePayload` is a change to the `Expense` interface.
+  The greeting *wording* is not duplicated anywhere: it is one row of the `greeting`
+  table;
+- the three tables - `backend/schema.sql` and the `Greeting` model in
+  `greeting_repository.py` plus `LoadedExpenseFile` and `Expense` in
+  `expense_repository.py`, which never create them and only read them;
+- what is left of the local database connection - `PGUSER` and `PGHOST` in
+  `backend/.env`, against `--username=expense_tracker` and
+  `--set=listen_addresses=127.0.0.1` in `db-create`'s `initdb` flags, and against
+  `createdb expense_tracker` in `db-init`. `PGPORT` is *not* in this list: `db-create`
+  takes it as `--set=port="$PGPORT"`, and the rest could follow the same way;
+- the `@` alias (`frontend/src`) - `frontend/vite.config.ts` and
+  `frontend/tsconfig.app.json`, because vite does not read tsconfig `paths`;
+- the `frontend/src/main.tsx` coverage exclusion - `frontend/vite.config.ts` and
+  `sonar-project.properties`;
+- `VITE_API_BASE_URL` - set in `frontend/.env`, typed in
+  `frontend/src/vite-env.d.ts`.
