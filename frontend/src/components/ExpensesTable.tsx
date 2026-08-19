@@ -19,7 +19,7 @@ export function ExpensesTable() {
     return (
       <output className="flex items-center gap-3 text-base-content/60">
         <span className="loading loading-spinner loading-sm" />
-        Loading expenses...
+        <span>Loading expenses...</span>
       </output>
     );
   }

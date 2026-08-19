@@ -39,7 +39,19 @@
     "TSX": { "tab_size": 2 },
     "TypeScript": { "tab_size": 2 },
     "JavaScript": { "tab_size": 2 },
-    "CSS": { "tab_size": 2 },
+    // vscode-css-language-server is turned off here rather than quietened. It predates
+    // Tailwind v4's CSS-first config and reports five diagnostics on
+    // frontend/src/styles/app.css that no gate and no build agrees with: "Unknown at
+    // rule" on @source and @plugin, plus a "semi-colon expected" / "{ expected" pair on
+    // `@import "tailwindcss" source(none)`. Only the first three are lint rules that
+    // css.lint.unknownAtRules could silence - the other two are parse errors from a
+    // parser that cannot read the line, so no setting reaches them. Nothing is lost:
+    // that file is the repo's only stylesheet and contains no ordinary CSS, and "..."
+    // leaves Zed's other CSS servers, tailwindcss-language-server included, attached.
+    "CSS": {
+      "tab_size": 2,
+      "language_servers": ["!vscode-css-language-server", "..."]
+    },
     "HTML": { "tab_size": 2 },
     "JSON": { "tab_size": 2 },
     "JSONC": { "tab_size": 2 }
