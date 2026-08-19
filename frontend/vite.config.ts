@@ -7,7 +7,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 // A standalone SPA: it builds to frontend/dist/ (vite's default, gitignored) and
-// knows nothing about the backend beyond VITE_API_BASE_URL, which src/api/greeting.ts
+// knows nothing about the backend beyond VITE_API_BASE_URL, which src/api/expenses.ts
 // reads. vite's root is this file's directory (frontend/), so the paths below are
 // relative to that -- except inside the `test` block, which is pinned to the repo
 // root for the reason given there.
@@ -21,12 +21,12 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      // Lets tests reach into src/ without climbing (../../src/api/greeting). Declared
+      // Lets tests reach into src/ without climbing (../../src/api/expenses). Declared
       // again as "paths" in tsconfig.app.json for the type checker - vite does not read
       // tsconfig paths, so the two must be changed together.
       //
       // A bare "@" key is safe next to scoped packages: vite matches an alias only on
-      // an exact hit or the key followed by "/", so "@/api/greeting" rewrites and
+      // an exact hit or the key followed by "/", so "@/api/expenses" rewrites and
       // "@tanstack/react-query" does not.
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },

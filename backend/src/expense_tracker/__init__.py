@@ -6,9 +6,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.middleware.base import RequestResponseEndpoint
 
-from .deps import lifespan, provide_expense_repository, provide_greeting_repository
+from .deps import lifespan, provide_expense_repository
 from .expense_repository import ExpenseRepository, ExpensesUnavailableError
-from .greeting_repository import GreetingRepository, GreetingUnavailableError
 
 # Applied to every response. This app serves JSON and nothing else, so the policy
 # grants nothing at all.
@@ -37,7 +36,7 @@ class ExpensePayload(BaseModel):
 
 def create_app() -> FastAPI:
     # No OpenAPI schema and no docs routes: /docs, /redoc and /openapi.json would be
-    # public surface for two hand-written routes.
+    # public surface for one hand-written route.
     #
     # The lifespan is what opens the connection pool, so building an app touches no
     # socket and reads no environment. `uvicorn --factory` and the HTTP suite rely on
@@ -55,18 +54,6 @@ def create_app() -> FastAPI:
             # for it; reportUnusedCallResult wants that said out loud.
             _ = response.headers.setdefault(header, value)
         return response
-
-    # The payload shape is mirrored by hand in frontend/src/api/greeting.ts; change
-    # the two together. The wording itself lives in one row of the greeting table.
-    @app.get("/api/greeting")
-    async def greeting(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
-        greetings: Annotated[GreetingRepository, Depends(provide_greeting_repository)],
-    ) -> JSONResponse:
-        # no-store because the wording is a row somebody can UPDATE.
-        return JSONResponse(
-            {"greeting": await greetings.get_current_greeting()},
-            headers={"Cache-Control": "no-store"},
-        )
 
     # Read-only: rows arrive through `pixi run backend-load-expenses` and nowhere
     # else, so there is no POST, PUT or DELETE.
@@ -94,21 +81,15 @@ def create_app() -> FastAPI:
         )
 
     # The only place a repository failure becomes an HTTP status, which is what lets
-    # the repository modules stay free of fastapi. Registered handlers run inside the
-    # middleware above, so these responses still collect the security headers.
-    @app.exception_handler(GreetingUnavailableError)
-    async def handle_greeting_unavailable(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
-        _request: Request, _exc: Exception
-    ) -> JSONResponse:
-        # Neither argument is used: the detail is the same either way, so a client
-        # learns nothing about the database from a failure.
-        return JSONResponse({"detail": "greeting unavailable"}, status_code=503)
-
+    # the repository module stay free of fastapi. Registered handlers run inside the
+    # middleware above, so this response still collects the security headers.
     @app.exception_handler(ExpensesUnavailableError)
     async def handle_expenses_unavailable(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
         _request: Request, _exc: Exception
     ) -> JSONResponse:
-        # An empty table is not this: it answers 200 with [].
+        # Neither argument is used: the detail is the same either way, so a client
+        # learns nothing about the database from a failure. An empty table is not this
+        # case at all: it answers 200 with [].
         return JSONResponse({"detail": "expenses unavailable"}, status_code=503)
 
     # Added last, so it is the outermost middleware and can answer a preflight itself

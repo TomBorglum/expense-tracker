@@ -61,7 +61,7 @@ jobs:
       - run: pixi run backend-format-check
       - run: pixi run backend-lint
       - run: pixi run backend-typecheck
-      # The database the greeting is read from. initdb's a cluster into backend/.pgdata/,
+      # The database the postgres-marked tests need. initdb's a cluster into backend/.pgdata/,
       # starts it on the host and port backend/.env names and applies backend/schema.sql -
       # the same one task a developer runs, which is why there is no `services:` block and
       # no container here: the server is a conda-forge package in the same lock as

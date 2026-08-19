@@ -78,7 +78,7 @@ export default defineConfig(
         {
           newlinesBetween: 1,
           // internalPattern is left at its default, which already covers the `@`
-          // alias (`['^~/.+', '^@/.+', '^#.+']`), so `@/api/greeting` groups as
+          // alias (`['^~/.+', '^@/.+', '^#.+']`), so `@/api/expenses` groups as
           // internal without this file having to name the alias.
           //
           // The one deviation from perfectionist's default groups is using bare

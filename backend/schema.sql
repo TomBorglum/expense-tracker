@@ -1,26 +1,11 @@
--- The whole schema: the greeting this API serves, and the expenses it reports on.
+-- The whole schema: the expenses this API reports on.
 --
 -- There is no migration tool and the app issues no DDL, so nothing but
--- `pixi run backend-db-init` ever runs this. The Greeting, LoadedExpenseFile and
--- Expense models under src/expense_tracker/ are these tables declared a second time,
--- in Python, with nothing checking the agreement. Change both halves together.
+-- `pixi run backend-db-init` ever runs this. The LoadedExpenseFile and Expense models
+-- under src/expense_tracker/ are these tables declared a second time, in Python, with
+-- nothing checking the agreement. Change both halves together.
 --
 -- Every statement is idempotent, because db-init re-runs against live clusters.
-
-CREATE TABLE IF NOT EXISTS greeting (
-    -- A singleton by construction. The endpoint still orders and limits, so it stays
-    -- correct if the CHECK is ever relaxed into a real key.
-    id      integer PRIMARY KEY,
-    message text    NOT NULL,
-    CONSTRAINT greeting_is_singleton CHECK (id = 1),
-    CONSTRAINT greeting_message_not_blank CHECK (message <> '')
-);
-
--- DO NOTHING rather than DO UPDATE: re-running db-init must not stamp on a greeting
--- that was edited in place.
-INSERT INTO greeting (id, message)
-VALUES (1, 'Hello, World!')
-ON CONFLICT (id) DO NOTHING;
 
 -- One row per expense file the loader has taken in, and the only thing that makes a
 -- re-run idempotent. The expense rows below carry no content hash and no ON CONFLICT:

@@ -18,9 +18,8 @@ if (!root) {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // The greeting only changes when a new wheel is deployed and the expenses only
-      // when the loader runs -- there is nothing worth refetching when the tab regains
-      // focus.
+      // The expenses only change when the loader runs -- there is nothing worth
+      // refetching when the tab regains focus.
       refetchOnWindowFocus: false,
       retry: 1,
     },

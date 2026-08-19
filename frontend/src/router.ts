@@ -7,23 +7,16 @@ import {
 
 import App from "./App";
 import ExpensesPage from "./pages/ExpensesPage";
-import GreetingPage from "./pages/GreetingPage";
 
 const rootRoute = createRootRoute({ component: App });
 
-const greetingRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/",
-  component: GreetingPage,
-});
-
 const expensesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/expenses",
+  path: "/",
   component: ExpensesPage,
 });
 
-const routeTree = rootRoute.addChildren([greetingRoute, expensesRoute]);
+const routeTree = rootRoute.addChildren([expensesRoute]);
 
 // A factory rather than a module-level singleton, so the tests build their own router
 // over a memory history instead of sharing navigation state between them.
