@@ -43,7 +43,7 @@ test("renders every expense the API serves, in the order it sends them", async (
 test("renders one row per expense under the header row", async () => {
   renderExpensesTable();
   await screen.findByRole("table", { name: "Expenses" });
-  expect(screen.getAllByRole("row").length).toBe(MOCK_EXPENSES.length + 1);
+  expect(screen.getAllByRole("row")).toHaveLength(MOCK_EXPENSES.length + 1);
 });
 
 test("shows a status while the request is in flight", () => {
