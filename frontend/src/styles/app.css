@@ -9,3 +9,14 @@
 @import "tailwindcss" source(none);
 @source "../../index.html";
 @source "../";
+
+/* daisyUI supplies the palette and the component classes. Two themes and no switch:
+   --default binds nord at :where(:root), --prefersdark binds dim at :root:not([data-theme])
+   inside @media (prefers-color-scheme: dark), so the OS setting picks. Each theme
+   declares its own color-scheme, which is what makes the scrollbar follow. No
+   data-theme attribute, no toggle, and no dark: variant anywhere in src/. */
+@plugin "daisyui" {
+  themes:
+    nord --default,
+    dim --prefersdark;
+}

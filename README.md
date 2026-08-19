@@ -285,6 +285,18 @@ resetting the cluster, not re-running `db-init`.
 A React 19 SPA built by vite and styled with Tailwind CSS v4, configured in CSS via
 `frontend/src/styles/app.css` - there is no `tailwind.config.js`.
 
+The palette and the component classes come from [daisyUI](https://daisyui.com), enabled
+as a `@plugin` in that same stylesheet. Two themes are named and the operating system
+picks between them: `nord --default` is the baseline, and `dim --prefersdark` takes over
+under `prefers-color-scheme: dark`. There is no `data-theme` attribute, no theme
+provider, no toggle, and no `dark:` variant in `src/` - colours are written by role
+(`bg-base-100`, `text-base-content`, `alert-error`) and the two themes repoint them.
+
+The pair is chosen to match: both sit in the same desaturated blue-grey family (base hues
+260.7 and 264.1), and both are soft - `dim` is the lightest dark theme daisyUI ships, and
+`nord` is one of the few light ones that stops short of pure white. Swapping either half
+means checking that still holds.
+
 `pixi run frontend-build` writes to `frontend/dist/`, vite's default. It is **gitignored**
 and nothing in this repo consumes it. CI runs the build as a gate because tsc and
 vitest never exercise the bundler, but keeps nothing from it.
@@ -428,15 +440,26 @@ To confirm the declared pins match what is installed:
 cd frontend && pnpm ls @tailwindcss/language-server @vtsls/language-server typescript tailwindcss prettier eslint
 ```
 
-Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`, `10.8.0`. One nested entry is
+Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`, `10.8.1`. One nested entry is
 expected and is not drift: `@vtsls/language-server` bundles its own `typescript@5.9.3`,
 which the `tsdk` setting in `.zed/settings.json` redirects to the pinned top-level copy.
 
-To confirm Zed is using them, run this while Zed is open:
+To confirm Zed is using them, open a `.tsx` file **and** `frontend/src/styles/app.css`
+first - Zed starts a language server only when a buffer of a language it serves is open,
+so a server you have given nothing to do is absent from the list below rather than
+broken - then run:
 
 ```sh
-ps -eo pid,args | grep -E '[v]tsls|[t]ailwindcss-language-server|[e]slintServer'
+ps -eo pid,args | grep -E '[v]tsls|[c]ss-language-server|[e]slintServer'
 ```
+
+Expect four processes. `@tailwindcss/language-server` ships **two** binaries and this
+repo runs both, so that middle pattern is deliberately loose enough to match each:
+`tailwindcss-language-server` completes class names in TSX, and `css-language-server`
+is the Tailwind-aware CSS server that replaces `vscode-css-language-server` in the
+`CSS` block. The second one needs Zed **1.16.1 or newer**, which is where the
+`tailwindcss-intellisense-css` adapter was added; on an older Zed the name resolves to
+nothing and `.css` files get no language server at all.
 
 Paths under `frontend/node_modules/` mean the pins took effect; paths under
 `~/.local/share/zed/` mean they did not - usually a missing `node_modules` or no `node`
@@ -445,10 +468,16 @@ on PATH for Zed's remote server. `eslintServer.js` is the exception and always r
 pinned; check it by putting `const x: any = 1;` in a `.tsx` file and confirming
 `@typescript-eslint/no-explicit-any` fires.
 
-Two things that look like faults but are not: over a remote/WSL backend, Server Info
+Three things that look like faults but are not. Over a remote/WSL backend, Server Info
 reports `Binary: Unknown` and `Version: Unknown` for `vtsls` however healthy it is, and
 the per-server Logs tab is usually empty because most servers never send
-`window/logMessage`. Use the `ps` command above instead. If your editor ever disagrees
+`window/logMessage`. Use the `ps` command above instead. Zed also underlines
+`tailwindcss-intellisense-css` in `.zed/settings.json` as **"Property
+tailwindcss-intellisense-css is not allowed"** - the setting is applied regardless, and
+the same key in your own `settings.json` draws no warning at all. It is an upstream
+schema bug: Zed builds the *project* settings schema from its language-attached servers
+only, where the *user* settings schema also includes opt-in ones (zed#46766), and this
+server is opt-in. `ps` is the check that settles it. If your editor ever disagrees
 with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the authority.
 
 ## Development tasks
@@ -474,7 +503,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run frontend-dev` | `pnpm run dev` | Run vite's dev server on port 5173 (hot reload) |
 | `pixi run frontend-build` | `pnpm run build` | Build the frontend into `frontend/dist/` |
 | `pixi run frontend-typecheck` | `pnpm run typecheck` | Type-check the frontend with tsc |
-| `pixi run frontend-lint` | `pnpm run lint` | Lint the frontend with eslint (type-aware, `--max-warnings 0`) |
+| `pixi run frontend-lint` | `pnpm run lint` | Lint the frontend with eslint (type-aware, plus CSS, `--max-warnings 0`) |
 | `pixi run frontend-lint-fix` | `pnpm run lint-fix` | Auto-fix frontend lint issues |
 | `pixi run frontend-test` | `pnpm run test` | Run the frontend tests (vitest) with coverage |
 | `pixi run frontend-format` | `pnpm run format` | Format the frontend with prettier |

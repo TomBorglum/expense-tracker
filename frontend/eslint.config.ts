@@ -1,4 +1,5 @@
 import eslintReact from "@eslint-react/eslint-plugin";
+import css from "@eslint/css";
 import js from "@eslint/js";
 import vitest from "@vitest/eslint-plugin";
 // The /flat entrypoint is the same rule set as the bare import, plus a config `name`,
@@ -9,6 +10,7 @@ import perfectionist from "eslint-plugin-perfectionist";
 import reactHooks from "eslint-plugin-react-hooks";
 import { reactRefresh } from "eslint-plugin-react-refresh";
 import { defineConfig, globalIgnores } from "eslint/config";
+import { tailwind4 } from "tailwind-csstree";
 import tseslint from "typescript-eslint";
 
 // Authored as .ts (loaded through the pinned jiti) and listed in tsconfig.node.json,
@@ -109,6 +111,43 @@ export default defineConfig(
         },
       ],
       "perfectionist/sort-named-imports": "error",
+    },
+  },
+
+  // CSS. src/styles/app.css is the repo's only stylesheet and its whole content is
+  // Tailwind at-rules, which is exactly why it needs a gate: nothing else validates it.
+  // prettier reformats CSS without understanding it, and tsc and the rules above never
+  // see the file.
+  {
+    files: ["**/*.css"],
+    plugins: { css },
+    language: "css/css",
+    extends: [css.configs.recommended],
+    languageOptions: {
+      // Required, not a preference. tailwind-csstree parses `source(none)` by trying
+      // <string> and falling back to <ident>, and css-tree reports the recovered
+      // first attempt through onParseError anyway; @eslint/css turns every one of
+      // those into a fatal parse error unless it is tolerating them. The prelude
+      // itself comes out correct, which is why css/no-duplicate-imports reads it.
+      tolerant: true,
+      // The parameter is not inferred: eslint's `defineConfig` resolves
+      // languageOptions per language, and this block's language is named as a string.
+      customSyntax: (prev: Parameters<typeof tailwind4>[0]) => {
+        const tailwind = tailwind4(prev);
+        return {
+          ...tailwind,
+          atrules: {
+            ...tailwind.atrules,
+            // daisyUI's @plugin takes a block; core Tailwind's does not, so
+            // tailwind-csstree gives it no descriptors and css-tree rejects every
+            // declaration inside one. https://github.com/humanwhocodes/tailwind-csstree/issues/63
+            plugin: {
+              ...tailwind.atrules.plugin,
+              descriptors: { themes: "<any-value>" },
+            },
+          },
+        };
+      },
     },
   },
 

@@ -17,74 +17,66 @@ export function ExpensesTable() {
     // spelling it out would be recreating semantics HTML already has (sonar S6819).
     // The error branch keeps its role - no element implies role="alert".
     return (
-      <output className="text-lg text-slate-400 dark:text-slate-500">
-        Loading expenses...
+      <output className="flex items-center gap-3 text-base-content/60">
+        <span className="loading loading-spinner loading-sm" />
+        <span>Loading expenses...</span>
       </output>
     );
   }
 
   if (query.isError) {
     return (
-      <p
-        role="alert"
-        className="text-lg font-semibold tracking-tight text-red-700 dark:text-red-400"
-      >
+      <div role="alert" className="alert alert-error">
         Could not load the expenses.
-      </p>
+      </div>
     );
   }
 
   return (
-    <table className="w-full max-w-3xl text-left text-sm text-slate-700 dark:text-slate-300">
-      {/* The table's accessible name, which is how the tests reach it. Hidden from
-          sight because the page already shows the same word as its heading. */}
-      <caption className="sr-only">Expenses</caption>
-      <thead className="border-b border-slate-300 text-slate-900 dark:border-slate-700 dark:text-slate-100">
-        <tr>
-          <th scope="col" className="px-3 py-2 text-right font-semibold">
-            Amount
-          </th>
-          <th scope="col" className="px-3 py-2 font-semibold">
-            Currency
-          </th>
-          <th scope="col" className="px-3 py-2 font-semibold">
-            Date
-          </th>
-          <th scope="col" className="px-3 py-2 font-semibold">
-            Category
-          </th>
-          <th scope="col" className="px-3 py-2 font-semibold">
-            Details
-          </th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-        {query.data.length === 0 ? (
-          // A database nobody has run the loader against yet answers 200 with [], which
-          // is a working server rather than a fault, so it gets a row and not the alert
-          // above.
+    <div className="overflow-x-auto">
+      <table className="table table-zebra">
+        {/* The table's accessible name, which is how the tests reach it. Hidden from
+            sight because the page already shows the same word as its heading. */}
+        <caption className="sr-only">Expenses</caption>
+        <thead>
           <tr>
-            <td colSpan={5} className="px-3 py-2 text-slate-400 dark:text-slate-500">
-              No expenses loaded.
-            </td>
+            <th scope="col" className="text-right">
+              Amount
+            </th>
+            <th scope="col">Currency</th>
+            <th scope="col">Date</th>
+            <th scope="col">Category</th>
+            <th scope="col">Details</th>
           </tr>
-        ) : (
-          query.data.map((expense, index) => (
-            // The payload carries no id, and schema.sql notes that the same amount, day,
-            // currency, category and details can legitimately repeat, so position is a
-            // row's only identity. The rows are rendered in arrival order and never
-            // sorted or filtered here, which is what makes that identity stable.
-            // eslint-disable-next-line @eslint-react/no-array-index-key -- see above
-            <tr key={index}>
-              <td className="px-3 py-2 text-right tabular-nums">{expense.amount}</td>
-              <td className="px-3 py-2">{expense.currency}</td>
-              <td className="px-3 py-2 tabular-nums">{expense.date}</td>
-              <td className="px-3 py-2">{expense.category}</td>
-              <td className="px-3 py-2">{expense.details}</td>
+        </thead>
+        <tbody>
+          {query.data.length === 0 ? (
+            // A database nobody has run the loader against yet answers 200 with [], which
+            // is a working server rather than a fault, so it gets a row and not the alert
+            // above.
+            <tr>
+              <td colSpan={5} className="text-base-content/60">
+                No expenses loaded.
+              </td>
             </tr>
-          ))
-        )}
-      </tbody>
-    </table>
+          ) : (
+            query.data.map((expense, index) => (
+              // The payload carries no id, and schema.sql notes that the same amount, day,
+              // currency, category and details can legitimately repeat, so position is a
+              // row's only identity. The rows are rendered in arrival order and never
+              // sorted or filtered here, which is what makes that identity stable.
+              // eslint-disable-next-line @eslint-react/no-array-index-key -- see above
+              <tr key={index}>
+                <td className="text-right tabular-nums">{expense.amount}</td>
+                <td>{expense.currency}</td>
+                <td className="tabular-nums">{expense.date}</td>
+                <td>{expense.category}</td>
+                <td>{expense.details}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
