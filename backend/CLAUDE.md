@@ -117,6 +117,52 @@ Break one of these and CI goes red on an otherwise correct change.
   sits over them, and the entry points may import it, so it sits under them; a `|` sibling
   of `deps` could be neither.
 
+## The date range
+
+- **`?from_date=` and `?to_date=` filter in SQL, not in the route.** The `DateRange`
+  goes to `PostgresExpenseRepository.list_expenses`, which adds one `>=` and one `<=`
+  clause and only for the bounds that are set. Both ends are **inclusive** and each is
+  open on its own; `None` is what adds no clause, which is why an absent parameter and
+  an empty one are not the same request. A range holding no rows is 200 `[]`, the
+  empty-table invariant again. Pinned by the four range tests in
+  `test_expense_postgres.py`.
+- **`DateRange` validates in `__post_init__`, so the repository does not.** The frozen
+  dataclass refuses `start > end` at **every** construction, not only the parsed one,
+  which is what lets `list_expenses` take the type and stop trusting its caller to have
+  checked. `list_expenses` therefore compares nothing and only reads the two fields;
+  putting the check back there would give one rule two homes. `UNBOUNDED` is the default
+  and means every expense there is. Pinned by
+  `test_the_type_refuses_an_inverted_range_however_it_is_built`.
+- **The fake in `tests/conftest.py` records the range and filters nothing**, appending
+  each `DateRange` to the `requested_ranges` fixture. A fake that filtered would hide a
+  repository that stopped filtering, exactly as a fake that sorted would hide a route
+  that re-sorted, so the `WHERE` clause is pinned behind the `postgres` marker and the
+  HTTP suite pins only what the route owes it: one parsed `DateRange`.
+- **The query parameters are `str`, not `datetime.date`.** A `date` annotation hands the
+  refusal to FastAPI, whose body is a list of errors; `date_range.py` raising
+  `DateRangeError` keeps the plain-string `detail` that `ConversionError` and the two
+  503s already send. One endpoint, one error shape. The two refusal messages name
+  `from_date` and `to_date` - query-parameter vocabulary reaching a type the repository
+  also builds, which is the price of one wording for one rule.
+- **`\A\d{4}-\d{2}-\d{2}\Z` is the accepted form, and the only one.**
+  `date.fromisoformat` also takes `20260102` and `2026-W01-1`, which this API never
+  sends; the regex refuses them before it parses, matching `validate_currency_code`
+  refusing a lowercase code rather than uppercasing it. Both bounds are read before
+  either is compared, so a value that cannot be read is refused as itself.
+- **`date_range.py` sits below the repositories because it defines what they are
+  asked**, not because it happens to import nothing. Below the repository layer is what
+  a query needs in order to be asked - `DateRange`, and `config`'s DSN - and above it is
+  what is done with the answer, which is where `conversion.py` sits and has to, since it
+  imports both record types. `expense_repository` importing `DateRange` is what makes
+  that placement enforced rather than conventional: move `date_range` up and
+  `lint-imports` names the edge and fails. **The argument types stay stdlib** - the
+  bounds are `datetime.date` - because a `DateRange` field typed by a repository would
+  drag the module above the layer its role belongs in.
+- **`schema.sql` did not change.** `expense_newest_first_idx` on
+  `(expense_date DESC, id DESC)` already serves a range predicate on `expense_date`
+  together with the endpoint's ordering, and an index added for this would have meant a
+  `backend-db-reset` for nothing.
+
 ## Database and configuration
 
 - **The HTTP suite never touches PostgreSQL.** `tests/conftest.py` overrides the

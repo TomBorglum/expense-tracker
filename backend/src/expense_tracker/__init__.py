@@ -8,6 +8,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 
 from .conversion import ConversionError, convert_expenses, validate_currency_code
 from .currency_repository import CurrenciesUnavailableError, CurrencyRepository
+from .date_range import DateRangeError, parse_date_range
 from .deps import lifespan, provide_currency_repository, provide_expense_repository
 from .expense_repository import ExpenseRepository, ExpensesUnavailableError
 
@@ -78,13 +79,21 @@ def create_app() -> FastAPI:
         # A bare scalar default is a query parameter to FastAPI. Omitting it is the
         # only way to get the amounts as they were recorded.
         currency: str | None = None,
+        # str rather than datetime.date: a date annotation hands the refusal to
+        # FastAPI, whose body is a list of errors rather than the plain-string detail
+        # every other refusal here sends. Each bound is optional on its own.
+        from_date: str | None = None,
+        to_date: str | None = None,
     ) -> JSONResponse:
+        # Read before the query, so a malformed date costs no round trip.
+        dates = parse_date_range(from_date, to_date)
         # The repository's order, reproduced untouched. Sorting again here would hide a
         # repository that stopped sorting, and convert_expenses preserves it.
-        records = await expenses.list_expenses()
+        records = await expenses.list_expenses(dates)
         if currency is not None:
-            # Validated before the rates are read, so a malformed code costs no query.
-            # Resolving the repository above did not open one either.
+            # Whatever the range left, and only that: an expense outside it has no
+            # rate to want. Validated before the rates are read, so a malformed code
+            # costs no query. Resolving the repository above did not open one either.
             target = validate_currency_code(currency)
             records = convert_expenses(
                 records, await currencies.list_currencies(), target
@@ -155,6 +164,14 @@ def create_app() -> FastAPI:
         # This one reads the exception, unlike the two above: the message is about the
         # currency the client asked for and names nothing of the database. 422 rather
         # than 400 - the request parses, it just cannot be carried out.
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    @app.exception_handler(DateRangeError)
+    async def handle_date_range_error(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        _request: Request, exc: Exception
+    ) -> JSONResponse:
+        # The conversion handler's twin, and reading its exception for the same
+        # reason: the message names the parameter the client sent and nothing else.
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
     # Added last, so it is the outermost middleware and can answer a preflight itself

@@ -149,7 +149,7 @@ layers = [
   "deps | currency_loader | expense_loader",
   "conversion",
   "currency_repository | expense_repository",
-  "db | config",
+  "db | config | date_range",
 ]
 # A module added under src/expense_tracker/ that is not named above breaks this contract.
 # So the gate covers new code by default: an unnamed module fails it.
@@ -169,6 +169,7 @@ source_modules = [
   "expense_tracker.conversion",
   "expense_tracker.currency_loader",
   "expense_tracker.currency_repository",
+  "expense_tracker.date_range",
   "expense_tracker.db",
   "expense_tracker.expense_loader",
   "expense_tracker.expense_repository",
@@ -188,6 +189,7 @@ source_modules = [
   "expense_tracker.conversion",
   "expense_tracker.currency_loader",
   "expense_tracker.currency_repository",
+  "expense_tracker.date_range",
   "expense_tracker.db",
   "expense_tracker.deps",
   "expense_tracker.expense_loader",

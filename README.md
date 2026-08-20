@@ -102,6 +102,7 @@ error state until something answers on 8000.
 | --- | --- |
 | `GET /api/expenses` | `[{"amount", "currency", "date", "category", "details"}, ...]` - the `ExpensePayload` model |
 | `GET /api/expenses?currency=EUR` | The same, restated in one currency |
+| `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
 | `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
 Both send `Cache-Control: no-store`.
@@ -150,6 +151,38 @@ refused the same way, and only when that pair is actually needed.
 The arithmetic lives in `backend/src/expense_tracker/conversion.py`, which knows no HTTP
 and holds no session - it takes records and rates and gives records back, so it is
 tested in `backend/tests/test_conversion.py` without a client or a database.
+
+### Asking for a range of dates
+
+`?from_date=` and `?to_date=` narrow the list to the expenses dated between them.
+**Both bounds are inclusive**, so `?from_date=2026-01-01&to_date=2026-01-31` is January
+including both the 1st and the 31st, and **each is optional on its own**: give only
+`from_date` and the range runs to the newest expense there is, give only `to_date` and it
+runs from the oldest. Give neither and the request is the one that was there before the
+parameters existed.
+
+The filtering is a `WHERE` clause on `expense_date`, not a pass over the rows in Python,
+and the `expense_newest_first_idx` index already serves it - so `schema.sql` gained
+nothing for this. **A range holding no expenses is `200 []`**, for the reason an empty
+table is: it is an answer, not a fault. The two parameters compose with `?currency=`, and
+the range is applied first, so an expense outside it needs no exchange rate.
+
+Dates are read as `YYYY-MM-DD` and nothing else - the form the payload's own `date` field
+uses. Anything else is a `422` carrying the same plain-string `detail`:
+
+| Request | Body |
+| --- | --- |
+| `?from_date=01/01/2026` | `{"detail": "from_date must be a date in YYYY-MM-DD form"}` |
+| `?to_date=2026-02-30` | `{"detail": "to_date must be a date in YYYY-MM-DD form"}` |
+| `?from_date=2026-03-01&to_date=2026-01-01` | `{"detail": "from_date must not be after to_date"}` |
+
+A range that ends before it begins is refused rather than answered with an empty list: an
+empty list reads as "no expenses then", and nobody meant that range. That refusal belongs
+to the `DateRange` type rather than to the parsing, so it holds however the range is
+built, and the repository takes that type instead of two loose dates - it has no ordering
+to re-check and no caller to trust. Both live in
+`backend/src/expense_tracker/date_range.py`, which knows no HTTP and no database at all,
+and are tested in `backend/tests/test_date_range.py`.
 
 Both endpoints are read-only over HTTP. Rows arrive through
 `pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere else,

@@ -244,6 +244,82 @@ def test_the_endpoint_returns_an_empty_list_when_nothing_is_loaded() -> None:
     assert _EXPENSES.validate_json(response.content) == []
 
 
+def _load_four_days(directory: Path) -> None:
+    """One expense on each of four days, so a range can leave rows on either side."""
+    _ = _write(
+        directory,
+        "01.tsv",
+        "100.00\tDKK\t01/01/2026\tCar\tFuel",
+        "200.00\tDKK\t15/01/2026\tCar\tFuel",
+        "300.00\tDKK\t31/01/2026\tCar\tFuel",
+        "400.00\tDKK\t01/02/2026\tCar\tFuel",
+    )
+    _ = asyncio.run(load_directory(directory, database_url()))
+
+
+def test_a_date_range_returns_only_the_expenses_inside_it(tmp_path: Path) -> None:
+    """The WHERE clause itself, which the HTTP suite's fake cannot show: it records the
+    bounds and filters nothing."""
+    _load_four_days(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses", params={"from_date": "2026-01-02", "to_date": "2026-01-31"}
+        )
+
+    assert response.status_code == 200
+    body = _EXPENSES.validate_json(response.content)
+    # Newest first still, and the 01/01 and 01/02 rows left out on either side.
+    assert [row.date for row in body] == ["2026-01-31", "2026-01-15"]
+
+
+def test_both_bounds_of_a_date_range_are_inclusive(tmp_path: Path) -> None:
+    """An expense dated exactly on either bound is in: picking the first and last of a
+    month is how a client asks for that month."""
+    _load_four_days(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses", params={"from_date": "2026-01-01", "to_date": "2026-01-31"}
+        )
+
+    assert [row.date for row in _EXPENSES.validate_json(response.content)] == [
+        "2026-01-31",
+        "2026-01-15",
+        "2026-01-01",
+    ]
+
+
+def test_one_bound_alone_leaves_the_other_side_open(tmp_path: Path) -> None:
+    _load_four_days(tmp_path)
+
+    with TestClient(create_app()) as client:
+        from_only = client.get("/api/expenses", params={"from_date": "2026-01-31"})
+        to_only = client.get("/api/expenses", params={"to_date": "2026-01-01"})
+
+    assert [row.date for row in _EXPENSES.validate_json(from_only.content)] == [
+        "2026-02-01",
+        "2026-01-31",
+    ]
+    assert [row.date for row in _EXPENSES.validate_json(to_only.content)] == [
+        "2026-01-01"
+    ]
+
+
+def test_a_date_range_matching_nothing_is_still_an_empty_list(tmp_path: Path) -> None:
+    """A range with no expenses in it is the empty table's case again: a state, not a
+    fault."""
+    _load_four_days(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses", params={"from_date": "2026-06-01", "to_date": "2026-06-30"}
+        )
+
+    assert response.status_code == 200
+    assert _EXPENSES.validate_json(response.content) == []
+
+
 def test_main_prints_a_summary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

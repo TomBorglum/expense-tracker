@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+from .date_range import UNBOUNDED, DateRange
 from .db import Base
 
 
@@ -66,7 +67,9 @@ class ExpenseRepository(ABC):
     """The contract a caller depends on in order to read expenses."""
 
     @abstractmethod
-    async def list_expenses(self) -> Sequence[ExpenseRecord]: ...
+    async def list_expenses(
+        self, dates: DateRange = UNBOUNDED
+    ) -> Sequence[ExpenseRecord]: ...
 
 
 class PostgresExpenseRepository(ExpenseRepository):
@@ -78,17 +81,26 @@ class PostgresExpenseRepository(ExpenseRepository):
         self._session = session
 
     @override
-    async def list_expenses(self) -> Sequence[ExpenseRecord]:
-        """Every expense, newest first. An empty table returns an empty sequence."""
+    async def list_expenses(
+        self, dates: DateRange = UNBOUNDED
+    ) -> Sequence[ExpenseRecord]:
+        """Every expense within the bounds given, newest first, or an empty sequence."""
+        statement = select(
+            Expense.amount,
+            Expense.currency,
+            Expense.expense_date,
+            Expense.category,
+            Expense.details,
+        )
+        # Both bounds inclusive, and an open one adds no clause at all. That they are
+        # the right way round is the type's guarantee, not something checked here.
+        if dates.start is not None:
+            statement = statement.where(Expense.expense_date >= dates.start)
+        if dates.end is not None:
+            statement = statement.where(Expense.expense_date <= dates.end)
         try:
             rows = await self._session.execute(
-                select(
-                    Expense.amount,
-                    Expense.currency,
-                    Expense.expense_date,
-                    Expense.category,
-                    Expense.details,
-                ).order_by(Expense.expense_date.desc(), Expense.id.desc())
+                statement.order_by(Expense.expense_date.desc(), Expense.id.desc())
             )
         except (SQLAlchemyError, OSError) as exc:
             # OSError as well: asyncpg lets asyncio's ConnectionRefusedError out
