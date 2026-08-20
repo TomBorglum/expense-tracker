@@ -11,53 +11,41 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/expense_tracker"]
 
-# Every backend command is DEFINED here: this file already owns how each tool behaves
-# (the ruff select list, pytest's addopts, basedpyright's mode), so it owns how each is
-# invoked too. The frontend counterpart is the "scripts" block in frontend/package.json.
-#
-# pixi.toml forwards to each of these as `pixi run backend-<task>`, which is what CI
-# calls and the entry point to prefer; a task added here needs its forwarder added there.
-# Directly, this is `poe <task>` from backend/ or `poe -C backend <task>` from anywhere -
-# either way the working directory is backend/, so the paths below are relative to it.
+# Every backend command is defined here; pixi.toml forwards to each as
+# `pixi run backend-<task>`, and a task added here needs its forwarder added there.
+# `poe <task>` from backend/ or `poe -C backend <task>` from anywhere both run with the
+# working directory at backend/, so the paths below are relative to it.
 [tool.poe]
-# The environment is already active: direnv's use_pixi puts .pixi/envs/default/bin on
-# PATH locally, and CI's setup-direnv puts it on $GITHUB_PATH. "simple" stops poe hunting
-# for a poetry/uv project or a .venv that does not exist here. Nothing can silently run
-# the wrong interpreter - poe itself only exists inside the pixi environment, so if `poe`
-# resolves at all, that environment's pytest and ruff are already first on PATH.
+# The environment is already active - direnv's use_pixi puts .pixi/envs/default/bin on
+# PATH locally, CI's setup-direnv puts it on $GITHUB_PATH. "simple" stops poe hunting for
+# a poetry/uv project or a .venv that does not exist here.
 executor = "simple"
 # No `envfile`: PGHOST, PGPORT, PGUSER, PGDATABASE and UVICORN_PORT reach a task from the
-# environment direnv already built, which is what lets the db-* tasks omit the
-# --host/--port/--username flags and `dev` omit --port.
+# environment direnv already built, which is what lets the db-* tasks omit
+# --host/--port/--username and `dev` omit --port.
 
 # Alphabetical, matching the forwarder table in pixi.toml and what `poe` with no task
-# prints. Ordering by workflow instead would leave a new task no obviously right place.
+# prints.
 [tool.poe.tasks]
 # --- The local PostgreSQL cluster -------------------------------------------------
 #
 # A cluster owned by this checkout: initdb'd into .pgdata/ beside this file (gitignored),
 # on the host and port backend/.env names, with a superuser and a database both named
-# after the project so the DSN is identical on every machine and on CI. No container, no
-# compose file, no `services:` block in ci.yml - the server comes out of the same
-# conda-forge lock as python and node.
+# after the project.
 #
-# `shell`, not the default `cmd`: every one of them is idempotent - CI runs them on a bare
-# runner and a developer runs them again next week, and the two have to behave the same -
-# and the `||` guards that buy that need a real shell to interpret them.
+# `shell`, not the default `cmd`: the `||` guards that make each one idempotent need a
+# real shell to interpret them.
 #
 # The two that reach a server open with a `${PGPORT:?}` guard, which aborts the task when
-# the name is unset. initdb, psql and createdb each carry their own fallback - port 5432
-# and the OS username - so without it a lost environment reaches whatever cluster answers
-# there instead of failing.
+# the name is unset - initdb, psql and createdb each fall back to port 5432 and the OS
+# username on their own. See backend/CLAUDE.md.
 
 # initdb refuses a non-empty directory, so the PG_VERSION probe is what makes a second
-# run a no-op. The three --set flags are written into the generated postgresql.conf,
-# which is why db-start needs no -o "-p $PGPORT": the port, the loopback-only listener
-# and the socket directory are properties of the cluster, not of how it was launched.
-# That also means the probe short-circuits a PGPORT change - an existing .pgdata/ keeps
-# the port it was created with until db-reset throws it away.
-# --auth=trust is safe only because of listen_addresses: this is a throwaway dev cluster
-# holding one row of public text, and the flags must not be copied anywhere real.
+# run a no-op - which also means an existing .pgdata/ keeps the port it was created with
+# until db-reset throws it away. The three --set flags are written into the generated
+# postgresql.conf, which is why db-start needs no -o "-p $PGPORT".
+# --auth=trust is safe only because of listen_addresses: this is a throwaway dev cluster,
+# and the flags must not be copied anywhere real.
 db-create.shell = """
 : "${PGPORT:?unset - run 'direnv allow'}"
 test -f .pgdata/PG_VERSION ||
@@ -66,38 +54,29 @@ test -f .pgdata/PG_VERSION ||
          --no-instructions --set=port="$PGPORT" --set=listen_addresses=127.0.0.1 \
          --set=unix_socket_directories=/tmp
 """
-# The whole cluster, ready to answer: `dev` depends on this, so a developer reaches for
-# it by hand only to have a database up without a server. Reads as
-# (probe || createdb) && apply-schema, which is left-associative, so the schema is
-# applied down either branch. The probe is psql's own exit code - it fails when the
+# Reads as (probe || createdb) && apply-schema, which is left-associative, so the schema
+# is applied down either branch. The probe is psql's own exit code - it fails when the
 # database does not exist - so there is nothing to grep. schema.sql is idempotent, which
 # is what makes re-running this against a live cluster a no-op.
 #
-# Deliberately not a dep of `test`, which `dev` is the instructive contrast to: a dev
-# server that cannot reach a database answers 503 to everything, while the HTTP suite
-# needs no database at all - tests/conftest.py overrides both repository dependencies.
-# Chaining it onto `test` too would hide the property this design is built around.
+# Deliberately not a dep of `test`; see backend/CLAUDE.md.
 db-init.shell = """
 : "${PGPORT:?unset - run 'direnv allow'}"
 psql --tuples-only --output=/dev/null --command='SELECT 1' || createdb expense_tracker &&
   psql --set=ON_ERROR_STOP=1 --file=schema.sql
 """
 db-init.deps = ["db-start"]
-# The escape hatch: throw the cluster away and start over. Nothing in .pgdata/ is
-# precious - schema.sql can rebuild all of it - and this is the documented cure for a
-# change to an existing table, which the file's IF NOT EXISTS statements cannot apply.
+# Throw the cluster away and start over. Nothing in .pgdata/ is precious, and this is the
+# cure for a change to an existing table, which schema.sql's IF NOT EXISTS cannot apply.
 db-reset.shell = "rm -rf .pgdata"
 db-reset.deps = ["db-stop"]
 # `pg_ctl status` exits 3 when nothing is running and 0 when something is, which is the
-# whole idempotency check. It also sees through a stale postmaster.pid, so a cluster left
-# behind by a hard reboot recovers by re-running this.
+# whole idempotency check. It also sees through a stale postmaster.pid.
 #
 # On a failed start pg_ctl says only "Examine the log output.", so the third arm examines
 # it: `tail -c +` from the size measured beforehand prints the bytes this attempt appended
-# and no earlier run's, which is what keeps a stale "ready to accept connections" from
-# appearing under a failure. The usual reason is a port another cluster already holds.
-# The `test -f` guard is for the first start of a fresh cluster, which has no log yet -
-# a bare redirection would have the shell itself report the missing file.
+# and no earlier run's. The `test -f` guard is for the first start of a fresh cluster,
+# which has no log yet.
 db-start.shell = """
 size=0
 test -f .pgdata/server.log && size=$(wc -c < .pgdata/server.log)
@@ -109,63 +88,46 @@ db-start.deps = ["db-create"]
 # Tolerant of an already-stopped cluster, so it is safe to run blind and safe to chain.
 db-stop.shell = "pg_ctl --pgdata=.pgdata --mode=fast --wait stop || exit 0"
 
-# The REST API with the reloader, on the port UVICORN_PORT names in backend/.env. No
-# --port below and none needed: uvicorn's own CLI reads that name, the way psql reads
-# PGHOST. It serves JSON and nothing else - the page comes from `pixi run frontend-dev`,
-# its counterpart on vite's own port, and CORS is what lets the two talk. --factory lets
-# create_app be the target.
-# --reload-dir is not optional: without it uvicorn watches the whole working directory,
-# and its stat reloader rglobs for *.py and stats every hit four times a second - which
-# here means walking .pixi/ and node_modules/ to find 1891 files when the only one that
-# can ever matter is src/expense_tracker/__init__.py.
+# The REST API with the reloader, on the port UVICORN_PORT names in backend/.env - no
+# --port needed, uvicorn's own CLI reads that name. --factory lets create_app be the
+# target.
 #
-# The db-init dep is what makes this the one command a backend developer needs: the three
-# cluster tasks behind it are idempotent, so a bare checkout gets an initdb and a running
-# server and every later run gets three no-ops. They run once, before uvicorn - the
-# reloader restarts the app subprocess, not poe - and a failure in one aborts before the
-# server binds. The cluster is left running afterwards: db-stop and db-reset own its
-# lifecycle, and stopping it here would pull it out from under whatever else is using it.
-# load-expenses is not in the chain; an empty expense table is a legitimate 200.
+# --reload-dir is not optional: without it uvicorn's stat reloader rglobs the whole
+# working directory for *.py four times a second, walking .pixi/ and node_modules/ to find
+# 1891 files when the only one that can matter is src/expense_tracker/__init__.py.
+#
+# The db-init dep runs the cluster chain once before uvicorn and leaves it up afterwards;
+# db-stop and db-reset own its lifecycle. See backend/CLAUDE.md.
 dev.cmd = "uvicorn expense_tracker:create_app --factory --reload --reload-dir src"
 dev.deps = ["db-init"]
 format = "ruff format"
 format-check = "ruff format --check"
-# Two linters, one gate: ruff over each file, then import-linter over the graph they
-# form, against [tool.importlinter] below. The imports are just another artifact to lint,
-# so they do not get their own task. import-linter's cwd is this directory, which is how
-# it finds its config unaided - no --config flag, and no config file at the repo root.
+# Two linters, one gate: ruff over each file, then import-linter over the graph they form,
+# against [tool.importlinter] below. import-linter's cwd is this directory, which is how it
+# finds its config unaided - no --config flag.
 #
-# ruff first, and not only because it is the cheaper of the two: an import that violates
-# a contract is usually also unused, so F401 names the offending line before the graph is
-# even built. A sequence stops at the first failure, so that is the error you see.
+# ruff first: an import that violates a contract is usually also unused, so F401 names the
+# offending line before the graph is even built, and a sequence stops at the first failure.
 lint.sequence = [{ cmd = "ruff check" }, { cmd = "lint-imports" }]
-# Only ruff. import-linter has no fixer, and could not have a useful one - where a new
-# module belongs in the layer order is a design decision, not a mechanical edit. So this
-# is deliberately not the inverse of `lint`.
+# Only ruff; import-linter has no fixer. Deliberately not the inverse of `lint`.
 lint-fix = "ruff check --fix"
-# Read data/currencies/*.tsv into the database, replacing every rate already there.
-# Not idempotent the way load-expenses is - it is idempotent in the stronger sense that
-# the table ends up matching the files whatever it held before, which is what makes
-# editing a rate and reloading the supported workflow.
+# Read data/currencies/*.tsv into the database, replacing every rate already there, so the
+# table ends up matching the files whatever it held before.
 load-currencies = "python -m expense_tracker.currency_loader data/currencies"
-# Read data/expenses/*.tsv into the database. Idempotent because the
-# loaded_expense_file ledger remembers which files are already in. Not a db-* task and
-# not a dep of any: those five are the cluster's lifecycle, this is data going into it.
+# Read data/expenses/*.tsv into the database. Idempotent because the loaded_expense_file
+# ledger remembers which files are already in.
 load-expenses = "python -m expense_tracker.expense_loader data/expenses"
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 test = "pytest"
 typecheck = "basedpyright"
 
 [tool.ruff.lint]
-# Widen beyond ruff's default E/F: import sorting (I), pyupgrade (UP),
-# bugbear (B), simplify (SIM), and Ruff-native rules (RUF). Target version is
-# inferred from [project].requires-python.
+# Widen beyond ruff's default E/F: import sorting (I), pyupgrade (UP), bugbear (B),
+# simplify (SIM), Ruff-native (RUF). Target version comes from [project].requires-python.
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
-# The dependency order between this package's modules, which until now was prose in
-# CLAUDE.md and two module docstrings and enforced by nothing. ruff cannot cover it:
-# TID251 bans a name project-wide, so it cannot say "db may not import fastapi but
-# __init__ may", and ruff builds no cross-module graph, so it sees no cycles at all.
+# The dependency order between this package's modules. ruff cannot cover it: TID251 bans a
+# name project-wide, and ruff builds no cross-module graph, so it sees no cycles at all.
 [tool.importlinter]
 root_package = "expense_tracker"
 # Needed by the "db knows nothing about HTTP" contract, which names packages outside the
@@ -173,21 +135,12 @@ root_package = "expense_tracker"
 include_external_packages = true
 
 # The stack, top to bottom, relative to the package: the entry points may import the
-# repositories, and never the reverse.
-#
-# Siblings are joined with "|", which means they may NOT import each other. ":" is the
-# other delimiter and says the opposite, so the choice is load-bearing rather than
-# cosmetic. deps and the two loaders are the ways into this package, one wired into
-# create_app() and the others run as `python -m`; keeping them apart is what keeps
-# fastapi out of the CLIs, and the loaders out of each other.
-#
-# conversion gets a layer of its own rather than a fourth "|" sibling above: it imports
-# both repository modules, which puts it over them, and the entry points may import it,
-# which puts it under them. As a sibling of deps it could be neither.
+# repositories, and never the reverse. Siblings joined with "|" may NOT import each other;
+# ":" says the opposite, so the choice is load-bearing rather than cosmetic.
 #
 # __init__.py is the container's own module rather than one of its children, so it is not
-# a layer and is unconstrained. The contract that stops anything importing back into it
-# is below.
+# a layer and is unconstrained. The contract that stops anything importing back into it is
+# below. Why conversion takes a layer of its own is in backend/CLAUDE.md.
 [[tool.importlinter.contracts]]
 name = "expense_tracker layers: the entry points above persistence"
 type = "layers"
@@ -199,16 +152,12 @@ layers = [
   "db | config",
 ]
 # A module added under src/expense_tracker/ that is not named above breaks this contract.
-# That is the point: the gate covers new code by default instead of quietly ceasing to,
-# so where a new module sits in the stack is a decision somebody has to make rather than
-# one they can skip.
+# So the gate covers new code by default: an unnamed module fails it.
 exhaustive = true
 
 # The "only deps.py imports fastapi" half of the invariant, which the layers contract
-# cannot express because fastapi is outside the root package. The repositories raise
-# their ...Unavailable errors and know no status codes; the handlers in create_app() are
-# the only place that turn them into a 503. starlette is named too - it is what an
-# HTTPException import reaches through, and fastapi re-exports from it.
+# cannot express because fastapi is outside the root package. starlette is named too - it
+# is what an HTTPException import reaches through, and fastapi re-exports from it.
 #
 # A forbidden contract has no `exhaustive` option, unlike the layers one above, so this
 # list does not grow by itself: a new module is silently uncovered until it is named here.
@@ -230,9 +179,7 @@ forbidden_modules = ["fastapi", "starlette"]
 # layers contract leaves open - a container is not one of its own layers.
 # as_packages = false is load-bearing: by default a forbidden module covers its
 # descendants too, so "expense_tracker" would match db and deps and forbid the very edge
-# the layers contract exists to permit.
-#
-# Not exhaustive either, for the same reason as the contract above: name new modules here.
+# the layers contract exists to permit. Not exhaustive either - name new modules here.
 [[tool.importlinter.contracts]]
 name = "nothing imports back into create_app"
 type = "forbidden"
@@ -249,11 +196,9 @@ source_modules = [
 forbidden_modules = ["expense_tracker"]
 as_packages = false
 
-# Cycles, directly. The layers contract already implies this for the modules it names -
-# but only at the top level, and only between layers: two siblings sharing a layer are
-# ordered by "|" rather than by the stack. This one drills down
-# through subpackages as they appear (depth defaults to 10) and keeps holding without
-# being re-edited, which the layers contract cannot promise.
+# Cycles, directly. The layers contract implies this only at the top level and only
+# between layers; this one drills down through subpackages as they appear (depth defaults
+# to 10) and keeps holding without being re-edited.
 [[tool.importlinter.contracts]]
 name = "no import cycles anywhere in the package"
 type = "acyclic_siblings"
@@ -265,24 +210,20 @@ ancestors = ["expense_tracker"]
 testpaths = ["tests"]
 addopts = "--strict-markers --strict-config --cov=expense_tracker --cov-report=xml --cov-report=term-missing"
 # --strict-markers is on, so this registration is what makes the marker legal. It is a
-# label rather than a filter: the marked module skips itself when no server answers,
-# and fails instead of skipping under CI, so a broken db-init cannot go green.
+# label rather than a filter: the marked modules skip themselves when no server answers,
+# and fail instead of skipping under CI.
 markers = [
   "postgres: exercises a real PostgreSQL server; needs `pixi run backend-db-init`",
 ]
 
 [tool.basedpyright]
-# basedpyright's own default, and a superset of pyright's `strict`: it adds the
-# based-only rules (reportUnusedCallResult, reportAny, reportImplicitOverride) and sets
-# failOnWarnings, so a warning fails `pixi run backend-typecheck` exactly like an error -
-# the same no-warn-tier posture the frontend gets from `eslint --max-warnings 0`.
+# basedpyright's own default, and a superset of pyright's `strict`: it adds the based-only
+# rules (reportUnusedCallResult, reportAny, reportImplicitOverride) and sets failOnWarnings,
+# so a warning fails `pixi run backend-typecheck` exactly like an error.
 typeCheckingMode = "recommended"
 # Relative to this file, so backend/src and backend/tests.
 include = ["src", "tests"]
 extraPaths = ["src"]
-# Authoritative for editors too, not just `pixi run backend-typecheck`. Zed sends this
-# directory as the LSP workspace folder (it reads pyproject.toml as the project
-# manifest), so the language server resolves this section without being pointed at it -
-# and basedpyright ignores a developer's personal typeCheckingMode whenever it finds a
-# project config, which makes this file the one that wins. See "Editor setup (Zed)" in
-# README.md.
+# Authoritative for editors too: Zed sends this directory as the LSP workspace folder, and
+# basedpyright ignores a developer's personal typeCheckingMode whenever it finds a project
+# config. See "Editor setup (Zed)" in README.md.

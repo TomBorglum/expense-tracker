@@ -1,57 +1,32 @@
-# Two layers, on purpose.
-#
-# Each stack DEFINES its commands in the file that already owns how its tools behave:
-# the poe tasks in backend/pyproject.toml, the "scripts" block in frontend/package.json.
-# That keeps `cd backend && poe test` and `cd frontend && pnpm build` working, so neither
-# directory needs this file to be a runnable project.
-#
-# This manifest AGGREGATES them, one prefixed forwarder per command, so `pixi run` stays
-# the single entry point that spans both stacks - one list, one tab-completion, one thing
-# CI calls. The delegation is uniform: every task here forwards, none defines. That is
-# what makes the layer honest rather than a place command bodies hide.
-#
-# Adding a command means two edits: define it in the stack's manifest, forward it here.
+# Forwarders only. Each stack defines its commands in its own manifest - poe tasks in
+# backend/pyproject.toml, "scripts" in frontend/package.json - and this file aggregates
+# them under `pixi run`. Adding a command means two edits; see CLAUDE.md.
 
 [workspace]
 name = "expense-tracker"
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
-# Production / runtime LIBRARIES (the "default" feature).
-# Folded into EVERY environment, so both default and prod get these. The app itself is
-# not here: how it is installed differs per environment, and the two blocks below say so.
+# Runtime LIBRARIES, folded into every environment. The app itself is installed per
+# environment, in the two blocks below.
 [dependencies]
 python = "==3.14.6"
-# fastapi-core, not fastapi: on conda-forge the plain `fastapi` package is the
-# `fastapi[standard]` bundle and drags uvicorn-standard, jinja2, python-multipart,
-# email_validator and fastapi-cli into the lean prod environment. This app uses none
-# of them.
+# fastapi-core, not fastapi: on conda-forge `fastapi` is the `fastapi[standard]` bundle
+# and drags uvicorn-standard, jinja2, python-multipart, email_validator and fastapi-cli in.
 fastapi-core = "==0.141.1"
 uvicorn = "==0.52.0"
-# The ORM and the driver. Runtime, not test-only: the API cannot answer its one request
-# without them. asyncpg speaks the PostgreSQL wire protocol directly, so this pair adds
-# greenlet (what SQLAlchemy's asyncio extension runs on) and nothing else - no libpq, no
-# client binaries, and above all no server. That is in the test feature below.
+# The ORM and the driver. asyncpg speaks the PostgreSQL wire protocol directly, so this
+# pair adds greenlet and nothing else - no libpq, no client binaries, no server.
 sqlalchemy = "==2.0.51"
 asyncpg = "==0.31.0"
-# Already resolved here by fastapi-core, so this pin changes no solve. Declared because
-# create_app() imports it directly for the ExpensePayload response model, and a direct
-# import should not rest on a transitive dependency.
+# Resolved here by fastapi-core anyway; declared because create_app() imports it directly.
 pydantic = "==2.13.4"
-# What config.py validates the database settings with. Runtime rather than test-only: the
-# deployed API reads its own configuration. Only the BaseSettings half is used - the
-# dotenv half is not, because loading backend/.env is direnv's job here
-# (`dotenv_if_exists` in .envrc) and never the app's.
+# What config.py validates the database settings with. Only the BaseSettings half is used;
+# loading backend/.env is direnv's job (`dotenv_if_exists` in .envrc), never the app's.
 pydantic-settings = "==2.15.0"
 
-# The app itself, in two flavours, because an editable install is a development tool and
-# not a production deliverable. Editable installs a redirect to backend/src, so the source
-# tree has to stay put - which is what lets a developer edit and re-run with no reinstall,
-# and exactly what an image must not do: it would drag tests/ and data/ along and pin the
-# container to a directory layout instead of an artifact. prod gets a real wheel, built by
-# hatchling from backend/pyproject.toml, which packages src/expense_tracker and nothing
-# else. No correctness property rests on the split - config.py reads the environment in
-# either - so this is about shipping the right thing, not about guarding against a bug.
+# The app in two flavours: editable for development, a hatchling-built wheel for prod.
+# See backend/CLAUDE.md.
 [feature.dev.pypi-dependencies]
 expense-tracker = { path = "backend", editable = true }
 
@@ -63,75 +38,45 @@ expense-tracker = { path = "backend", editable = false }
 [feature.test.dependencies]
 pytest = "==9.1.1"
 pytest-cov = "==7.0.0"
-# What starlette's TestClient runs on; test-only, so prod does not ship it. It must
-# be httpx2 rather than httpx: starlette imports `httpx2 as httpx` under
-# TYPE_CHECKING, so with plain httpx the client is typed as Unknown and basedpyright
-# fails the strict-mode gate.
+# What starlette's TestClient runs on. httpx2 rather than httpx: starlette imports
+# `httpx2 as httpx` under TYPE_CHECKING, so plain httpx types the client as Unknown and
+# basedpyright fails the gate.
 httpx2 = "==2.9.1"
 basedpyright = "==1.39.8"
 ruff = "==0.15.21"
-# The backend's task runner, reading [tool.poe.tasks] from backend/pyproject.toml. Python
-# ships no equivalent of package.json's "scripts", so this is what lets the backend own
-# its commands the way the frontend already does. Test feature, not [dependencies]: the
-# prod environment runs the app, it does not lint or test it.
+# The backend's task runner, reading [tool.poe.tasks] from backend/pyproject.toml.
 poethepoet = "==0.41.0"
-# Runs the frontend toolchain (vite/tailwind) and the language servers Zed is pinned
-# to. Kept in the test feature, which is what keeps the prod environment Node-free:
-# the backend ships no frontend assets and wants Node for nothing.
+# Runs the frontend toolchain and the language servers Zed is pinned to. Test feature,
+# which is what keeps the prod environment Node-free.
 nodejs = "==26.5.0"
-# The package manager, pinned here rather than via a "packageManager" field in
-# package.json: pnpm's pmOnFail defaults to "download", so that field would make pnpm
-# fetch its own version and bypass this pin. pixi is the single source of truth.
+# Pinned here rather than by a "packageManager" field in package.json: pnpm's pmOnFail
+# defaults to "download", so that field would fetch its own version and bypass this pin.
 pnpm = "==11.18.0"
-# The database server, and the initdb/pg_ctl/psql/createdb binaries the db-* poe tasks
-# in backend/pyproject.toml drive. A development and CI concern only: prod connects to a
-# database somebody
-# else operates, so keeping the server out of [dependencies] is what stops it - and
-# libpq, icu, krb5, openldap and liburing behind it - landing in the lean runtime
-# environment that only ever needs to speak the wire protocol.
+# The server, and the initdb/pg_ctl/psql/createdb binaries the db-* poe tasks drive.
+# Development and CI only: keeping it out of [dependencies] is what keeps it - and libpq,
+# icu, krb5, openldap and liburing behind it - out of the prod environment.
 postgresql = "==18.4"
 
-# No [activation.env] here, and deliberately none: where the local cluster lives is
-# declared once, in backend/.env, which poe exports into every task and config.py reads
-# directly. A block here would be a second source for the same facts - and a root
-# one would belong to the default feature, folding into prod too and handing a deployment
-# a DSN pointing at its own loopback.
+# No [activation.env], deliberately: the connection settings are declared once, in
+# backend/.env. See backend/CLAUDE.md.
 
-# The one dependency in this file that is not conda-pinned, and the reason is the recipe
-# rather than the tool. import-linter 2.11 moved fastapi and uvicorn behind a "ui" extra,
-# for a browser graph UI nothing here runs. conda has no notion of extras, so the
-# conda-forge recipe still carries both as hard dependencies - plus nox, its own test
-# runner. Taking it from there would drag in the fastapi[standard] bundle rejected at the
-# top of this file, and a second HTTP client beside the httpx2 pin above. From PyPI it
-# declares four: click, grimp, rich, typing-extensions.
-#
-# Test feature like ruff and basedpyright: prod runs the app, it does not check how it is
-# wired. Pinned exactly, the same rule the conda tables follow.
+# From PyPI rather than conda-forge: import-linter 2.11 moved fastapi and uvicorn behind
+# a "ui" extra, and conda has no extras, so the recipe still carries both as hard
+# dependencies plus nox. From PyPI it declares click, grimp, rich and typing-extensions.
 [feature.test.pypi-dependencies]
 import-linter = "==2.13"
 
-# Forwarders, in the test feature so they are present in default and absent from prod -
-# the lean prod environment has neither poe nor pnpm to forward to.
-#
-# Each one names a task defined elsewhere and sets the cwd its runner needs; no command
-# body lives here. The prefix is what keeps one flat namespace unambiguous, and the two
-# groups never cross between backend/ and frontend/.
-#
-# ALPHABETICAL, which is also the order `pixi task list` prints - so the file and the
-# listing agree and a new task has exactly one correct place to go. The prefix keeps the
-# two stacks contiguous for free, since every backend- sorts before every frontend-.
-# Nothing here is ordered by workflow or cost; CI decides what runs when, and
-# .github/workflows/ci.yml explains why.
+# Forwarders, in the test feature so prod has neither poe nor pnpm to forward to. Each
+# names a task defined elsewhere and sets the cwd its runner needs; no command body lives
+# here. Alphabetical, which is the order `pixi task list` prints.
 [feature.test.tasks]
-# Backend -> [tool.poe.tasks] in backend/pyproject.toml. With cwd=backend, poe finds that
-# file unaided, so the forwarder needs no -C.
+# With cwd=backend, poe finds backend/pyproject.toml unaided, so these need no -C.
 backend-db-create = { cmd = "poe db-create", cwd = "backend" }
 backend-db-init = { cmd = "poe db-init", cwd = "backend" }
 backend-db-reset = { cmd = "poe db-reset", cwd = "backend" }
 backend-db-start = { cmd = "poe db-start", cwd = "backend" }
 backend-db-stop = { cmd = "poe db-stop", cwd = "backend" }
-# Brings the local cluster up first, through the poe task's db-init dep - the five db
-# forwarders above stay for driving it on its own.
+# Brings the local cluster up first, through the poe task's db-init dep.
 backend-dev = { cmd = "poe dev", cwd = "backend" }
 backend-format = { cmd = "poe format", cwd = "backend" }
 backend-format-check = { cmd = "poe format-check", cwd = "backend" }
@@ -146,17 +91,15 @@ backend-typecheck = { cmd = "poe typecheck", cwd = "backend" }
 # Frontend -> the "scripts" block in frontend/package.json. `install` is a pnpm built-in
 # rather than a script, which is why it alone takes no `run`.
 frontend-build = { cmd = "pnpm run build", cwd = "frontend" }
-# vite's dev server, the counterpart to backend-dev. The two run side by side: this one
-# serves the page, backend-dev answers its fetches from another origin.
+# vite's dev server, the counterpart to backend-dev. The two run side by side.
 frontend-dev = { cmd = "pnpm run dev", cwd = "frontend" }
 frontend-format = { cmd = "pnpm run format", cwd = "frontend" }
-# The formatting gate. .zed/settings.json deliberately does not enable format_on_save, so
-# formatting is applied by frontend-format and checked here rather than by the editor.
+# The formatting gate. .zed/settings.json does not enable format_on_save, so formatting is
+# applied by frontend-format and checked here rather than by the editor.
 frontend-format-check = { cmd = "pnpm run format-check", cwd = "frontend" }
 frontend-install = { cmd = "pnpm install --frozen-lockfile", cwd = "frontend" }
-# eslint, the frontend counterpart to backend-lint. Type-aware, so it builds the same
-# full TS program frontend-typecheck does and then runs every rule over it - about twice
-# the cost, which is why CI puts it last of the frontend static gates.
+# Type-aware, so it builds the same full TS program frontend-typecheck does and then runs
+# every rule over it - about twice the cost, which is why CI puts it last.
 frontend-lint = { cmd = "pnpm run lint", cwd = "frontend" }
 frontend-lint-fix = { cmd = "pnpm run lint-fix", cwd = "frontend" }
 # vitest + coverage; writes coverage/frontend/lcov.info at the repo root for the
@@ -164,13 +107,9 @@ frontend-lint-fix = { cmd = "pnpm run lint-fix", cwd = "frontend" }
 frontend-test = { cmd = "pnpm run test", cwd = "frontend" }
 frontend-typecheck = { cmd = "pnpm run typecheck", cwd = "frontend" }
 
-# Two environments on one solve-group:
-# - default: runtime libraries + test tooling + the editable app -> editor, local dev, CI
+# Two environments on one solve-group, which keeps python pinned identically across both:
+# - default: runtime libraries + test tooling + the editable app -> local dev, CI, editor
 # - prod:    runtime libraries + the app as a wheel -> the API and nothing else
-# Same solve-group keeps python pinned identically across both. prod is Node-free by
-# construction now that the backend ships no frontend assets, and it is the environment an
-# image is built from - so anything a container must not have has to stay out of the
-# default feature and out of the prod feature both.
 [environments]
 default = { features = ["test", "dev"], solve-group = "prod" }
 prod = { features = ["prod"], solve-group = "prod" }
