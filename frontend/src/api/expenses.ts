@@ -50,8 +50,17 @@ function isExpenseList(payload: unknown): payload is Expense[] {
   return Array.isArray(payload) && payload.every(isExpense);
 }
 
-export async function fetchExpenses(signal?: AbortSignal): Promise<Expense[]> {
-  const response = await fetch(EXPENSES_URL, {
+export async function fetchExpenses(
+  currency: string,
+  signal?: AbortSignal,
+): Promise<Expense[]> {
+  // Built per call rather than folded into EXPENSES_URL, which stays the bare endpoint
+  // the msw handlers bind to. The parameter is always sent: the backend reads an empty
+  // value as a malformed code rather than as no conversion, so an omitted currency and
+  // an empty one are not the same request.
+  const url = new URL(EXPENSES_URL);
+  url.searchParams.set("currency", currency);
+  const response = await fetch(url, {
     headers: { Accept: "application/json" },
     signal,
   });
@@ -67,7 +76,12 @@ export async function fetchExpenses(signal?: AbortSignal): Promise<Expense[]> {
   return payload;
 }
 
-export const expensesQueryOptions = queryOptions({
-  queryKey: ["expenses"],
-  queryFn: ({ signal }) => fetchExpenses(signal),
-});
+// A factory rather than a constant, so each currency is its own cache entry. That is
+// also what puts the table back into its pending branch on a switch, instead of showing
+// the previous currency's amounts under the new code.
+export function expensesQueryOptions(currency: string) {
+  return queryOptions({
+    queryKey: ["expenses", currency],
+    queryFn: ({ signal }) => fetchExpenses(currency, signal),
+  });
+}

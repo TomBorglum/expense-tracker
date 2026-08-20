@@ -170,8 +170,9 @@ Break one of these and CI goes red on an otherwise correct change.
 - **`?currency=` converts in `conversion.py`, and refuses rather than approximates.**
   The module is pure - it takes `ExpenseRecord`s and `CurrencyRateRecord`s and returns
   `ExpenseRecord`s, so `amount` and `currency` are replaced in place and the payload
-  shape is the same with the parameter as without it. That is what keeps the frontend
-  out of this: `expenses.ts` and its guard are untouched. Four refusals are the design,
+  shape is the same with the parameter as without it. That is what keeps the *payload*
+  half of the frontend out of this: the `Expense` interface in `expenses.ts` and its
+  guard are untouched, and only the request URL and the query key gained the parameter. Four refusals are the design,
   not gaps to fill in later: a rate is used **only** in the direction
   `data/currencies/rates.tsv` states it, never inverted and never composed through a
   third currency; a pair loaded twice is refused rather than picked between, and only
@@ -274,11 +275,17 @@ Break one of these and CI goes red on an otherwise correct change.
   process refuses to start in both environments. It is about shipping the right thing.
   Pinned by no test - `pixi run -e prod` is the check, described in `README.md` under
   "Environments".
-- **Seven things are declared twice. Change both halves together:**
+- **Eight things are declared twice. Change both halves together:**
   - the *payload shape and path* - `backend/src/expense_tracker/__init__.py` against
     `frontend/src/api/expenses.ts`, with nothing checking the agreement. Every expense
     field is a string on the wire, `amount` included, and the frontend's guard rejects a
     number, so a change to `ExpensePayload` is a change to the `Expense` interface;
+  - the *rates payload and path* - the same file against
+    `frontend/src/api/currencies.ts`, on the same terms: `CurrencyPayload` against the
+    `CurrencyRate` interface, `exchange_rate` a string the guard rejects as a number.
+    `BASE_CURRENCY` in that module is **not** part of the pair - the backend has no
+    notion of a base and needs none, because the identity case it short-circuits is what
+    makes `DKK` selectable against an empty rate table;
   - the three tables - `backend/schema.sql` and the `LoadedExpenseFile` and `Expense`
     models in `expense_repository.py` and the `CurrencyRate` model in
     `currency_repository.py`, which never create them and only read them;
@@ -327,9 +334,37 @@ Break one of these and CI goes red on an otherwise correct change.
   covered without a new exclusion. The `declare module` block registering `Register` is
   what would give `Link` a typed `to`; without it a path matching no route compiles.
   **Only `App.tsx` imports `Outlet`, and nothing imports `Link`** - it is the layout
-  shell and no more, because a nav over a single route would be dead UI. The pages under
-  `src/pages/` are router-free, so each one's test mounts it in a bare
-  `QueryClientProvider` and only `routing.test.tsx` builds a router.
+  shell and no more, because a nav over a single route would be dead UI.
+- **`src/components/` is the router-free layer, not `src/pages/`.** The route owns its
+  search schema and its component reads it, so `ExpensesPage` calls `useSearch` and
+  `useNavigate` and its test builds a `createMemoryHistory` router the way
+  `routing.test.tsx` does. It reaches the route through **`getRouteApi("/")`, never by
+  importing `expensesRoute`** - `router.ts` imports the page, so the reverse import is a
+  cycle; `getRouteApi` takes a path string, adds no import edge, and stays typed through
+  the `declare module` block. Everything under `src/components/` takes props and knows no
+  router, which is what keeps `ExpensesTable` and `CurrencySelect` mountable in a bare
+  `QueryClientProvider`. Reading the URL from a component instead is what this splits to
+  prevent: it would couple a leaf to a route path and put a `RouterProvider` in every
+  test that renders it.
+- **`validateSearch` fills in an absent parameter and validates nothing else.**
+  `?currency=` is handed to the backend as typed, so `/?currency=euro` gets the 422 that
+  `conversion.py` raises rather than being corrected or rejected here - re-checking
+  `\A[A-Z]{3}\Z` in the frontend would put that pattern in a second place to drift from,
+  and the frontend reads no `detail` out of an error body, so the failure surfaces as the
+  table's ordinary alert. `CurrencySelect` still shows such a code as its value: a
+  `<select>` whose value matches no option displays the first one instead, which would
+  disagree with both the URL and the request in flight. There is no "as recorded" mode -
+  the parameter is always sent, because an **empty** `?currency=` is a malformed code to
+  the backend and not a request for no conversion.
+- **The currency options are what the rate table can reach, not a list of ISO codes.**
+  `targetCurrencies` in `frontend/src/api/currencies.ts` keeps only the `to_currency` of
+  a pair whose `from_currency` is `BASE_CURRENCY`, because a rate is never inverted and
+  never composed - a `SEK -> DKK` row makes `DKK` no more reachable from `SEK` than no
+  row at all. `BASE_CURRENCY` itself is always offered and needs no rate, since the
+  backend returns a record whose currency already equals the target before any lookup.
+  A rate list that is pending, 503s, empty or malformed leaves the select disabled at
+  `BASE_CURRENCY` and **does not disturb the expenses table**: they are two requests, and
+  an empty rate table is a legitimate `200` for the reason an empty ledger is.
 - **Every linted file needs a tsconfig that owns it.** eslint runs type-aware via
   `parserOptions.projectService`, so a `.ts`/`.tsx` file outside every tsconfig's
   `include` fails to lint rather than being skipped. `src/` and `tests/` come from
@@ -384,7 +419,7 @@ Break one of these and CI goes red on an otherwise correct change.
   - **The `@plugin` `descriptors` override is the one local addition.** daisyUI's
     `@plugin` takes a block; core Tailwind's does not, so `tailwind4` gives it no
     descriptors and css-tree then rejects *every* declaration inside one. It is the
-    seventh pair in "declared twice" above. Drop it once
+    eighth pair in "declared twice" above. Drop it once
     [tailwind-csstree#63](https://github.com/humanwhocodes/tailwind-csstree/issues/63)
     lands.
   - **`tolerant: true` stays**, for a subtler reason than an unparseable file.
