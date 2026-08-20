@@ -42,6 +42,10 @@ export default defineConfig({
     // frontend. Everything else in this block is deliberately repo-root relative
     // for the same reason.
     root: fileURLToPath(new URL("../", import.meta.url)),
+    // Pinned so the suite runs at a non-zero offset from UTC. dates.test.ts proves that
+    // a day is named from the local getters and not through toISOString(), and under a
+    // UTC runner - which is what CI is - the two agree and the test proves nothing.
+    env: { TZ: "Europe/Copenhagen" },
     environment: "jsdom",
     include: ["frontend/tests/**/*.test.{ts,tsx}"],
     // Starts the MSW server and unmounts React between tests. Repo-root relative like

@@ -1,23 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { expensesQueryOptions } from "../api/expenses";
+import { type ExpensesQuery, expensesQueryOptions } from "../api/expenses";
 
 interface ExpensesTableProps {
-  readonly currency: string;
+  readonly query: ExpensesQuery;
 }
 
 // The expenses are owned by the Python package and served from /api/expenses, newest
-// first, restated in the currency asked for. Amounts and dates are rendered exactly as
-// they arrive: the backend sends amount as a string so no float round trip can drift a
-// total by a cent - conversion included, which is why it happens there and not here -
-// and the date is a bare YYYY-MM-DD, which new Date() would read as UTC and print a day
-// early west of Greenwich.
-export function ExpensesTable({ currency }: ExpensesTableProps) {
+// first, restated in the currency asked for and narrowed to the days asked for. Amounts
+// and dates are rendered exactly as they arrive: the backend sends amount as a string so
+// no float round trip can drift a total by a cent - conversion included, which is why it
+// happens there and not here - and the date is a bare YYYY-MM-DD, which new Date() would
+// read as UTC and print a day early west of Greenwich.
+export function ExpensesTable({ query }: ExpensesTableProps) {
   // Not destructured: useQuery returns a discriminated union, and reading through the
   // result is what narrows `data` to an Expense[] in the success branch below.
-  const query = useQuery(expensesQueryOptions(currency));
+  const expenses = useQuery(expensesQueryOptions(query));
 
-  if (query.isPending) {
+  if (expenses.isPending) {
     // <output> rather than role="status" on a <p>: it carries that role implicitly, so
     // spelling it out would be recreating semantics HTML already has (sonar S6819).
     // The error branch keeps its role - no element implies role="alert".
@@ -29,7 +29,7 @@ export function ExpensesTable({ currency }: ExpensesTableProps) {
     );
   }
 
-  if (query.isError) {
+  if (expenses.isError) {
     return (
       <div role="alert" className="alert alert-error">
         Could not load the expenses.
@@ -55,7 +55,7 @@ export function ExpensesTable({ currency }: ExpensesTableProps) {
           </tr>
         </thead>
         <tbody>
-          {query.data.length === 0 ? (
+          {expenses.data.length === 0 ? (
             // A database nobody has run the loader against yet answers 200 with [], which
             // is a working server rather than a fault, so it gets a row and not the alert
             // above.
@@ -65,7 +65,7 @@ export function ExpensesTable({ currency }: ExpensesTableProps) {
               </td>
             </tr>
           ) : (
-            query.data.map((expense, index) => (
+            expenses.data.map((expense, index) => (
               // The payload carries no id, and schema.sql notes that the same amount, day,
               // currency, category and details can legitimately repeat, so position is a
               // row's only identity. The rows are rendered in arrival order and never

@@ -50,16 +50,25 @@ function isExpenseList(payload: unknown): payload is Expense[] {
   return Array.isArray(payload) && payload.every(isExpense);
 }
 
+// The query half of the same contract: three optional parameters on the backend, all
+// three always sent from here. An empty value is malformed to the backend rather than an
+// absent one, so there is no "everything" request to fall back to.
+export interface ExpensesQuery {
+  currency: string;
+  from_date: string;
+  to_date: string;
+}
+
 export async function fetchExpenses(
-  currency: string,
+  query: ExpensesQuery,
   signal?: AbortSignal,
 ): Promise<Expense[]> {
   // Built per call rather than folded into EXPENSES_URL, which stays the bare endpoint
-  // the msw handlers bind to. The parameter is always sent: the backend reads an empty
-  // value as a malformed code rather than as no conversion, so an omitted currency and
-  // an empty one are not the same request.
+  // the msw handlers bind to.
   const url = new URL(EXPENSES_URL);
-  url.searchParams.set("currency", currency);
+  url.searchParams.set("currency", query.currency);
+  url.searchParams.set("from_date", query.from_date);
+  url.searchParams.set("to_date", query.to_date);
   const response = await fetch(url, {
     headers: { Accept: "application/json" },
     signal,
@@ -76,12 +85,14 @@ export async function fetchExpenses(
   return payload;
 }
 
-// A factory rather than a constant, so each currency is its own cache entry. That is
-// also what puts the table back into its pending branch on a switch, instead of showing
-// the previous currency's amounts under the new code.
-export function expensesQueryOptions(currency: string) {
+// A factory rather than a constant, so each set of parameters is its own cache entry.
+// That is also what puts the table back into its pending branch on a change, instead of
+// showing the previous currency's amounts under the new code or the previous month's
+// rows under new dates. TanStack Query hashes the object deterministically, so the key
+// needs no element per parameter.
+export function expensesQueryOptions(query: ExpensesQuery) {
   return queryOptions({
-    queryKey: ["expenses", currency],
-    queryFn: ({ signal }) => fetchExpenses(currency, signal),
+    queryKey: ["expenses", query],
+    queryFn: ({ signal }) => fetchExpenses(query, signal),
   });
 }

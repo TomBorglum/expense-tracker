@@ -1,0 +1,200 @@
+import { type DateRange, DayPicker } from "@daypicker/react";
+import { useEffect, useRef, useState } from "react";
+
+import {
+  addMonths,
+  calendarBounds,
+  fromIsoDate,
+  startOfMonth,
+  toIsoDate,
+} from "../dates";
+
+interface DateRangePickerProps {
+  readonly from: string;
+  readonly to: string;
+  readonly onChange: (from: string, to: string) => void;
+}
+
+interface Shown {
+  left: Date;
+  right: Date;
+}
+
+function clamp(month: Date, start: Date, end: Date): Date {
+  if (month.getTime() < start.getTime()) {
+    return start;
+  }
+  return month.getTime() > end.getTime() ? end : month;
+}
+
+// The month each panel opens on: the one the range starts in, and the one it ends in.
+// A range inside a single month puts the right panel on the month after, so the two
+// never duplicate unless the upper bound leaves nowhere else to go.
+function shownFor(from: string, to: string): Shown {
+  const bounds = calendarBounds();
+  const start = startOfMonth(bounds.start);
+  const end = startOfMonth(bounds.end);
+  const opening = fromIsoDate(from) ?? new Date();
+  const left = clamp(startOfMonth(opening), start, end);
+  const closing = fromIsoDate(to);
+  const right = closing === undefined ? left : clamp(startOfMonth(closing), start, end);
+  return right.getTime() > left.getTime()
+    ? { left, right }
+    : { left, right: clamp(addMonths(left, 1), start, end) };
+}
+
+// The days the expenses are drawn from, as the two YYYY-MM-DD strings the API reads. A
+// value the backend would refuse is shown as it stands rather than corrected, the way
+// CurrencySelect shows a code it was given.
+export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
+  const [open, setOpen] = useState(false);
+  // Holds the half-built range between the two clicks. Null while the calendar agrees
+  // with the URL, which is what makes the props the source of truth the rest of the time.
+  const [picked, setPicked] = useState<DateRange | null>(null);
+  const [shown, setShown] = useState<Shown>(() => shownFor(from, to));
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const selected = picked ?? { from: fromIsoDate(from), to: fromIsoDate(to) };
+  const bounds = calendarBounds();
+
+  // Dismissal drops a half-picked range rather than keeping it: the URL still holds the
+  // range that was there, and a calendar disagreeing with the trigger is worse than
+  // losing one click. Listeners live on the document because the alternative is a
+  // keydown handler on a non-interactive div (sonar S6847).
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    function dismiss(restoreFocus: boolean) {
+      setOpen(false);
+      setPicked(null);
+      if (restoreFocus) {
+        triggerRef.current?.focus();
+      }
+    }
+    function handlePointerDown(event: PointerEvent) {
+      // The trigger is inside the container, so its own click only ever toggles below.
+      if (!containerRef.current?.contains(event.target as Node)) {
+        dismiss(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        dismiss(true);
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  function handleSelect(next: DateRange | undefined) {
+    if (next?.from && next.to) {
+      setPicked(null);
+      setOpen(false);
+      onChange(toIsoDate(next.from), toIsoDate(next.to));
+      return;
+    }
+    // Only a start so far. Reporting it would put an open-ended range in the URL, and
+    // the backend reads an empty bound as malformed rather than as no bound.
+    setPicked(next ?? null);
+  }
+
+  // The panel a dropdown moved wins, and the other follows only far enough to stay in
+  // order - so the left year can be changed without dragging the right along with it.
+  function showLeft(month: Date) {
+    setShown((current) => ({
+      left: month,
+      right: month.getTime() > current.right.getTime() ? month : current.right,
+    }));
+  }
+
+  function showRight(month: Date) {
+    setShown((current) => ({
+      left: month.getTime() < current.left.getTime() ? month : current.left,
+      right: month,
+    }));
+  }
+
+  return (
+    <div ref={containerRef} className="flex items-center gap-3">
+      <span id="date-range-label" className="text-sm text-base-content/60">
+        Dates
+      </span>
+      {/* Positioned by hand rather than with daisyUI's dropdown classes. Those hide
+          .dropdown-content until :focus-within or :popover-open, which fights a panel
+          whose open state is React's - the calendar would vanish the moment focus left
+          it while still mounted. The panel needs w-max because an absolute box
+          shrink-wraps to one month. jsdom evaluates no CSS, so no test sees either. */}
+      <div className="relative">
+        {/* Labelled by the caption and by itself, so the accessible name carries both
+            the control's purpose and the range it currently shows. */}
+        <button
+          id="date-range-value"
+          ref={triggerRef}
+          type="button"
+          aria-expanded={open}
+          aria-labelledby="date-range-label date-range-value"
+          className="btn btn-outline btn-sm font-normal tabular-nums"
+          onClick={() => {
+            if (open) {
+              setOpen(false);
+              setPicked(null);
+              return;
+            }
+            // Recomputed on every opening, so the panels always start on the range the
+            // URL currently holds rather than wherever they were left.
+            setShown(shownFor(from, to));
+            setPicked(null);
+            setOpen(true);
+          }}
+        >
+          {from} to {to}
+        </button>
+        {open && (
+          <div className="absolute top-full right-0 z-10 mt-2 flex w-max gap-4 rounded-box bg-base-100 p-2 shadow-lg">
+            {/* Two calendars rather than one showing two months: numberOfMonths keeps
+                the pair consecutive, and these navigate independently. They share
+                `selected` and `onSelect`, so a range can start in either and end in the
+                other. resetOnSelect, because the range arriving from the URL is always
+                complete - without it a click would drag one end instead of starting
+                over. Neither it nor addToRange can produce a range that ends before it
+                begins, so the ordering needs no guard.
+
+                startMonth and endMonth are what the year dropdown lists; with the
+                arrows hidden, that list is the whole of what bounds navigation. */}
+            <DayPicker
+              mode="range"
+              resetOnSelect
+              hideNavigation
+              captionLayout="dropdown"
+              reverseYears
+              startMonth={bounds.start}
+              endMonth={bounds.end}
+              month={shown.left}
+              onMonthChange={showLeft}
+              selected={selected}
+              onSelect={handleSelect}
+            />
+            <DayPicker
+              mode="range"
+              resetOnSelect
+              hideNavigation
+              captionLayout="dropdown"
+              reverseYears
+              startMonth={bounds.start}
+              endMonth={bounds.end}
+              month={shown.right}
+              onMonthChange={showRight}
+              selected={selected}
+              onSelect={handleSelect}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

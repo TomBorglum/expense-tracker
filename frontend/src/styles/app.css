@@ -20,3 +20,15 @@
     nord --default,
     dim --prefersdark;
 }
+
+/* DayPicker ships its own palette - a literal blue and a near-white - which is wrong
+   under one of the two themes. Repointed at daisyUI's role tokens so the calendar
+   follows nord and dim like everything else. On .rdp-root, not :root, because that is
+   the selector the package declares them on; this block is imported after it. */
+.rdp-root {
+  --rdp-accent-color: var(--color-primary);
+  --rdp-accent-background-color: var(--color-base-200);
+  --rdp-range_start-color: var(--color-primary-content);
+  --rdp-range_end-color: var(--color-primary-content);
+  --rdp-range_middle-color: var(--color-base-content);
+}
