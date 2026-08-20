@@ -167,6 +167,29 @@ Break one of these and CI goes red on an otherwise correct change.
   `PostgresCurrencyRepository` keeps the same shape. The frontend keeps its half of that
   asymmetry: `ExpensesTable` renders `[]` as a row reading `No expenses loaded.` and
   reserves its `role="alert"` for a request that actually failed.
+- **`?currency=` converts in `conversion.py`, and refuses rather than approximates.**
+  The module is pure - it takes `ExpenseRecord`s and `CurrencyRateRecord`s and returns
+  `ExpenseRecord`s, so `amount` and `currency` are replaced in place and the payload
+  shape is the same with the parameter as without it. That is what keeps the frontend
+  out of this: `expenses.ts` and its guard are untouched. Four refusals are the design,
+  not gaps to fill in later: a rate is used **only** in the direction
+  `data/currencies/rates.tsv` states it, never inverted and never composed through a
+  third currency; a pair loaded twice is refused rather than picked between, and only
+  when that pair is needed, so an unrelated duplicate refuses nothing; one unconvertible
+  expense refuses the **whole** request, because a list mixing converted and
+  unconverted amounts is a column nobody can add up; and a code that is not
+  `\A[A-Z]{3}\Z` is refused rather than uppercased, matching the loaders. The one thing
+  it does *not* refuse is the identity: `record.currency == target` returns the record
+  before any lookup, which is why no `DKK DKK 1.000000` row exists. Arithmetic is
+  `Decimal` throughout, `quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)` - spelled
+  out because `Decimal` rounds half to **even** by default. `ConversionError` is the
+  repositories' pattern reused: the module knows no status code, and the handler in
+  `create_app()` is the only place it becomes a 422. That handler reads its exception,
+  unlike the two 503s, because the message is about the client's own input and names
+  nothing of the database. `conversion.py` is also the module that exercised the "three
+  lists, not one" rule above, and it took a **layer of its own** - it imports both
+  repository modules, so it sits over them, and the entry points may import it, so it
+  sits under them; a `|` sibling of `deps` could be neither.
 - **The expenses table renders `amount` and `date` verbatim.** No `Intl.NumberFormat`,
   no `new Date()`. The backend sends `amount` as `str(Decimal)` precisely so no float
   round trip can drift a total by a cent, and formatting it client-side would put that

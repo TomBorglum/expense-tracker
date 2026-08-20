@@ -101,6 +101,7 @@ error state until something answers on 8000.
 | Route | What it serves |
 | --- | --- |
 | `GET /api/expenses` | `[{"amount", "currency", "date", "category", "details"}, ...]` - the `ExpensePayload` model |
+| `GET /api/expenses?currency=EUR` | The same, restated in one currency |
 | `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
 Both send `Cache-Control: no-store`.
@@ -119,6 +120,36 @@ Exchange rates come back **by pair**, `from_currency` then `to_currency`, and
 `numeric(18, 6)`, and an amount multiplied by a rate that made a float round trip is an
 amount that has drifted. The empty table and the unreachable database behave as above,
 with `{"detail": "currencies unavailable"}` as the 503 body.
+
+### Asking for one currency
+
+`?currency=` restates every expense in the code given, **replacing** `amount` and
+`currency` rather than adding fields, so the payload is the same shape either way and a
+client that does not ask sees exactly what it saw before. `1250.00 DKK` at `0.134048`
+comes back as `"167.56" EUR`: `Decimal` arithmetic throughout, quantized to two places
+with `ROUND_HALF_UP`, and still a string on the wire.
+
+Only what `data/currencies/rates.tsv` states in that direction is used. A rate is never
+inverted and never composed through a third currency, because either would publish a
+number the file does not. An expense already in the requested currency passes through
+untouched, so the file needs no `DKK DKK 1.000000` row and does not have one.
+
+Anything else is a `422` carrying a plain-string `detail`, the same shape as the 503s
+above:
+
+| Request | Body |
+| --- | --- |
+| `?currency=CHF` | `{"detail": "no exchange rate from DKK to CHF"}` |
+| `?currency=euro` | `{"detail": "currency must be an ISO 4217 code"}` |
+
+A lowercase code is refused rather than uppercased, matching the loaders, which refuse
+one in a file. One unconvertible expense refuses the **whole** request: a list mixing
+converted and unconverted amounts is a column nobody can add up. A pair loaded twice is
+refused the same way, and only when that pair is actually needed.
+
+The arithmetic lives in `backend/src/expense_tracker/conversion.py`, which knows no HTTP
+and holds no session - it takes records and rates and gives records back, so it is
+tested in `backend/tests/test_conversion.py` without a client or a database.
 
 Both endpoints are read-only over HTTP. Rows arrive through
 `pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere else,
