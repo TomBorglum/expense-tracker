@@ -16,6 +16,17 @@ Break one of these and CI goes red on an otherwise correct change.
   amount rather than coercing it, pinned by `ExpensesTable.test.tsx`'s "shows an alert when
   an amount arrives as a number"; the backend half is pinned by
   `test_expense_amounts_are_strings_not_numbers`.
+- **A `Date` is never built from a string and never named through UTC.** The picker deals
+  in `Date` objects and the API deals in bare `YYYY-MM-DD`, so `src/dates.ts` is the one
+  place either crosses over, and it is built from `getFullYear`/`getMonth`/`getDate` and
+  `new Date(y, m - 1, d)`. **`toISOString()` and `new Date("2026-08-01")` appear nowhere
+  in `src/`** - the first converts to UTC before naming the day, the second is parsed as
+  UTC, and each is off by one for half the world. It is the same fault the rule above
+  names, in the write direction. `date-fns` arrives as a transitive dependency of
+  react-day-picker and is deliberately not imported: a second formatter is a second place
+  for this rule to drift. Pinned by `dates.test.ts`, which is why
+  `frontend/vite.config.ts` sets `env: { TZ: "Europe/Copenhagen" }` on the suite - under a
+  UTC runner, which is what CI is, local and UTC agree and the test proves nothing.
 - **An empty list is a row, not an alert.** `ExpensesTable` renders `[]` as a row reading
   `No expenses loaded.` and reserves its `role="alert"` for a request that actually failed.
   That is this side of the backend's "an empty table is 200, not 503"; see
@@ -30,6 +41,16 @@ Break one of these and CI goes red on an otherwise correct change.
   so the surface is `bg-base-200 text-base-content` on `<body>` in `index.html`: a body
   background is what propagates to the canvas beyond the app shell, and moving it onto a
   `<div>` is what leaves an unpainted band below short content.
+- **The calendar is themed through its own variables, not through utility classes.**
+  `@daypicker/react/style.css` is imported from `src/main.tsx` and is **unlayered**, while
+  everything `@import "tailwindcss"` emits sits inside `@layer`; unlayered rules win
+  regardless of source order, so a Tailwind or daisyUI class aimed at the calendar through
+  `classNames` loses silently. Its five colours are reachable only as custom properties,
+  and the `.rdp-root` block at the foot of `src/styles/app.css` repoints them at daisyUI's
+  role tokens. That block is unlayered for the same reason and has to stay after the
+  package stylesheet in the bundle, which is what the import order in `main.tsx` is for.
+  Those names are the package's own and nothing checks them, so the pair is listed under
+  "Declared twice" in the root [`CLAUDE.md`](../CLAUDE.md).
 - **Every colour is referenced by role** - `bg-base-100`, `bg-base-200`,
   `text-base-content`, `alert-error` - because a hard-coded shade like `slate-700` is not
   merely awkward with two themes, it is wrong in one of them. jsdom evaluates no CSS, so no
@@ -68,7 +89,13 @@ Break one of these and CI goes red on an otherwise correct change.
   `<select>` whose value matches no option displays the first one instead, which would
   disagree with both the URL and the request in flight. There is no "as recorded" mode -
   the parameter is always sent, because an **empty** `?currency=` is a malformed code to
-  the backend and not a request for no conversion.
+  the backend and not a request for no conversion. `?from_date=` and `?to_date=` follow
+  every word of that: `yesterday`, an empty string, and a `from_date` after its `to_date`
+  are each handed on and answered with the 422 `date_range.py` raises. `validateSearch`
+  does not sort the two bounds, clamp them or compare them. The one thing it adds is the
+  default - an absent bound becomes the first or last day of the current month - and that
+  is the only default here that is not a constant, which is why `dates.test.ts` and
+  `ExpensesPage.test.tsx` pin the clock.
 - **The currency options are what the rate table can reach, not a list of ISO codes.**
   `targetCurrencies` in `src/api/currencies.ts` keeps only the `to_currency` of a pair whose
   `from_currency` is `BASE_CURRENCY`, because a rate is never inverted and never composed -
@@ -78,6 +105,38 @@ Break one of these and CI goes red on an otherwise correct change.
   pending, 503s, empty or malformed leaves the select disabled at `BASE_CURRENCY` and **does
   not disturb the expenses table**: they are two requests, and an empty rate table is a
   legitimate `200` for the reason an empty ledger is.
+- **The date range is always bounded, and every `navigate` carries the whole search.**
+  There is no clear button and no unbounded mode; the range is widened by picking earlier
+  or later days. `DateRangePicker` holds a half-picked range in local state and reports
+  nothing until both ends are set, because an empty bound is a malformed date to the
+  backend rather than a request for everything - the same rule as the absent "as recorded"
+  currency mode above. Because `validateSearch` re-defaults an **absent** parameter, a
+  `navigate` that omitted `from_date` would silently reset the range to the current month
+  instead of leaving it alone, so both handlers in `ExpensesPage` spread the whole search
+  and override one part of it. Pinned by "picking a currency keeps the range and asks
+  again" and its twin.
+- **An inverted range is unreachable through the UI, and nothing guards against one.**
+  react-day-picker's `addToRange` orders the pair itself - a click before the start
+  becomes the new start - so `from > to` cannot be produced by any sequence of clicks, and
+  a comparison here would be a second copy of a rule `date_range.py` already owns. Pinned
+  by "cannot be made to report a range that runs backwards". Nothing clamps the calendar
+  to the ledger's own days either, because no endpoint publishes them: `startMonth`,
+  `endMonth` and `disabled` would all be inventing a bound.
+- **The range control is a `<button aria-expanded>` and a conditional render**, not
+  daisyUI's `popover` or `<details>` dropdown, and the panel is positioned with plain
+  utilities rather than `dropdown`/`dropdown-content`. jsdom 30 implements no Popover API,
+  and `@testing-library/dom` gives `<summary>` no role, so both daisyUI recipes are
+  unreachable by `getByRole` - the same constraint that chose react-day-picker over
+  cally's shadow root in the first place. With a conditional render `queryByRole("grid")`
+  is genuinely `null` when the calendar is closed. `dropdown-content` is ruled out for a
+  second reason worth knowing: it keeps itself hidden until `:focus-within` or
+  `:popover-open`, so a panel whose open state is React's disappears the moment focus
+  leaves it while still mounted. **jsdom evaluates no CSS, so the suite passes either
+  way** - that one was found by opening the page, and it is what the by-eye check in the
+  gate sequence is for. The trigger is named by
+  `aria-labelledby` over the visible `Dates` caption **and its own id**, because
+  `<label htmlFor>` does not name a `<button>` and a bare `aria-label` would replace the
+  range the button displays instead of prefixing it.
 
 ## Environment and tooling
 
@@ -85,6 +144,12 @@ Break one of these and CI goes red on an otherwise correct change.
   every mode, including the `test` mode vitest runs in, where MSW binds its handlers to the
   URL built from it. `vite.config.ts` also pins `envDir` to `frontend/`, because the `test`
   block moves vite's `root` to the repo root and `envDir` would otherwise follow it.
+- **The suite runs at a fixed, non-zero offset from UTC.** `frontend/vite.config.ts` sets
+  `env: { TZ: "Europe/Copenhagen" }` in its `test` block. `dates.test.ts` proves a day is
+  named from the local getters rather than through `toISOString()`, and on a UTC runner -
+  which is what CI is - the two agree and the assertion passes on a broken implementation.
+  Pinning the zone is what gives that test teeth; it is not a preference about where the
+  developers sit.
 - **Every linted file needs a tsconfig that owns it.** eslint runs type-aware via
   `parserOptions.projectService`, so a `.ts`/`.tsx` file outside every tsconfig's `include`
   fails to lint rather than being skipped. `src/` and `tests/` come from

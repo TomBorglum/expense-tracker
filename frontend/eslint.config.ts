@@ -114,7 +114,7 @@ export default defineConfig(
     },
   },
 
-  // CSS. src/styles/app.css is the repo's only stylesheet and its whole content is
+  // CSS. src/styles/app.css is the repo's only stylesheet, and almost all of it is
   // Tailwind at-rules, which is exactly why it needs a gate: nothing else validates it.
   // prettier reformats CSS without understanding it, and tsc and the rules above never
   // see the file.

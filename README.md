@@ -443,6 +443,38 @@ arrived, fails, or comes back empty leaves the select disabled on `DKK` and does
 disturb the table below - they are two independent requests, and an empty rate table is a
 working server for the reason an empty ledger is.
 
+### Choosing a date range
+
+A calendar beside the currency select picks the days the expenses are drawn from, and the
+choice is the `?from_date=` and `?to_date=` the table asks the API for. **The filtering
+stays the backend's** - it is a `WHERE` clause on `expense_date`, described under
+[Asking for a range of dates](#asking-for-a-range-of-dates); the frontend sends two dates
+and drops no row of its own.
+
+Both bounds live in the **URL** alongside the currency, so
+`/?currency=EUR&from_date=2026-01-01&to_date=2026-01-31` is a link worth sending.
+`validateSearch` in `frontend/src/router.ts` fills an absent bound with the first or last
+day of the current month, from one reading of the clock, and checks nothing else - a date
+the backend refuses is passed through and answered with a 422, which reaches the page as
+its ordinary "Could not load the expenses." Both parameters are always sent, and there is
+no clear button: an **empty** `?from_date=` is a malformed date to the backend rather than
+a request for everything, so the way to see more is to pick earlier or later days. A range
+holding no expenses is a 200 with `[]`, which the table shows as a row and not an alert.
+
+The control is [DayPicker](https://daypicker.dev) in `mode="range"`, pinned as
+`@daypicker/react`. It was chosen over daisyUI's own calendar component because that one
+is the `cally` web component, which renders into a shadow root that the tests cannot see
+through - every query in `frontend/tests/` goes by role and accessible name. DayPicker
+renders an ordinary `<table role="grid">` of buttons instead. It brings `date-fns` along
+transitively; nothing in `src/` imports it, because `frontend/src/dates.ts` is the one
+place a `Date` becomes a `YYYY-MM-DD` and it is built from the local field getters -
+`toISOString()` would name the previous day east of Greenwich, the mirror of the trap
+`new Date()` sets on the way in.
+
+The calendar also cannot be made to select a range that ends before it begins: DayPicker
+orders the pair itself, so a click before the start becomes the new start. The backend
+still refuses an inverted range, because the URL can be typed by hand.
+
 ### Routing
 
 One route, declared in code in `frontend/src/router.ts` with

@@ -4,23 +4,31 @@ import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import { BASE_CURRENCY } from "@/api/currencies";
-import { EXPENSES_URL } from "@/api/expenses";
+import { EXPENSES_URL, type ExpensesQuery } from "@/api/expenses";
 import { ExpensesTable } from "@/components/ExpensesTable";
 
 import { MOCK_EXPENSES } from "./msw/handlers";
 import { server } from "./msw/server";
 
-function renderExpensesTable(currency = BASE_CURRENCY) {
+// Literal dates rather than the current month, so this file names what it asks for and
+// does not depend on the day the suite runs.
+const QUERY: ExpensesQuery = {
+  currency: BASE_CURRENCY,
+  from_date: "2026-08-01",
+  to_date: "2026-08-31",
+};
+
+function renderExpensesTable(query: ExpensesQuery = QUERY) {
   // A fresh client per test, so nothing is served out of a cache another test filled,
   // and retry off, so the failure cases settle immediately instead of waiting out a
   // backoff. Mounted without the router, so no other request fires: the table takes the
-  // currency as a prop and never reads the URL itself.
+  // parameters as a prop and never reads the URL itself.
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <ExpensesTable currency={currency} />
+      <ExpensesTable query={query} />
     </QueryClientProvider>,
   );
 }
@@ -95,17 +103,38 @@ test("shows an empty ledger as a row rather than an alert", async () => {
   expect(screen.getByRole("cell").textContent).toBe("No expenses loaded.");
 });
 
-test("asks the API for the currency it was given", async () => {
-  // The conversion is the backend's, so the whole of the table's half of the feature is
-  // that this parameter leaves the browser.
-  const requested: (string | null)[] = [];
+test("asks the API for the parameters it was given", async () => {
+  // The conversion and the filtering are both the backend's, so the whole of the table's
+  // half of the feature is that these three leave the browser. MOCK_EXPENSES is dated in
+  // another decade and comes back regardless, which is what shows nothing filters here.
+  const requested: Record<string, string | null>[] = [];
   server.use(
     http.get(EXPENSES_URL, ({ request }) => {
-      requested.push(new URL(request.url).searchParams.get("currency"));
+      const params = new URL(request.url).searchParams;
+      requested.push({
+        currency: params.get("currency"),
+        from_date: params.get("from_date"),
+        to_date: params.get("to_date"),
+      });
       return HttpResponse.json(MOCK_EXPENSES);
     }),
   );
-  renderExpensesTable("EUR");
+  renderExpensesTable({
+    currency: "EUR",
+    from_date: "2025-01-01",
+    to_date: "2025-12-31",
+  });
   await screen.findByRole("table", { name: "Expenses" });
-  expect(requested).toEqual(["EUR"]);
+  expect(requested).toEqual([
+    { currency: "EUR", from_date: "2025-01-01", to_date: "2025-12-31" },
+  ]);
+});
+
+test("shows a range that matches nothing as a row rather than an alert", async () => {
+  // A valid range holding no expenses is a 200 with [], for the reason an empty table
+  // is: it is an answer and not a fault.
+  server.use(http.get(EXPENSES_URL, () => HttpResponse.json([])));
+  renderExpensesTable({ ...QUERY, from_date: "2026-06-01", to_date: "2026-06-30" });
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(screen.getByRole("cell").textContent).toBe("No expenses loaded.");
 });
