@@ -8,6 +8,7 @@ from starlette.testclient import TestClient
 
 from expense_tracker import CurrencyPayload, ExpensePayload, config, create_app
 from expense_tracker.currency_repository import CurrencyRateRecord
+from expense_tracker.date_range import UNBOUNDED, DateRange
 from expense_tracker.expense_repository import ExpenseRecord
 
 # The origin a browser would send. Any value works against a wildcard policy.
@@ -18,9 +19,9 @@ _ORIGIN = "http://localhost:5173"
 _EXPENSES = TypeAdapter(list[ExpensePayload])
 _CURRENCIES = TypeAdapter(list[CurrencyPayload])
 
-# What the requested_bounds fixture collects: every (from_date, to_date) the route
-# handed the expense repository.
-_Bounds = list[tuple[datetime.date | None, datetime.date | None]]
+# What the requested_ranges fixture collects: every DateRange the route handed the
+# expense repository.
+_Ranges = list[DateRange]
 
 
 def test_security_headers_present(client: TestClient) -> None:
@@ -230,38 +231,40 @@ def test_no_loaded_rates_refuses_a_conversion(
 
 
 def test_a_date_range_is_handed_to_the_repository_as_dates(
-    client: TestClient, requested_bounds: _Bounds
+    client: TestClient, requested_ranges: _Ranges
 ) -> None:
-    """Filtering is the repository's job, done in SQL, so what the route owes is two
-    parsed dates and nothing else."""
+    """Filtering is the repository's job, done in SQL, so what the route owes it is a
+    DateRange of parsed dates and nothing else."""
     response = client.get(
         "/api/expenses", params={"from_date": "2026-01-01", "to_date": "2026-01-31"}
     )
     assert response.status_code == 200
-    assert requested_bounds == [(datetime.date(2026, 1, 1), datetime.date(2026, 1, 31))]
+    assert requested_ranges == [
+        DateRange(datetime.date(2026, 1, 1), datetime.date(2026, 1, 31))
+    ]
 
 
 def test_either_bound_may_be_given_on_its_own(
-    client: TestClient, requested_bounds: _Bounds
+    client: TestClient, requested_ranges: _Ranges
 ) -> None:
     """The bound left out is open, not defaulted: None is what adds no clause."""
     first = client.get("/api/expenses", params={"from_date": "2026-01-01"})
     second = client.get("/api/expenses", params={"to_date": "2026-01-31"})
     assert (first.status_code, second.status_code) == (200, 200)
-    assert requested_bounds == [
-        (datetime.date(2026, 1, 1), None),
-        (None, datetime.date(2026, 1, 31)),
+    assert requested_ranges == [
+        DateRange(datetime.date(2026, 1, 1), None),
+        DateRange(None, datetime.date(2026, 1, 31)),
     ]
 
 
 def test_asking_for_no_range_is_the_request_that_was_there_before(
-    client: TestClient, requested_bounds: _Bounds
+    client: TestClient, requested_ranges: _Ranges
 ) -> None:
-    """Both bounds absent reaches the repository as no bounds at all, so a client that
-    does not ask sees exactly what it saw before."""
+    """Both bounds absent reaches the repository as UNBOUNDED, so a client that does
+    not ask sees exactly what it saw before."""
     response = client.get("/api/expenses")
     assert response.status_code == 200
-    assert requested_bounds == [(None, None)]
+    assert requested_ranges == [UNBOUNDED]
 
 
 @pytest.mark.parametrize("value", ["", "yesterday", "20260102", "02/01/2026"])
@@ -285,7 +288,7 @@ def test_a_to_date_that_is_not_a_date_is_refused(client: TestClient) -> None:
 
 
 def test_a_range_that_ends_before_it_begins_is_refused(
-    client: TestClient, requested_bounds: _Bounds
+    client: TestClient, requested_ranges: _Ranges
 ) -> None:
     """Refused rather than answered with an empty list, and refused before the query:
     a 200 would read as "no expenses then" for a range nobody can have meant."""
@@ -294,11 +297,12 @@ def test_a_range_that_ends_before_it_begins_is_refused(
     )
     assert response.status_code == 422
     assert response.json() == {"detail": "from_date must not be after to_date"}
-    assert requested_bounds == []
+    # Refused by the type, so the repository was never reached.
+    assert requested_ranges == []
 
 
 def test_a_range_is_applied_before_the_amounts_are_converted(
-    client: TestClient, requested_bounds: _Bounds
+    client: TestClient, requested_ranges: _Ranges
 ) -> None:
     """The two parameters compose, and the range is what the conversion runs over - so
     an expense outside it needs no rate."""
@@ -307,8 +311,8 @@ def test_a_range_is_applied_before_the_amounts_are_converted(
         params={"from_date": "2026-01-01", "to_date": "2026-12-31", "currency": "EUR"},
     )
     assert response.status_code == 200
-    assert requested_bounds == [
-        (datetime.date(2026, 1, 1), datetime.date(2026, 12, 31))
+    assert requested_ranges == [
+        DateRange(datetime.date(2026, 1, 1), datetime.date(2026, 12, 31))
     ]
     assert [item.currency for item in _EXPENSES.validate_json(response.content)] == [
         "EUR",

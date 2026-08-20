@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+from .date_range import UNBOUNDED, DateRange
 from .db import Base
 
 
@@ -67,9 +68,7 @@ class ExpenseRepository(ABC):
 
     @abstractmethod
     async def list_expenses(
-        self,
-        from_date: datetime.date | None = None,
-        to_date: datetime.date | None = None,
+        self, dates: DateRange = UNBOUNDED
     ) -> Sequence[ExpenseRecord]: ...
 
 
@@ -83,9 +82,7 @@ class PostgresExpenseRepository(ExpenseRepository):
 
     @override
     async def list_expenses(
-        self,
-        from_date: datetime.date | None = None,
-        to_date: datetime.date | None = None,
+        self, dates: DateRange = UNBOUNDED
     ) -> Sequence[ExpenseRecord]:
         """Every expense within the bounds given, newest first, or an empty sequence."""
         statement = select(
@@ -95,11 +92,12 @@ class PostgresExpenseRepository(ExpenseRepository):
             Expense.category,
             Expense.details,
         )
-        # Both bounds inclusive, and an absent one adds no clause at all.
-        if from_date is not None:
-            statement = statement.where(Expense.expense_date >= from_date)
-        if to_date is not None:
-            statement = statement.where(Expense.expense_date <= to_date)
+        # Both bounds inclusive, and an open one adds no clause at all. That they are
+        # the right way round is the type's guarantee, not something checked here.
+        if dates.start is not None:
+            statement = statement.where(Expense.expense_date >= dates.start)
+        if dates.end is not None:
+            statement = statement.where(Expense.expense_date <= dates.end)
         try:
             rows = await self._session.execute(
                 statement.order_by(Expense.expense_date.desc(), Expense.id.desc())

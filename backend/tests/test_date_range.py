@@ -2,7 +2,12 @@ import datetime
 
 import pytest
 
-from expense_tracker.date_range import DateRangeError, parse_date_range
+from expense_tracker.date_range import (
+    UNBOUNDED,
+    DateRange,
+    DateRangeError,
+    parse_date_range,
+)
 
 # Nothing here touches HTTP or a session: reading two query values is string work,
 # which is the whole reason it lives in a module of its own.
@@ -12,24 +17,27 @@ _FEBRUARY = datetime.date(2026, 2, 2)
 
 
 def test_both_bounds_come_back_as_dates() -> None:
-    assert parse_date_range("2026-01-02", "2026-02-02") == (_JANUARY, _FEBRUARY)
+    assert parse_date_range("2026-01-02", "2026-02-02") == DateRange(
+        _JANUARY, _FEBRUARY
+    )
 
 
 def test_an_absent_bound_stays_none() -> None:
     """None is what the repository reads as "no clause on this side"."""
-    assert parse_date_range("2026-01-02", None) == (_JANUARY, None)
-    assert parse_date_range(None, "2026-02-02") == (None, _FEBRUARY)
+    assert parse_date_range("2026-01-02", None) == DateRange(_JANUARY, None)
+    assert parse_date_range(None, "2026-02-02") == DateRange(None, _FEBRUARY)
 
 
 def test_neither_bound_given_is_the_whole_range() -> None:
     """The request that asks for no range at all, which is every request made before
-    the parameters existed."""
-    assert parse_date_range(None, None) == (None, None)
+    the parameters existed, and what list_expenses defaults to."""
+    assert parse_date_range(None, None) == UNBOUNDED
+    assert DateRange(None, None) == UNBOUNDED
 
 
 def test_the_bounds_may_be_the_same_day() -> None:
     """Both ends are inclusive, so one day is a range and not a refusal."""
-    assert parse_date_range("2026-01-02", "2026-01-02") == (_JANUARY, _JANUARY)
+    assert parse_date_range("2026-01-02", "2026-01-02") == DateRange(_JANUARY, _JANUARY)
 
 
 @pytest.mark.parametrize(
@@ -77,3 +85,23 @@ def test_a_malformed_bound_is_refused_before_the_two_are_compared() -> None:
         DateRangeError, match="from_date must be a date in YYYY-MM-DD form"
     ):
         _ = parse_date_range("yesterday", "2026-01-02")
+
+
+def test_the_type_refuses_an_inverted_range_however_it_is_built() -> None:
+    """The check lives in __post_init__ rather than in the parser, which is what lets
+    list_expenses take the type and stop trusting whoever called it."""
+    with pytest.raises(DateRangeError, match="from_date must not be after to_date"):
+        _ = DateRange(_FEBRUARY, _JANUARY)
+
+
+def test_an_open_bound_never_makes_a_range_inverted() -> None:
+    """Nothing to compare against, so neither half alone can be out of order."""
+    assert DateRange(_FEBRUARY, None).start == _FEBRUARY
+    assert DateRange(None, _JANUARY).end == _JANUARY
+
+
+def test_a_range_is_frozen() -> None:
+    """Immutable, so the validated bounds cannot be edited past the check."""
+    dates = DateRange(_JANUARY, _FEBRUARY)
+    with pytest.raises(AttributeError):
+        dates.start = _FEBRUARY  # pyright: ignore[reportAttributeAccessIssue]  # the point of the test

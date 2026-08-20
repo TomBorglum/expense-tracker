@@ -86,10 +86,10 @@ def create_app() -> FastAPI:
         to_date: str | None = None,
     ) -> JSONResponse:
         # Read before the query, so a malformed date costs no round trip.
-        start, end = parse_date_range(from_date, to_date)
+        dates = parse_date_range(from_date, to_date)
         # The repository's order, reproduced untouched. Sorting again here would hide a
         # repository that stopped sorting, and convert_expenses preserves it.
-        records = await expenses.list_expenses(start, end)
+        records = await expenses.list_expenses(dates)
         if currency is not None:
             # Whatever the range left, and only that: an expense outside it has no
             # rate to want. Validated before the rates are read, so a malformed code

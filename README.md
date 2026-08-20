@@ -177,9 +177,12 @@ uses. Anything else is a `422` carrying the same plain-string `detail`:
 | `?from_date=2026-03-01&to_date=2026-01-01` | `{"detail": "from_date must not be after to_date"}` |
 
 A range that ends before it begins is refused rather than answered with an empty list: an
-empty list reads as "no expenses then", and nobody meant that range. The reading lives in
+empty list reads as "no expenses then", and nobody meant that range. That refusal belongs
+to the `DateRange` type rather than to the parsing, so it holds however the range is
+built, and the repository takes that type instead of two loose dates - it has no ordering
+to re-check and no caller to trust. Both live in
 `backend/src/expense_tracker/date_range.py`, which knows no HTTP and no database at all,
-and is tested in `backend/tests/test_date_range.py`.
+and are tested in `backend/tests/test_date_range.py`.
 
 Both endpoints are read-only over HTTP. Rows arrive through
 `pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere else,
