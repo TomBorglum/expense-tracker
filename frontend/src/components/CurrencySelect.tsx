@@ -1,8 +1,8 @@
 interface CurrencySelectProps {
-  value: string;
-  options: string[];
-  disabled: boolean;
-  onChange: (currency: string) => void;
+  readonly value: string;
+  readonly options: readonly string[];
+  readonly disabled: boolean;
+  readonly onChange: (currency: string) => void;
 }
 
 // The control that picks the currency the expenses are restated in. It holds no state

@@ -2,13 +2,17 @@ import { useQuery } from "@tanstack/react-query";
 
 import { expensesQueryOptions } from "../api/expenses";
 
+interface ExpensesTableProps {
+  readonly currency: string;
+}
+
 // The expenses are owned by the Python package and served from /api/expenses, newest
 // first, restated in the currency asked for. Amounts and dates are rendered exactly as
 // they arrive: the backend sends amount as a string so no float round trip can drift a
 // total by a cent - conversion included, which is why it happens there and not here -
 // and the date is a bare YYYY-MM-DD, which new Date() would read as UTC and print a day
 // early west of Greenwich.
-export function ExpensesTable({ currency }: { currency: string }) {
+export function ExpensesTable({ currency }: ExpensesTableProps) {
   // Not destructured: useQuery returns a discriminated union, and reading through the
   // result is what narrows `data` to an Expense[] in the success branch below.
   const query = useQuery(expensesQueryOptions(currency));
