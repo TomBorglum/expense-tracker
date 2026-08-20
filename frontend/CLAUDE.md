@@ -120,11 +120,21 @@ Break one of these and CI goes red on an otherwise correct change.
   becomes the new start - so `from > to` cannot be produced by any sequence of clicks, and
   a comparison here would be a second copy of a rule `date_range.py` already owns. Pinned
   by "cannot be made to report a range that runs backwards".
+- **Two `DayPicker` instances, not one with `numberOfMonths={2}`.** That prop keeps the
+  pair consecutive and moves them as a unit, so the left could not sit on 2025 while the
+  right showed 2026. Each instance instead holds its own `month` and `onMonthChange`, and
+  the two share `selected` and `onSelect` - which is what lets a range start in either
+  panel and end in the other. The panel a dropdown moves wins, and the other follows only
+  far enough to stay in order, so they can land on the same month but never cross. Opening
+  recomputes both from the props, putting one panel on each end of the range; a range
+  inside a single month puts the right panel on the month after. The arrows are hidden
+  (`hideNavigation`) because the dropdowns do the whole job.
 - **The calendar's own bounds are invented, and deliberately so.** `startMonth` is
   1 January of `FIRST_YEAR` in `src/dates.ts` and `endMonth` is 31 December of the current
   year. No endpoint publishes the ledger's span, so neither bound is derived from
   anything - they exist because `captionLayout="dropdown"` has to list a finite set of
-  years, and they clamp the chevrons along with the dropdown. That is a real cost: an
+  years, and with the arrows hidden that list is the whole of what bounds navigation.
+  That is a real cost: an
   expense dated before `FIRST_YEAR` is unreachable from the calendar, though a URL naming
   it is still honoured, because `validateSearch` passes dates through untouched and the
   trigger shows whatever it was given. Raising the floor is a one-constant edit; deriving
@@ -135,7 +145,12 @@ Break one of these and CI goes red on an otherwise correct change.
   and `@testing-library/dom` gives `<summary>` no role, so both daisyUI recipes are
   unreachable by `getByRole` - the same constraint that chose react-day-picker over
   cally's shadow root in the first place. With a conditional render `queryByRole("grid")`
-  is genuinely `null` when the calendar is closed. `dropdown-content` is ruled out for a
+  is genuinely `null` when the calendar is closed. It closes on an outside click and on
+  Escape, both from listeners on `document` rather than a handler on the panel, because
+  a `keydown` on a non-interactive `<div>` is sonar S6847; Escape also hands focus back
+  to the trigger. Either dismissal **discards a half-picked range**: the URL still holds
+  the range that was there, and a calendar disagreeing with the trigger is worse than
+  losing one click. `dropdown-content` is ruled out for a
   second reason worth knowing: it keeps itself hidden until `:focus-within` or
   `:popover-open`, so a panel whose open state is React's disappears the moment focus
   leaves it while still mounted. **jsdom evaluates no CSS, so the suite passes either

@@ -41,6 +41,16 @@ export function currentMonth(): { from: string; to: string } {
 // ledger's own span, and the year dropdown has to list a finite set.
 const FIRST_YEAR = 2025;
 
+// First of the month the date falls in, which is how a month view is identified and
+// compared. Both panels hold one of these.
+export function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+export function addMonths(date: Date, months: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
+
 export function calendarBounds(): { start: Date; end: Date } {
   return {
     start: new Date(FIRST_YEAR, 0, 1),

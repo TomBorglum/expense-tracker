@@ -471,13 +471,22 @@ place a `Date` becomes a `YYYY-MM-DD` and it is built from the local field gette
 `toISOString()` would name the previous day east of Greenwich, the mirror of the trap
 `new Date()` sets on the way in.
 
-It shows two months side by side, and its caption is a month and a year dropdown rather
-than a label, so any month is one click away instead of a run of chevron presses. Those
-dropdowns need a finite list, so the calendar is bounded: 1 January of `FIRST_YEAR` in
-`frontend/src/dates.ts` through 31 December of the current year. Both bounds are invented
-- nothing publishes the range the data actually spans - and they clamp the arrows as well
-as the dropdowns, so an expense dated before `FIRST_YEAR` cannot be reached by clicking.
-A URL naming such a day still works, since the dates are passed through as typed.
+It shows two calendars side by side, each with a month and a year dropdown for a caption
+and no arrows at all. They navigate **independently** - the left can sit on January 2025
+while the right shows December 2026 - and follow one another only far enough to stay in
+order, so any span is two clicks away rather than a run of chevron presses. A range can
+start in either panel and end in the other. Opening puts one panel on each end of the
+range currently selected.
+
+Those dropdowns need a finite list, so the calendar is bounded: 1 January of `FIRST_YEAR`
+in `frontend/src/dates.ts` through 31 December of the current year. Both bounds are
+invented - nothing publishes the range the data actually spans - and with no arrows that
+list is the whole of what navigation can reach, so an expense dated before `FIRST_YEAR`
+cannot be reached by clicking. A URL naming such a day still works, since the dates are
+passed through as typed.
+
+The panel closes on a click outside it or on Escape, like the select beside it, and either
+way a half-picked range is discarded rather than left disagreeing with the URL.
 
 The calendar also cannot be made to select a range that ends before it begins: DayPicker
 orders the pair itself, so a click before the start becomes the new start. The backend
