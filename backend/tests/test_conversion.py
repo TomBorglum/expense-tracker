@@ -72,43 +72,44 @@ def test_no_expenses_needs_no_rates() -> None:
 
 
 def test_a_missing_pair_is_refused() -> None:
+    expenses = [_expense("775.37")]
     with pytest.raises(ConversionError, match="no exchange rate from DKK to CHF"):
-        _ = convert_expenses([_expense("775.37")], [_DKK_TO_EUR], "CHF")
+        _ = convert_expenses(expenses, [_DKK_TO_EUR], "CHF")
 
 
 def test_a_rate_is_not_inverted() -> None:
     """EUR -> DKK is loaded and DKK -> EUR is not, so dividing would answer this."""
     reverse = CurrencyRateRecord("EUR", "DKK", Decimal("7.460000"))
+    expenses = [_expense("775.37")]
     with pytest.raises(ConversionError, match="no exchange rate from DKK to EUR"):
-        _ = convert_expenses([_expense("775.37")], [reverse], "EUR")
+        _ = convert_expenses(expenses, [reverse], "EUR")
 
 
 def test_a_missing_pair_is_not_composed_through_a_third_currency() -> None:
     """DKK -> GBP and DKK -> EUR are both loaded, which is enough to derive GBP -> EUR.
     It is not derived: a composed rate is one the rates file never published."""
+    expenses = [_expense("12.00", "GBP")]
     with pytest.raises(ConversionError, match="no exchange rate from GBP to EUR"):
-        _ = convert_expenses(
-            [_expense("12.00", "GBP")], [_DKK_TO_GBP, _DKK_TO_EUR], "EUR"
-        )
+        _ = convert_expenses(expenses, [_DKK_TO_GBP, _DKK_TO_EUR], "EUR")
 
 
 def test_one_unconvertible_expense_refuses_the_whole_list() -> None:
     """Not a partly converted list: a table mixing currencies reads as a total nobody
     can add up."""
+    expenses = [_expense("775.37"), _expense("12.00", "GBP")]
     with pytest.raises(ConversionError, match="no exchange rate from GBP to EUR"):
-        _ = convert_expenses(
-            [_expense("775.37"), _expense("12.00", "GBP")], [_DKK_TO_EUR], "EUR"
-        )
+        _ = convert_expenses(expenses, [_DKK_TO_EUR], "EUR")
 
 
 def test_a_pair_loaded_twice_is_refused_rather_than_picked_between() -> None:
     """schema.sql lets a pair repeat, so two rows for one pair is data the API can
     receive. Neither of them wins."""
     other = CurrencyRateRecord("DKK", "EUR", Decimal("0.140000"))
+    expenses = [_expense("775.37")]
     with pytest.raises(
         ConversionError, match="more than one exchange rate from DKK to EUR"
     ):
-        _ = convert_expenses([_expense("775.37")], [_DKK_TO_EUR, other], "EUR")
+        _ = convert_expenses(expenses, [_DKK_TO_EUR, other], "EUR")
 
 
 def test_a_duplicate_of_an_unused_pair_converts_fine() -> None:
@@ -124,8 +125,9 @@ def test_a_duplicate_of_an_unused_pair_converts_fine() -> None:
 def test_no_rates_at_all_refuses_a_conversion() -> None:
     """An empty currency_rate table is a 200 on its own endpoint, but it cannot answer
     a conversion."""
+    expenses = [_expense("775.37")]
     with pytest.raises(ConversionError, match="no exchange rate from DKK to EUR"):
-        _ = convert_expenses([_expense("775.37")], [], "EUR")
+        _ = convert_expenses(expenses, [], "EUR")
 
 
 def test_a_well_formed_code_is_returned_unchanged() -> None:
