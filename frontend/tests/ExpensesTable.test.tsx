@@ -3,22 +3,24 @@ import { render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
+import { BASE_CURRENCY } from "@/api/currencies";
 import { EXPENSES_URL } from "@/api/expenses";
 import { ExpensesTable } from "@/components/ExpensesTable";
 
 import { MOCK_EXPENSES } from "./msw/handlers";
 import { server } from "./msw/server";
 
-function renderExpensesTable() {
+function renderExpensesTable(currency = BASE_CURRENCY) {
   // A fresh client per test, so nothing is served out of a cache another test filled,
   // and retry off, so the failure cases settle immediately instead of waiting out a
-  // backoff. Mounted without the router, so no other request fires.
+  // backoff. Mounted without the router, so no other request fires: the table takes the
+  // currency as a prop and never reads the URL itself.
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <ExpensesTable />
+      <ExpensesTable currency={currency} />
     </QueryClientProvider>,
   );
 }
@@ -91,4 +93,19 @@ test("shows an empty ledger as a row rather than an alert", async () => {
   renderExpensesTable();
   await screen.findByRole("table", { name: "Expenses" });
   expect(screen.getByRole("cell").textContent).toBe("No expenses loaded.");
+});
+
+test("asks the API for the currency it was given", async () => {
+  // The conversion is the backend's, so the whole of the table's half of the feature is
+  // that this parameter leaves the browser.
+  const requested: (string | null)[] = [];
+  server.use(
+    http.get(EXPENSES_URL, ({ request }) => {
+      requested.push(new URL(request.url).searchParams.get("currency"));
+      return HttpResponse.json(MOCK_EXPENSES);
+    }),
+  );
+  renderExpensesTable("EUR");
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(requested).toEqual(["EUR"]);
 });

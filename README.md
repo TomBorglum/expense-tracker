@@ -371,7 +371,7 @@ means checking that still holds.
 and nothing in this repo consumes it. CI runs the build as a gate because tsc and
 vitest never exercise the bundler, but keeps nothing from it.
 
-`GET /api/expenses` is the app's whole read, fetched at runtime with
+`GET /api/expenses` is the app's main read, fetched at runtime with
 [TanStack Query](https://tanstack.com/query) in `frontend/src/api/expenses.ts` and
 rendered by `frontend/src/components/ExpensesTable.tsx` as one table of amount, currency,
 date, category and details. Nothing generates a client from a schema, so the payload
@@ -385,6 +385,31 @@ back the round trip `str(Decimal)` exists to prevent, and `new Date()` on a bare
 order the API sends them in (newest first) and are never re-sorted, and an empty ledger
 arrives as a 200 with `[]`, so the table says so in a row instead of raising an alert.
 
+### Choosing a currency
+
+A select beside the heading picks the currency the expenses are presented in, and the
+choice is the `?currency=` the table asks the API for. **The conversion stays the
+backend's** - the frontend sends a code and renders the strings that come back, so the
+`Decimal` arithmetic in `conversion.py` is the only place an amount is ever computed.
+
+The choice lives in the **URL**, so `/?currency=EUR` is a link worth sending and a reload
+returns to it. `validateSearch` in `frontend/src/router.ts` supplies `DKK` when the
+parameter is absent and checks nothing else: a code the backend refuses is passed through
+and answered with a 422, which reaches the page as its ordinary "Could not load the
+expenses." The parameter is always sent - an **empty** `?currency=` is a malformed code
+to the backend, not a request for no conversion, so there is no "as recorded" mode and
+the ledger's own currency is simply `DKK`, the one code that needs no rate.
+
+The options are read from `GET /api/currencies` by `frontend/src/api/currencies.ts` and
+are **not** a list of ISO codes. Because a rate is used only in the direction
+`rates.tsv` states it and is never composed, the only reachable targets are the
+`to_currency` of a pair whose `from_currency` is the base - `EUR`, `GBP`, `NOK`, `SEK`,
+`USD` today. The file's `EUR -> DKK` and `USD -> DKK` rows are ignored here: they convert
+*into* the base, which is where the expenses already are. A rate list that has not
+arrived, fails, or comes back empty leaves the select disabled on `DKK` and does not
+disturb the table below - they are two independent requests, and an empty rate table is a
+working server for the reason an empty ledger is.
+
 ### Routing
 
 One route, declared in code in `frontend/src/router.ts` with
@@ -397,11 +422,17 @@ tree, and it stays for the second route.
 
 `createAppRouter` takes an optional history so the tests can pass
 `createMemoryHistory()`; `frontend/src/main.tsx` calls it with none and gets the
-browser's. Only `frontend/src/App.tsx` - the layout wrapped around an `<Outlet />` -
-touches the router; there is no nav, because one over a single route would be dead UI.
-The pages under `frontend/src/pages/` are router-free, which is why each page's test
-mounts it directly in a `QueryClientProvider` and only
-`frontend/tests/routing.test.tsx` builds a router. A deployed SPA needs its server to
+browser's. `frontend/src/App.tsx` - the layout wrapped around an `<Outlet />` - is the
+only file that renders the router's own components; there is no nav, because one over a
+single route would be dead UI.
+
+The route owns its search schema, so its component is the one that reads it:
+`ExpensesPage` calls `useSearch` and `useNavigate`, and its test builds a memory-history
+router the way `frontend/tests/routing.test.tsx` does. It reaches the route through
+`getRouteApi("/")` rather than by importing the route object, because `router.ts` imports
+the page and the reverse import would be a cycle. **The router-free layer is
+`frontend/src/components/`**: `ExpensesTable` and `CurrencySelect` take props, know
+nothing of the URL, and mount in a bare `QueryClientProvider`. A deployed SPA needs its server to
 fall back to `index.html` so a non-root path resolves on a cold load; vite's dev server
 does that already, and nothing in this repo serves `frontend/dist/`.
 
