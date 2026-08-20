@@ -181,6 +181,10 @@ include_external_packages = true
 # create_app() and the others run as `python -m`; keeping them apart is what keeps
 # fastapi out of the CLIs, and the loaders out of each other.
 #
+# conversion gets a layer of its own rather than a fourth "|" sibling above: it imports
+# both repository modules, which puts it over them, and the entry points may import it,
+# which puts it under them. As a sibling of deps it could be neither.
+#
 # __init__.py is the container's own module rather than one of its children, so it is not
 # a layer and is unconstrained. The contract that stops anything importing back into it
 # is below.
@@ -190,6 +194,7 @@ type = "layers"
 containers = ["expense_tracker"]
 layers = [
   "deps | currency_loader | expense_loader",
+  "conversion",
   "currency_repository | expense_repository",
   "db | config",
 ]
@@ -212,6 +217,7 @@ name = "only the HTTP layer knows about HTTP"
 type = "forbidden"
 source_modules = [
   "expense_tracker.config",
+  "expense_tracker.conversion",
   "expense_tracker.currency_loader",
   "expense_tracker.currency_repository",
   "expense_tracker.db",
@@ -232,6 +238,7 @@ name = "nothing imports back into create_app"
 type = "forbidden"
 source_modules = [
   "expense_tracker.config",
+  "expense_tracker.conversion",
   "expense_tracker.currency_loader",
   "expense_tracker.currency_repository",
   "expense_tracker.db",

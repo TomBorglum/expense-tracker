@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import make_url
@@ -131,6 +133,95 @@ def test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded(
     response = empty_expenses_client.get("/api/expenses")
     assert response.status_code == 200
     assert _EXPENSES.validate_json(response.content) == []
+
+
+def test_expenses_can_be_requested_in_another_currency(
+    client: TestClient, currency_records: list[CurrencyRateRecord]
+) -> None:
+    """amount and currency are replaced in place: the payload shape is the same one
+    the frontend already models, so ?currency needs no change over there."""
+    response = client.get("/api/expenses", params={"currency": "EUR"})
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert _EXPENSES.validate_json(response.content) == [
+        ExpensePayload(
+            # 1250.00 * 0.134048, and 775.37 * 0.134048 rounded half up.
+            amount="167.56",
+            currency="EUR",
+            date="2026-02-02",
+            category="Housing",
+            details="Rent",
+        ),
+        ExpensePayload(
+            amount="103.94",
+            currency="EUR",
+            date="2026-01-02",
+            category="Insurance",
+            details="Accident / Car",
+        ),
+    ]
+    # The rate fixture is the other half of those two literals.
+    assert currency_records[0] == CurrencyRateRecord("DKK", "EUR", Decimal("0.134048"))
+
+
+def test_requesting_the_currency_the_expenses_already_use_changes_nothing(
+    client: TestClient,
+) -> None:
+    """Byte for byte the bare response. The rates fixture holds no DKK -> DKK row, so
+    this also fails if the route ever looks one up."""
+    converted = client.get("/api/expenses", params={"currency": "DKK"})
+    assert converted.status_code == 200
+    assert converted.content == client.get("/api/expenses").content
+
+
+def test_a_converted_amount_is_a_string_not_a_number(client: TestClient) -> None:
+    """167.56 must not arrive as 167.56 the JSON number. Conversion is Decimal
+    arithmetic, and quantize is what keeps the trailing zero on a round result."""
+    body = _EXPENSES.validate_json(
+        client.get("/api/expenses", params={"currency": "EUR"}).content
+    )
+    assert [row.amount for row in body] == ["167.56", "103.94"]
+
+
+def test_a_currency_with_no_loaded_rate_is_refused(client: TestClient) -> None:
+    """422 for the whole request rather than a list mixing converted and unconverted
+    amounts, which is a column nobody can add up."""
+    response = client.get("/api/expenses", params={"currency": "CHF"})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "no exchange rate from DKK to CHF"}
+    # A registered handler runs inside the middleware, so a 422 is decorated too.
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+@pytest.mark.parametrize("value", ["euro", "eur", ""])
+def test_a_currency_that_is_not_an_iso_4217_code_is_refused(
+    client: TestClient, value: str
+) -> None:
+    """The same plain-string detail as the missing-rate 422, rather than FastAPI's
+    list-shaped validation body: one endpoint, one error shape."""
+    response = client.get("/api/expenses", params={"currency": value})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "currency must be an ISO 4217 code"}
+
+
+def test_nothing_loaded_is_still_an_empty_list_under_a_currency(
+    empty_expenses_client: TestClient,
+) -> None:
+    """No rows means no rate is needed, so the empty state survives ?currency."""
+    response = empty_expenses_client.get("/api/expenses", params={"currency": "EUR"})
+    assert response.status_code == 200
+    assert _EXPENSES.validate_json(response.content) == []
+
+
+def test_no_loaded_rates_refuses_a_conversion(
+    empty_currencies_client: TestClient,
+) -> None:
+    """An empty currency_rate table answers 200 [] on its own endpoint, but it cannot
+    convert anything - and the bare request is unaffected."""
+    response = empty_currencies_client.get("/api/expenses", params={"currency": "EUR"})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "no exchange rate from DKK to EUR"}
+    assert empty_currencies_client.get("/api/expenses").status_code == 200
 
 
 def test_currencies_endpoint_returns_json(

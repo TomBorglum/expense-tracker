@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.middleware.base import RequestResponseEndpoint
 
+from .conversion import ConversionError, convert_expenses, validate_currency_code
 from .currency_repository import CurrenciesUnavailableError, CurrencyRepository
 from .deps import lifespan, provide_currency_repository, provide_expense_repository
 from .expense_repository import ExpenseRepository, ExpensesUnavailableError
@@ -73,7 +74,21 @@ def create_app() -> FastAPI:
     @app.get("/api/expenses")
     async def expenses(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
         expenses: Annotated[ExpenseRepository, Depends(provide_expense_repository)],
+        currencies: Annotated[CurrencyRepository, Depends(provide_currency_repository)],
+        # A bare scalar default is a query parameter to FastAPI. Omitting it is the
+        # only way to get the amounts as they were recorded.
+        currency: str | None = None,
     ) -> JSONResponse:
+        # The repository's order, reproduced untouched. Sorting again here would hide a
+        # repository that stopped sorting, and convert_expenses preserves it.
+        records = await expenses.list_expenses()
+        if currency is not None:
+            # Validated before the rates are read, so a malformed code costs no query.
+            # Resolving the repository above did not open one either.
+            target = validate_currency_code(currency)
+            records = convert_expenses(
+                records, await currencies.list_currencies(), target
+            )
         payload = [
             ExpensePayload(
                 # str(), never float(): the column is numeric(12, 2) and arrives as a
@@ -84,9 +99,7 @@ def create_app() -> FastAPI:
                 category=record.category,
                 details=record.details,
             )
-            # The repository's order, reproduced untouched. Sorting again here would
-            # hide a repository that stopped sorting.
-            for record in await expenses.list_expenses()
+            for record in records
         ]
         return JSONResponse(
             [item.model_dump() for item in payload],
@@ -134,6 +147,15 @@ def create_app() -> FastAPI:
         # The expenses handler's twin, and separate for the same reason the
         # repositories are: neither endpoint learns anything from the other's failure.
         return JSONResponse({"detail": "currencies unavailable"}, status_code=503)
+
+    @app.exception_handler(ConversionError)
+    async def handle_conversion_error(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        _request: Request, exc: Exception
+    ) -> JSONResponse:
+        # This one reads the exception, unlike the two above: the message is about the
+        # currency the client asked for and names nothing of the database. 422 rather
+        # than 400 - the request parses, it just cannot be carried out.
+        return JSONResponse({"detail": str(exc)}, status_code=422)
 
     # Added last, so it is the outermost middleware and can answer a preflight itself
     # instead of passing OPTIONS to a router that has no such route.
