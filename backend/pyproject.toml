@@ -143,6 +143,11 @@ lint.sequence = [{ cmd = "ruff check" }, { cmd = "lint-imports" }]
 # module belongs in the layer order is a design decision, not a mechanical edit. So this
 # is deliberately not the inverse of `lint`.
 lint-fix = "ruff check --fix"
+# Read data/currencies/*.tsv into the database, replacing every rate already there.
+# Not idempotent the way load-expenses is - it is idempotent in the stronger sense that
+# the table ends up matching the files whatever it held before, which is what makes
+# editing a rate and reloading the supported workflow.
+load-currencies = "python -m expense_tracker.currency_loader data/currencies"
 # Read data/expenses/*.tsv into the database. Idempotent because the
 # loaded_expense_file ledger remembers which files are already in. Not a db-* task and
 # not a dep of any: those five are the cluster's lifecycle, this is data going into it.
@@ -172,9 +177,9 @@ include_external_packages = true
 #
 # Siblings are joined with "|", which means they may NOT import each other. ":" is the
 # other delimiter and says the opposite, so the choice is load-bearing rather than
-# cosmetic. deps and expense_loader are the two ways into this package, one wired into
-# create_app() and one run as `python -m`; keeping them apart is what keeps fastapi out
-# of the CLI.
+# cosmetic. deps and the two loaders are the ways into this package, one wired into
+# create_app() and the others run as `python -m`; keeping them apart is what keeps
+# fastapi out of the CLIs, and the loaders out of each other.
 #
 # __init__.py is the container's own module rather than one of its children, so it is not
 # a layer and is unconstrained. The contract that stops anything importing back into it
@@ -184,8 +189,8 @@ name = "expense_tracker layers: the entry points above persistence"
 type = "layers"
 containers = ["expense_tracker"]
 layers = [
-  "deps | expense_loader",
-  "expense_repository",
+  "deps | currency_loader | expense_loader",
+  "currency_repository | expense_repository",
   "db | config",
 ]
 # A module added under src/expense_tracker/ that is not named above breaks this contract.
@@ -207,6 +212,8 @@ name = "only the HTTP layer knows about HTTP"
 type = "forbidden"
 source_modules = [
   "expense_tracker.config",
+  "expense_tracker.currency_loader",
+  "expense_tracker.currency_repository",
   "expense_tracker.db",
   "expense_tracker.expense_loader",
   "expense_tracker.expense_repository",
@@ -225,6 +232,8 @@ name = "nothing imports back into create_app"
 type = "forbidden"
 source_modules = [
   "expense_tracker.config",
+  "expense_tracker.currency_loader",
+  "expense_tracker.currency_repository",
   "expense_tracker.db",
   "expense_tracker.deps",
   "expense_tracker.expense_loader",

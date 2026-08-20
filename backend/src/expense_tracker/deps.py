@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from .config import database_url
+from .currency_repository import CurrencyRepository, PostgresCurrencyRepository
 from .expense_repository import ExpenseRepository, PostgresExpenseRepository
 
 
@@ -50,3 +51,10 @@ def provide_expense_repository(
 ) -> ExpenseRepository:
     """The seam tests/conftest.py overrides with a fake."""
     return PostgresExpenseRepository(session)
+
+
+def provide_currency_repository(
+    session: Annotated[AsyncSession, Depends(provide_session)],
+) -> CurrencyRepository:
+    """The seam tests/conftest.py overrides with a fake."""
+    return PostgresCurrencyRepository(session)

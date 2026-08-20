@@ -6,7 +6,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.middleware.base import RequestResponseEndpoint
 
-from .deps import lifespan, provide_expense_repository
+from .currency_repository import CurrenciesUnavailableError, CurrencyRepository
+from .deps import lifespan, provide_currency_repository, provide_expense_repository
 from .expense_repository import ExpenseRepository, ExpensesUnavailableError
 
 # Applied to every response. This app serves JSON and nothing else, so the policy
@@ -34,9 +35,21 @@ class ExpensePayload(BaseModel):
     details: str
 
 
+class CurrencyPayload(BaseModel):
+    """One exchange rate as GET /api/currencies sends it.
+
+    Every field is a string here too, for the reason ExpensePayload gives: an amount
+    multiplied by a rate that made a float round trip is an amount that has drifted.
+    """
+
+    from_currency: str
+    to_currency: str
+    exchange_rate: str
+
+
 def create_app() -> FastAPI:
     # No OpenAPI schema and no docs routes: /docs, /redoc and /openapi.json would be
-    # public surface for one hand-written route.
+    # public surface for two hand-written routes.
     #
     # The lifespan is what opens the connection pool, so building an app touches no
     # socket and reads no environment. `uvicorn --factory` and the HTTP suite rely on
@@ -80,6 +93,28 @@ def create_app() -> FastAPI:
             headers={"Cache-Control": "no-store"},
         )
 
+    # Read-only: rates arrive through `pixi run backend-load-currencies` and nowhere
+    # else.
+    @app.get("/api/currencies")
+    async def currencies(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        currencies: Annotated[CurrencyRepository, Depends(provide_currency_repository)],
+    ) -> JSONResponse:
+        payload = [
+            CurrencyPayload(
+                from_currency=record.from_currency,
+                to_currency=record.to_currency,
+                # str(), never float(): the column is numeric(18, 6) and arrives as a
+                # Decimal.
+                exchange_rate=str(record.exchange_rate),
+            )
+            # The repository's order, reproduced untouched.
+            for record in await currencies.list_currencies()
+        ]
+        return JSONResponse(
+            [item.model_dump() for item in payload],
+            headers={"Cache-Control": "no-store"},
+        )
+
     # The only place a repository failure becomes an HTTP status, which is what lets
     # the repository module stay free of fastapi. Registered handlers run inside the
     # middleware above, so this response still collects the security headers.
@@ -91,6 +126,14 @@ def create_app() -> FastAPI:
         # learns nothing about the database from a failure. An empty table is not this
         # case at all: it answers 200 with [].
         return JSONResponse({"detail": "expenses unavailable"}, status_code=503)
+
+    @app.exception_handler(CurrenciesUnavailableError)
+    async def handle_currencies_unavailable(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        _request: Request, _exc: Exception
+    ) -> JSONResponse:
+        # The expenses handler's twin, and separate for the same reason the
+        # repositories are: neither endpoint learns anything from the other's failure.
+        return JSONResponse({"detail": "currencies unavailable"}, status_code=503)
 
     # Added last, so it is the outermost middleware and can answer a preflight itself
     # instead of passing OPTIONS to a router that has no such route.
