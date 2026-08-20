@@ -1,3 +1,4 @@
+import datetime
 from decimal import Decimal
 
 import pytest
@@ -16,6 +17,10 @@ _ORIGIN = "http://localhost:5173"
 # response.content, which is bytes, so Response.json()'s Any never enters the picture.
 _EXPENSES = TypeAdapter(list[ExpensePayload])
 _CURRENCIES = TypeAdapter(list[CurrencyPayload])
+
+# What the requested_bounds fixture collects: every (from_date, to_date) the route
+# handed the expense repository.
+_Bounds = list[tuple[datetime.date | None, datetime.date | None]]
 
 
 def test_security_headers_present(client: TestClient) -> None:
@@ -222,6 +227,93 @@ def test_no_loaded_rates_refuses_a_conversion(
     assert response.status_code == 422
     assert response.json() == {"detail": "no exchange rate from DKK to EUR"}
     assert empty_currencies_client.get("/api/expenses").status_code == 200
+
+
+def test_a_date_range_is_handed_to_the_repository_as_dates(
+    client: TestClient, requested_bounds: _Bounds
+) -> None:
+    """Filtering is the repository's job, done in SQL, so what the route owes is two
+    parsed dates and nothing else."""
+    response = client.get(
+        "/api/expenses", params={"from_date": "2026-01-01", "to_date": "2026-01-31"}
+    )
+    assert response.status_code == 200
+    assert requested_bounds == [(datetime.date(2026, 1, 1), datetime.date(2026, 1, 31))]
+
+
+def test_either_bound_may_be_given_on_its_own(
+    client: TestClient, requested_bounds: _Bounds
+) -> None:
+    """The bound left out is open, not defaulted: None is what adds no clause."""
+    first = client.get("/api/expenses", params={"from_date": "2026-01-01"})
+    second = client.get("/api/expenses", params={"to_date": "2026-01-31"})
+    assert (first.status_code, second.status_code) == (200, 200)
+    assert requested_bounds == [
+        (datetime.date(2026, 1, 1), None),
+        (None, datetime.date(2026, 1, 31)),
+    ]
+
+
+def test_asking_for_no_range_is_the_request_that_was_there_before(
+    client: TestClient, requested_bounds: _Bounds
+) -> None:
+    """Both bounds absent reaches the repository as no bounds at all, so a client that
+    does not ask sees exactly what it saw before."""
+    response = client.get("/api/expenses")
+    assert response.status_code == 200
+    assert requested_bounds == [(None, None)]
+
+
+@pytest.mark.parametrize("value", ["", "yesterday", "20260102", "02/01/2026"])
+def test_a_from_date_that_is_not_a_date_is_refused(
+    client: TestClient, value: str
+) -> None:
+    """The same plain-string detail as the currency refusals, rather than FastAPI's
+    list-shaped validation body: one endpoint, one error shape."""
+    response = client.get("/api/expenses", params={"from_date": value})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "from_date must be a date in YYYY-MM-DD form"}
+    # A registered handler runs inside the middleware, so a 422 is decorated too.
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_a_to_date_that_is_not_a_date_is_refused(client: TestClient) -> None:
+    """The message names the parameter, so a client knows which of the two to fix."""
+    response = client.get("/api/expenses", params={"to_date": "yesterday"})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "to_date must be a date in YYYY-MM-DD form"}
+
+
+def test_a_range_that_ends_before_it_begins_is_refused(
+    client: TestClient, requested_bounds: _Bounds
+) -> None:
+    """Refused rather than answered with an empty list, and refused before the query:
+    a 200 would read as "no expenses then" for a range nobody can have meant."""
+    response = client.get(
+        "/api/expenses", params={"from_date": "2026-03-01", "to_date": "2026-01-01"}
+    )
+    assert response.status_code == 422
+    assert response.json() == {"detail": "from_date must not be after to_date"}
+    assert requested_bounds == []
+
+
+def test_a_range_is_applied_before_the_amounts_are_converted(
+    client: TestClient, requested_bounds: _Bounds
+) -> None:
+    """The two parameters compose, and the range is what the conversion runs over - so
+    an expense outside it needs no rate."""
+    response = client.get(
+        "/api/expenses",
+        params={"from_date": "2026-01-01", "to_date": "2026-12-31", "currency": "EUR"},
+    )
+    assert response.status_code == 200
+    assert requested_bounds == [
+        (datetime.date(2026, 1, 1), datetime.date(2026, 12, 31))
+    ]
+    assert [item.currency for item in _EXPENSES.validate_json(response.content)] == [
+        "EUR",
+        "EUR",
+    ]
 
 
 def test_currencies_endpoint_returns_json(

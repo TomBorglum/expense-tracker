@@ -117,6 +117,37 @@ Break one of these and CI goes red on an otherwise correct change.
   sits over them, and the entry points may import it, so it sits under them; a `|` sibling
   of `deps` could be neither.
 
+## The date range
+
+- **`?from_date=` and `?to_date=` filter in SQL, not in the route.** The bounds go to
+  `PostgresExpenseRepository.list_expenses`, which adds one `>=` and one `<=` clause and
+  only for the bounds it was given. Both ends are **inclusive** and each is optional on
+  its own; `None` is what adds no clause, which is why an absent parameter and an empty
+  one are not the same request. A range holding no rows is 200 `[]`, the empty-table
+  invariant again. Pinned by the four range tests in `test_expense_postgres.py`.
+- **The fake in `tests/conftest.py` records the bounds and filters nothing**, appending
+  each `(from_date, to_date)` to the `requested_bounds` fixture. A fake that filtered
+  would hide a repository that stopped filtering, exactly as a fake that sorted would
+  hide a route that re-sorted, so the `WHERE` clause is pinned behind the `postgres`
+  marker and the HTTP suite pins only what the route owes it: two parsed dates.
+- **The parameters are `str`, not `datetime.date`.** A `date` annotation hands the
+  refusal to FastAPI, whose body is a list of errors; `date_range.py` raising
+  `DateRangeError` keeps the plain-string `detail` that `ConversionError` and the two
+  503s already send. One endpoint, one error shape.
+- **`\A\d{4}-\d{2}-\d{2}\Z` is the accepted form, and the only one.**
+  `date.fromisoformat` also takes `20260102` and `2026-W01-1`, which this API never
+  sends; the regex refuses them before it parses, matching `validate_currency_code`
+  refusing a lowercase code rather than uppercasing it. An inverted range is refused too
+  rather than answered with an empty list.
+- **`date_range.py` sits in the bottom layer**, beside `db` and `config`. It imports
+  nothing from the package - unlike `conversion.py`, which needed a layer of its own
+  because it imports both repositories - so being a `|` sibling down there costs it
+  nothing.
+- **`schema.sql` did not change.** `expense_newest_first_idx` on
+  `(expense_date DESC, id DESC)` already serves a range predicate on `expense_date`
+  together with the endpoint's ordering, and an index added for this would have meant a
+  `backend-db-reset` for nothing.
+
 ## Database and configuration
 
 - **The HTTP suite never touches PostgreSQL.** `tests/conftest.py` overrides the

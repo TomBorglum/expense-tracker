@@ -66,7 +66,11 @@ class ExpenseRepository(ABC):
     """The contract a caller depends on in order to read expenses."""
 
     @abstractmethod
-    async def list_expenses(self) -> Sequence[ExpenseRecord]: ...
+    async def list_expenses(
+        self,
+        from_date: datetime.date | None = None,
+        to_date: datetime.date | None = None,
+    ) -> Sequence[ExpenseRecord]: ...
 
 
 class PostgresExpenseRepository(ExpenseRepository):
@@ -78,17 +82,27 @@ class PostgresExpenseRepository(ExpenseRepository):
         self._session = session
 
     @override
-    async def list_expenses(self) -> Sequence[ExpenseRecord]:
-        """Every expense, newest first. An empty table returns an empty sequence."""
+    async def list_expenses(
+        self,
+        from_date: datetime.date | None = None,
+        to_date: datetime.date | None = None,
+    ) -> Sequence[ExpenseRecord]:
+        """Every expense within the bounds given, newest first, or an empty sequence."""
+        statement = select(
+            Expense.amount,
+            Expense.currency,
+            Expense.expense_date,
+            Expense.category,
+            Expense.details,
+        )
+        # Both bounds inclusive, and an absent one adds no clause at all.
+        if from_date is not None:
+            statement = statement.where(Expense.expense_date >= from_date)
+        if to_date is not None:
+            statement = statement.where(Expense.expense_date <= to_date)
         try:
             rows = await self._session.execute(
-                select(
-                    Expense.amount,
-                    Expense.currency,
-                    Expense.expense_date,
-                    Expense.category,
-                    Expense.details,
-                ).order_by(Expense.expense_date.desc(), Expense.id.desc())
+                statement.order_by(Expense.expense_date.desc(), Expense.id.desc())
             )
         except (SQLAlchemyError, OSError) as exc:
             # OSError as well: asyncpg lets asyncio's ConnectionRefusedError out

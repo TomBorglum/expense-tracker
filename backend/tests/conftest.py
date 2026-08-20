@@ -18,14 +18,27 @@ class _FakeExpenseRepository(ExpenseRepository):
 
     # Annotated at class level for reportUnannotatedClassAttribute.
     _records: Sequence[ExpenseRecord]
+    _bounds: list[tuple[datetime.date | None, datetime.date | None]]
 
-    def __init__(self, records: Sequence[ExpenseRecord]) -> None:
+    def __init__(
+        self,
+        records: Sequence[ExpenseRecord],
+        bounds: list[tuple[datetime.date | None, datetime.date | None]],
+    ) -> None:
         self._records = records
+        self._bounds = bounds
 
     @override
-    async def list_expenses(self) -> Sequence[ExpenseRecord]:
-        # Handed back in the order it was given. Ordering is the repository's job, so
-        # a fake that sorted would hide a route that re-sorted.
+    async def list_expenses(
+        self,
+        from_date: datetime.date | None = None,
+        to_date: datetime.date | None = None,
+    ) -> Sequence[ExpenseRecord]:
+        # The bounds are recorded rather than applied, and the records are handed back
+        # in the order they were given. Filtering and ordering are both the
+        # repository's job, so a fake that did either would hide a route that did it
+        # again.
+        self._bounds.append((from_date, to_date))
         return self._records
 
 
@@ -79,8 +92,20 @@ def currency_records() -> list[CurrencyRateRecord]:
 
 
 @pytest.fixture
+def requested_bounds() -> list[tuple[datetime.date | None, datetime.date | None]]:
+    """Every (from_date, to_date) the route hands the expense repository, in order.
+
+    A list rather than an attribute on the fake, so a test reads what the route asked
+    for without reaching into a private class.
+    """
+    return []
+
+
+@pytest.fixture
 def app(
-    expense_records: list[ExpenseRecord], currency_records: list[CurrencyRateRecord]
+    expense_records: list[ExpenseRecord],
+    currency_records: list[CurrencyRateRecord],
+    requested_bounds: list[tuple[datetime.date | None, datetime.date | None]],
 ) -> FastAPI:
     """An app whose data comes from memory instead of PostgreSQL.
 
@@ -89,7 +114,7 @@ def app(
     """
     application = create_app()
     application.dependency_overrides[provide_expense_repository] = lambda: (
-        _FakeExpenseRepository(expense_records)
+        _FakeExpenseRepository(expense_records, requested_bounds)
     )
     application.dependency_overrides[provide_currency_repository] = lambda: (
         _FakeCurrencyRepository(currency_records)
@@ -110,7 +135,7 @@ def empty_expenses_client(app: FastAPI) -> TestClient:
     # Re-overriding on the app fixture rather than parametrising it indirectly:
     # request.param is an Any expression, which reportAny rejects.
     app.dependency_overrides[provide_expense_repository] = lambda: (
-        _FakeExpenseRepository([])
+        _FakeExpenseRepository([], [])
     )
     return TestClient(app)
 
