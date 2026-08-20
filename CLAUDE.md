@@ -67,9 +67,10 @@ worktree resolves `.pgdata/` correctly and then aborts on the `${PGPORT:?}` guar
 
 **`dev` depends on `db-init`**, so `pixi run backend-dev` is the single command that gets a
 backend developer a working API: the cluster chain behind it is idempotent, runs once
-before uvicorn, and leaves the cluster up afterwards. `load-expenses` is deliberately not
-in that chain - an empty `expense` table is a legitimate `200`, and putting the loader
-there would work around that invariant rather than honour it. `test` stays out of that
+before uvicorn, and leaves the cluster up afterwards. Neither `load-expenses` nor
+`load-currencies` is in that chain - an empty `expense` or `currency_rate` table is a
+legitimate `200`, and putting a loader there would work around that invariant rather than
+honour it. `test` stays out of that
 chain, because "The HTTP suite never touches PostgreSQL" below is a property chaining
 `db-init` onto it would hide.
 
@@ -97,13 +98,25 @@ gates.
 Break one of these and CI goes red on an otherwise correct change.
 
 - **The backend serves no frontend.** It is a REST API whose whole surface is
-  `GET /api/expenses`: no `/` route, no `StaticFiles` mount, no build artifact under
-  `backend/`. Pinned by `test_root_is_not_served`,
+  `GET /api/expenses` and `GET /api/currencies`: no `/` route, no `StaticFiles` mount,
+  no build artifact under `backend/`. Pinned by `test_root_is_not_served`,
   `test_static_files_are_not_served` and `test_unknown_api_routes_404`.
-- **Expenses are read-only over HTTP.** Rows arrive through
-  `pixi run backend-load-expenses` and nowhere else, so there is no POST, PUT or DELETE
-  and no plan for one. The database is a view of the files in `backend/data/expenses/`,
-  which are `*.tsv`: tab-separated, five named columns, dates `DD/MM/YYYY`.
+- **Both endpoints are read-only over HTTP.** Rows arrive through
+  `pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere
+  else, so there is no POST, PUT or DELETE and no plan for one. The database is a view of
+  the files in `backend/data/expenses/` and `backend/data/currencies/`, which are
+  `*.tsv`: tab-separated, named columns checked strictly, expense dates `DD/MM/YYYY`.
+- **The two loaders differ on reloading, and that difference is the design.**
+  `expense_loader` is append-only: the `loaded_expense_file` ledger skips a file whose
+  sha256 matches and *refuses* one that changed, because two identical expense lines are
+  two real purchases and nothing in a row says whether it has been loaded before.
+  `currency_loader` has no ledger and replaces the whole `currency_rate` table on every
+  run, because a rate for a pair is a current fact rather than an event - so editing
+  `data/currencies/rates.tsv` and reloading is the supported workflow, not the refused
+  one. It parses every file before it deletes anything, so a typo leaves the loaded rates
+  untouched, and the delete and the insert share one transaction. Pinned by
+  `test_an_edited_rate_replaces_the_old_one` and
+  `test_a_bad_file_leaves_the_loaded_rates_intact`.
 - **No OpenAPI.** `docs_url`, `redoc_url` and `openapi_url` stay `None` in
   `create_app()`. Pinned by `test_openapi_docs_are_disabled`.
 - **CORS is wildcard with `allow_credentials=False`.** The spec forbids the pair, so
@@ -116,10 +129,10 @@ Break one of these and CI goes red on an otherwise correct change.
   `TestClient(app)` (without `with`) database-free and `uvicorn --factory` working.
   Moving engine creation into `create_app()` breaks the entire HTTP suite.
 - **Only `deps.py` imports fastapi, and nothing imports `deps`.** The wiring points one
-  way: `deps.py` imports `expense_repository`, never the reverse, and that module plus
-  `db.py`, `config.py` and `expense_loader.py` know no HTTP at all. A failed read leaves
-  the repository as `ExpensesUnavailableError`, and the handler registered in
-  `create_app()` is the only place that turns it into a 503. Putting an `HTTPException`
+  way: `deps.py` imports the two repository modules, never the reverse, and those plus
+  `db.py`, `config.py` and the two loaders know no HTTP at all. A failed read leaves the
+  repository as `ExpensesUnavailableError` or `CurrenciesUnavailableError`, and the two
+  handlers registered in `create_app()` are the only place that turn them into a 503. Putting an `HTTPException`
   back in a repository is what this split exists to prevent. Pinned by the
   import-linter contracts in `backend/pyproject.toml`, not by a test.
   A **new module** under `src/expense_tracker/` has to be added to **three** lists, not
@@ -128,15 +141,17 @@ Break one of these and CI goes red on an otherwise correct change.
   `exhaustive` option, so an unnamed module is silently uncovered by them.
 - **`db.py` holds `Base` and nothing else.** Every repository module needs the same
   `DeclarativeBase`, and giving it a module of its own is what lets a second one arrive
-  without importing the first - which the `|` between siblings in a layer forbids. A new
-  model goes in the repository module that reads it, not in `db.py`.
+  without importing the first - which the `|` between siblings in a layer forbids.
+  `currency_repository.py` is that second one, and it imports `Base` from `db`, never
+  from `expense_repository`. A new model goes in the repository module that reads it, not
+  in `db.py`.
 - **Every repository subclasses its ABC and carries `@override`.**
-  `PostgresExpenseRepository`, and `_FakeExpenseRepository` in `conftest.py`, both do; a
-  new implementation or test double does too. The base class is an `ABC`, so this is
+  `PostgresExpenseRepository` and `PostgresCurrencyRepository`, and the two fakes in
+  `conftest.py`, all do; a new implementation or test double does too. The base class is an `ABC`, so this is
   enforced, not a convention - a look-alike that matches the shape without inheriting is
   rejected. It has to be enforced somewhere, because `dependency_overrides` is an
   untyped dict and would accept anything.
-- **`@abstractmethod` on `ExpenseRepository` is load-bearing.**
+- **`@abstractmethod` on each repository ABC is load-bearing.**
   Without it the `...` body is an ordinary method returning `None` and an empty subclass
   passes. Removing it fails `pixi run backend-lint` three ways: `B027` on the method,
   `B024` on the class, `F401` on the unused import. That gate is why no test asserts it.
@@ -148,7 +163,8 @@ Break one of these and CI goes red on an otherwise correct change.
   `PostgresExpenseRepository` raises only from its `except` arm, with no
   `if not rows: raise` counterpart. Pinned by
   `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` in both
-  `test_app.py` and `test_expense_postgres.py`. The frontend keeps its half of that
+  `test_app.py` and `test_expense_postgres.py`, and by the `currencies` twins of both -
+  `PostgresCurrencyRepository` keeps the same shape. The frontend keeps its half of that
   asymmetry: `ExpensesTable` renders `[]` as a row reading `No expenses loaded.` and
   reserves its `role="alert"` for a request that actually failed.
 - **The expenses table renders `amount` and `date` verbatim.** No `Intl.NumberFormat`,
@@ -161,13 +177,14 @@ Break one of these and CI goes red on an otherwise correct change.
   frontend half - the shape guard in `frontend/src/api/expenses.ts` rejects a numeric
   amount rather than coercing it.
 - **The HTTP suite never touches PostgreSQL.** `backend/tests/conftest.py` overrides
-  the `provide_expense_repository` dependency with a fake repository; only
-  `backend/tests/test_expense_postgres.py`, behind the registered `postgres` marker,
-  connects. A new test that hits an endpoint takes the `client` fixture. That module
-  skips when no server answers and **fails** under `CI=true`, so a database that did not
-  come up cannot go green. `test_expense_postgres.py` TRUNCATEs both expense tables
-  before and after every test, so running the suite empties a developer's loaded data -
-  `pixi run backend-load-expenses` puts it back.
+  the `provide_expense_repository` and `provide_currency_repository` dependencies with
+  fake repositories; only `test_expense_postgres.py` and `test_currency_postgres.py`,
+  behind the registered `postgres` marker, connect. A new test that hits an endpoint
+  takes the `client` fixture. Those modules skip when no server answers and **fail**
+  under `CI=true`, so a database that did not come up cannot go green. They TRUNCATE the
+  tables they read before and after every test, so running the suite empties a
+  developer's loaded data - `pixi run backend-load-expenses` and
+  `pixi run backend-load-currencies` put it back.
 - **`backend/schema.sql` is the only DDL.** No Alembic, no `Base.metadata.create_all`,
   and every statement in it stays idempotent because `db-init` re-runs against live
   clusters. The loader issues DML only. New tables use
@@ -239,8 +256,9 @@ Break one of these and CI goes red on an otherwise correct change.
     `frontend/src/api/expenses.ts`, with nothing checking the agreement. Every expense
     field is a string on the wire, `amount` included, and the frontend's guard rejects a
     number, so a change to `ExpensePayload` is a change to the `Expense` interface;
-  - the two tables - `backend/schema.sql` and the `LoadedExpenseFile` and `Expense`
-    models in `expense_repository.py`, which never create them and only read them;
+  - the three tables - `backend/schema.sql` and the `LoadedExpenseFile` and `Expense`
+    models in `expense_repository.py` and the `CurrencyRate` model in
+    `currency_repository.py`, which never create them and only read them;
   - what is left of the local database connection - `PGUSER` and `PGHOST` in
     `backend/.env`, against `--username=expense_tracker` and
     `--set=listen_addresses=127.0.0.1` in `db-create`'s `initdb` flags, and against
@@ -320,8 +338,8 @@ Break one of these and CI goes red on an otherwise correct change.
   `pixi run backend-lint` as the second half of that task. Imports are just another
   artifact to lint, so they get no gate of their own; `lint-fix` is ruff alone, because
   where a new module belongs in the layer order is a design decision, not a mechanical
-  edit. Four contracts: the three-tier `deps | expense_loader` above
-  `expense_repository` above `db | config` layering, the
+  edit. Four contracts: the three-tier `deps | currency_loader | expense_loader` above
+  `currency_repository | expense_repository` above `db | config` layering, the
   fastapi/starlette ban on everything but `deps`, a ban on importing the package root,
   and `acyclic_siblings` for cycles at any depth. In a layer list `|` joins siblings
   that may **not** import each other and `:` joins siblings that **may** - the two are

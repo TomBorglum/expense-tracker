@@ -137,6 +137,7 @@ backend-format = { cmd = "poe format", cwd = "backend" }
 backend-format-check = { cmd = "poe format-check", cwd = "backend" }
 backend-lint = { cmd = "poe lint", cwd = "backend" }
 backend-lint-fix = { cmd = "poe lint-fix", cwd = "backend" }
+backend-load-currencies = { cmd = "poe load-currencies", cwd = "backend" }
 backend-load-expenses = { cmd = "poe load-expenses", cwd = "backend" }
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 backend-test = { cmd = "poe test", cwd = "backend" }

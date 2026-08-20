@@ -1,9 +1,9 @@
--- The whole schema: the expenses this API reports on.
+-- The whole schema: the expenses this API reports on, and the rates they convert at.
 --
 -- There is no migration tool and the app issues no DDL, so nothing but
--- `pixi run backend-db-init` ever runs this. The LoadedExpenseFile and Expense models
--- under src/expense_tracker/ are these tables declared a second time, in Python, with
--- nothing checking the agreement. Change both halves together.
+-- `pixi run backend-db-init` ever runs this. The LoadedExpenseFile, Expense and
+-- CurrencyRate models under src/expense_tracker/ are these tables declared a second
+-- time, in Python, with nothing checking the agreement. Change both halves together.
 --
 -- Every statement is idempotent, because db-init re-runs against live clusters.
 
@@ -58,3 +58,31 @@ CREATE TABLE IF NOT EXISTS expense (
 -- Exactly the order GET /api/expenses asks for, tiebreak included.
 CREATE INDEX IF NOT EXISTS expense_newest_first_idx
     ON expense (expense_date DESC, id DESC);
+
+-- One row per data line of data/currencies/*.tsv: what one currency is worth in another.
+--
+-- No ledger table beside this one, unlike the expenses above, and the difference is the
+-- kind of thing being stored rather than a preference. A rate for a pair is a current
+-- fact, so `backend-load-currencies` deletes every row and inserts the file's again;
+-- there is nothing here a second load could double up, and editing a rate then reloading
+-- is the supported workflow rather than the refused one.
+CREATE TABLE IF NOT EXISTS currency_rate (
+    -- Surrogate: a pair may legitimately appear twice, so nothing in the data
+    -- identifies a row.
+    id            bigint         GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    -- ISO 4217 alpha-3, both of them. The loader checks the same shape.
+    from_currency text           NOT NULL,
+    to_currency   text           NOT NULL,
+    -- numeric, never float: multiplying an amount by a float is how a total drifts.
+    -- Six decimal places is the resolution published rates carry; the loader rejects a
+    -- seventh rather than letting PostgreSQL round it away silently.
+    exchange_rate numeric(18, 6) NOT NULL,
+    CONSTRAINT currency_rate_from_is_iso_4217 CHECK (from_currency ~ '^[A-Z]{3}$'),
+    CONSTRAINT currency_rate_to_is_iso_4217   CHECK (to_currency ~ '^[A-Z]{3}$'),
+    -- A zero or negative rate converts nothing.
+    CONSTRAINT currency_rate_is_positive      CHECK (exchange_rate > 0)
+);
+
+-- Exactly the order GET /api/currencies asks for, tiebreak included.
+CREATE INDEX IF NOT EXISTS currency_rate_by_pair_idx
+    ON currency_rate (from_currency, to_currency, id);

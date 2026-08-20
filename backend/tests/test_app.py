@@ -3,7 +3,8 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import make_url
 from starlette.testclient import TestClient
 
-from expense_tracker import ExpensePayload, config, create_app
+from expense_tracker import CurrencyPayload, ExpensePayload, config, create_app
+from expense_tracker.currency_repository import CurrencyRateRecord
 from expense_tracker.expense_repository import ExpenseRecord
 
 # The origin a browser would send. Any value works against a wildcard policy.
@@ -12,6 +13,7 @@ _ORIGIN = "http://localhost:5173"
 # Parses a response body into typed models instead of casting it to dicts. Reads
 # response.content, which is bytes, so Response.json()'s Any never enters the picture.
 _EXPENSES = TypeAdapter(list[ExpensePayload])
+_CURRENCIES = TypeAdapter(list[CurrencyPayload])
 
 
 def test_security_headers_present(client: TestClient) -> None:
@@ -61,7 +63,8 @@ def test_static_files_are_not_served(client: TestClient) -> None:
 
 
 def test_unknown_api_routes_404(client: TestClient) -> None:
-    # /api is one route, not a namespace to grow into by accident.
+    # /api is the two routes below and nothing else, not a namespace to grow into by
+    # accident.
     assert client.get("/api/hello").status_code == 404
 
 
@@ -128,6 +131,63 @@ def test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded(
     response = empty_expenses_client.get("/api/expenses")
     assert response.status_code == 200
     assert _EXPENSES.validate_json(response.content) == []
+
+
+def test_currencies_endpoint_returns_json(
+    client: TestClient, currency_records: list[CurrencyRateRecord]
+) -> None:
+    response = client.get("/api/currencies")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert _CURRENCIES.validate_json(response.content) == [
+        CurrencyPayload(
+            from_currency="DKK", to_currency="EUR", exchange_rate="0.134048"
+        ),
+        CurrencyPayload(
+            from_currency="EUR", to_currency="DKK", exchange_rate="7.460000"
+        ),
+    ]
+    # The fixture is the other half of that literal; if it changes, this should fail
+    # rather than quietly assert against itself.
+    assert len(currency_records) == 2
+
+
+def test_exchange_rates_are_strings_not_numbers(client: TestClient) -> None:
+    """7.460000 must not arrive as 7.46.
+
+    CurrencyPayload types exchange_rate as str, so a route that emitted a JSON number
+    fails to parse here rather than passing with a drifted value.
+    """
+    body = _CURRENCIES.validate_json(client.get("/api/currencies").content)
+    assert [row.exchange_rate for row in body] == ["0.134048", "7.460000"]
+
+
+def test_currencies_endpoint_preserves_the_repository_order(client: TestClient) -> None:
+    """Ordering belongs to the repository here too, so this fails if the route sorts."""
+    body = _CURRENCIES.validate_json(client.get("/api/currencies").content)
+    assert [row.from_currency for row in body] == ["DKK", "EUR"]
+
+
+def test_currencies_endpoint_returns_an_empty_list_when_nothing_is_loaded(
+    empty_currencies_client: TestClient,
+) -> None:
+    """200 and [], for the reason the expenses twin above gives."""
+    response = empty_currencies_client.get("/api/currencies")
+    assert response.status_code == 200
+    assert _CURRENCIES.validate_json(response.content) == []
+
+
+def test_currencies_are_unavailable_when_the_database_is_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The real dependency, against a port that refuses instantly.
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://nobody@127.0.0.1:1/none")
+    with TestClient(create_app()) as client:
+        response = client.get("/api/currencies")
+    assert response.status_code == 503
+    # Its own detail: a client learns which endpoint failed and nothing more.
+    assert response.json() == {"detail": "currencies unavailable"}
 
 
 def test_expenses_are_unavailable_when_the_database_is_down(

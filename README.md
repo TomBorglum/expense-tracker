@@ -81,9 +81,11 @@ pixi run frontend-dev  # the SPA on http://localhost:5173
 launches the API, and every part of that is idempotent, so it is the same one command on
 the first day and on any later one. The `backend-db-*` tasks drive the cluster on its
 own when you want that; see [Database](#database). Sample expenses are a separate,
-explicit step - `pixi run backend-load-expenses`, described under
-[Loading expenses](#loading-expenses) - because an empty table is a legitimate state the
-API answers `200` with `[]`.
+explicit step - `pixi run backend-load-expenses` and
+`pixi run backend-load-currencies`, described under
+[Loading expenses](#loading-expenses) and
+[Loading exchange rates](#loading-exchange-rates) - because an empty table is a
+legitimate state the API answers `200` with `[]`.
 
 Visit http://localhost:5173 and you should see the **Expenses** table, fetched from
 `http://localhost:8000/api/expenses` - a genuine cross-origin request, which works only
@@ -99,8 +101,9 @@ error state until something answers on 8000.
 | Route | What it serves |
 | --- | --- |
 | `GET /api/expenses` | `[{"amount", "currency", "date", "category", "details"}, ...]` - the `ExpensePayload` model |
+| `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
-It sends `Cache-Control: no-store`.
+Both send `Cache-Control: no-store`.
 
 Expenses come back **newest first**, and `amount` is a **string**, not a number: the
 column is `numeric(12, 2)`, JSON has no decimal type, and a decimal has no exact binary
@@ -111,12 +114,19 @@ database answers `503 {"detail": "expenses unavailable"}`, but an **empty table 
 `200 []`** - a database nobody has run the loader against yet is a legitimate state, not
 a fault, and a 503 would train a client to retry forever against a working server.
 
-Expenses are read-only over HTTP. Rows arrive through `pixi run backend-load-expenses`
-and nowhere else, so there is no POST, PUT or DELETE.
+Exchange rates come back **by pair**, `from_currency` then `to_currency`, and
+`exchange_rate` is a **string** for the same reason `amount` is: the column is
+`numeric(18, 6)`, and an amount multiplied by a rate that made a float round trip is an
+amount that has drifted. The empty table and the unreachable database behave as above,
+with `{"detail": "currencies unavailable"}` as the 503 body.
+
+Both endpoints are read-only over HTTP. Rows arrive through
+`pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere else,
+so there is no POST, PUT or DELETE.
 
 That is the whole surface. There is no page route and no static mount - the frontend
-is a separate app - and no OpenAPI schema, `/docs` or `/redoc`: one hand-written route
-does not earn a generated document, and the schema would be public surface advertising
+is a separate app - and no OpenAPI schema, `/docs` or `/redoc`: two hand-written routes
+do not earn a generated document, and the schema would be public surface advertising
 it. `backend/tests/test_app.py` asserts that `/`, `/static/*`, any other `/api` path
 and the three docs routes all return 404, so none of it can come back by accident.
 
@@ -136,9 +146,10 @@ than passing it to a router with no such route.
 
 ## Database
 
-PostgreSQL, holding two tables: `loaded_expense_file` and `expense`, which together are
-a view of the files in `backend/data/expenses/`. See
-[Loading expenses](#loading-expenses).
+PostgreSQL, holding three tables: `loaded_expense_file` and `expense`, which together are
+a view of the files in `backend/data/expenses/`, and `currency_rate`, which is a view of
+`backend/data/currencies/`. See [Loading expenses](#loading-expenses) and
+[Loading exchange rates](#loading-exchange-rates).
 
 The server is a **pixi dependency**, not a container. `postgresql` is pinned in
 `pixi.toml` beside python and node, so `direnv allow` provisions it and the `db-*`
@@ -174,7 +185,7 @@ All five tasks are idempotent, and the chain is `dev` depends on `db-init` depen
 `db-start` depends on `db-create` - so `pixi run backend-dev` brings the cluster up on
 its way to the API and none of the five is one you normally run by hand.
 `pixi run backend-db-init` is the one to reach for when you want the database up without
-a server: the `postgres`-marked tests need it, and `backend-load-expenses` does too.
+a server: the `postgres`-marked tests need it, and the two loaders do too.
 `db-reset` throws the cluster away - the cure for a change to an existing table, which
 `schema.sql`'s `IF NOT EXISTS` statements cannot apply.
 
@@ -271,14 +282,42 @@ file instead, or rebuild:
 pixi run backend-db-reset && pixi run backend-db-init && pixi run backend-load-expenses
 ```
 
-That rebuild is also the cure after `pixi run backend-test`, which TRUNCATEs both tables
-before and after every test in `test_expense_postgres.py` - running the suite empties
-whatever you had loaded.
+That rebuild is also the cure after `pixi run backend-test`, which TRUNCATEs the expense
+tables before and after every test in `test_expense_postgres.py`, and `currency_rate`
+around every test in `test_currency_postgres.py` - running the suite empties whatever you
+had loaded.
 
 It is the cure for a **schema change**, too. Every statement in `schema.sql` is
 `CREATE ... IF NOT EXISTS`, so `db-init` adds what is missing but never renames or alters
 what is already there. Pulling a branch that changes a column or a table name means
-resetting the cluster, not re-running `db-init`.
+resetting the cluster, not re-running `db-init`. A branch that only *adds* a table - as
+`currency_rate` did - needs no reset, just `db-init`.
+
+### Loading exchange rates
+
+```sh
+pixi run backend-load-currencies    # replaces the rates with backend/data/currencies/*.tsv
+```
+
+Same file conventions - tab-separated, UTF-8, strict header, BOM tolerated, blank lines
+skipped - over three columns.
+
+| Column | Format | Notes |
+| --- | --- | --- |
+| `FROM_CURRENCY` | ISO 4217 alpha-3 | Uppercase |
+| `TO_CURRENCY` | ISO 4217 alpha-3 | Uppercase |
+| `EXCHANGE_RATE` | decimal | At most six decimal places; must be positive |
+
+A seventh decimal place is refused rather than rounded away by `numeric(18, 6)`, and a
+zero or negative rate converts nothing, so it is refused too.
+
+**This loader replaces rather than appends**, which is the opposite of the expense
+loader above and is the point rather than an inconsistency. A rate for a pair is a
+current fact, not an event: there is no ledger table, every run deletes the rates it
+finds and inserts the file's, and **editing a rate and re-running is the supported
+workflow**. Deleting and inserting share one transaction, so nothing ever observes the
+table empty, and every file is parsed *before* anything is deleted, so a typo leaves the
+loaded rates exactly as they were.
 
 ## Frontend
 
@@ -496,6 +535,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run backend-lint` | `poe lint` | Lint with ruff, then check the import graph with import-linter |
 | `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues (ruff only) |
 | `pixi run backend-load-expenses` | `poe load-expenses` | Read `backend/data/expenses/*.tsv` into the database |
+| `pixi run backend-load-currencies` | `poe load-currencies` | Replace the exchange rates with `backend/data/currencies/*.tsv` |
 | `pixi run backend-format` | `poe format` | Format with ruff |
 | `pixi run backend-format-check` | `poe format-check` | Check formatting without writing changes |
 | `pixi run backend-typecheck` | `poe typecheck` | Type-check with basedpyright (recommended) |
@@ -523,10 +563,11 @@ than reaching for whatever cluster answers on 5432. `pixi task list` prints this
 first column.
 
 CI runs every gate above except the two `dev` tasks, the two `-fix` variants,
-`backend-format`, `backend-load-expenses` and the four `backend-db-*` tasks other than
-`backend-db-init` on each pull request, then the SonarCloud scan. The loader is left out
-because it mutates data and CI has no need of it: `test_expense_postgres.py` already
-puts the committed sample files through the real database path inside `backend-test`.
+`backend-format`, the two loaders and the four `backend-db-*` tasks other than
+`backend-db-init` on each pull request, then the SonarCloud scan. The loaders are left
+out because they mutate data and CI has no need of them: `test_expense_postgres.py` and
+`test_currency_postgres.py` already put the committed sample files through the real
+database path inside `backend-test`.
 
 ### Where commands are defined
 
