@@ -119,9 +119,16 @@ Break one of these and CI goes red on an otherwise correct change.
   react-day-picker's `addToRange` orders the pair itself - a click before the start
   becomes the new start - so `from > to` cannot be produced by any sequence of clicks, and
   a comparison here would be a second copy of a rule `date_range.py` already owns. Pinned
-  by "cannot be made to report a range that runs backwards". Nothing clamps the calendar
-  to the ledger's own days either, because no endpoint publishes them: `startMonth`,
-  `endMonth` and `disabled` would all be inventing a bound.
+  by "cannot be made to report a range that runs backwards".
+- **The calendar's own bounds are invented, and deliberately so.** `startMonth` is
+  1 January of `FIRST_YEAR` in `src/dates.ts` and `endMonth` is 31 December of the current
+  year. No endpoint publishes the ledger's span, so neither bound is derived from
+  anything - they exist because `captionLayout="dropdown"` has to list a finite set of
+  years, and they clamp the chevrons along with the dropdown. That is a real cost: an
+  expense dated before `FIRST_YEAR` is unreachable from the calendar, though a URL naming
+  it is still honoured, because `validateSearch` passes dates through untouched and the
+  trigger shows whatever it was given. Raising the floor is a one-constant edit; deriving
+  it honestly would mean a new backend read and a new payload.
 - **The range control is a `<button aria-expanded>` and a conditional render**, not
   daisyUI's `popover` or `<details>` dropdown, and the panel is positioned with plain
   utilities rather than `dropdown`/`dropdown-content`. jsdom 30 implements no Popover API,

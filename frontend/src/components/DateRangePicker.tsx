@@ -1,7 +1,7 @@
 import { type DateRange, DayPicker } from "@daypicker/react";
 import { useState } from "react";
 
-import { fromIsoDate, toIsoDate } from "../dates";
+import { calendarBounds, fromIsoDate, toIsoDate } from "../dates";
 
 interface DateRangePickerProps {
   readonly from: string;
@@ -18,6 +18,7 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
   // with the URL, which is what makes the props the source of truth the rest of the time.
   const [picked, setPicked] = useState<DateRange | null>(null);
   const selected = picked ?? { from: fromIsoDate(from), to: fromIsoDate(to) };
+  const bounds = calendarBounds();
 
   function handleSelect(next: DateRange | undefined) {
     if (next?.from && next.to) {
@@ -39,7 +40,10 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
       {/* Positioned by hand rather than with daisyUI's dropdown classes. Those hide
           .dropdown-content until :focus-within or :popover-open, which fights a panel
           whose open state is React's - the calendar would vanish the moment focus left
-          it while still mounted. jsdom evaluates no CSS, so no test sees this. */}
+          it while still mounted. The panel needs w-max because an absolute box
+          shrink-wraps to one month, and rdp's month row wraps rather than overflowing,
+          which stacks the second month below the first. jsdom evaluates no CSS, so no
+          test sees either. */}
       <div className="relative">
         {/* Labelled by the caption and by itself, so the accessible name carries both
             the control's purpose and the range it currently shows. */}
@@ -56,14 +60,23 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
           {from} to {to}
         </button>
         {open && (
-          <div className="absolute top-full right-0 z-10 mt-2 rounded-box bg-base-100 p-2 shadow-lg">
+          <div className="absolute top-full right-0 z-10 mt-2 w-max rounded-box bg-base-100 p-2 shadow-lg">
             {/* resetOnSelect, because the range arriving from the URL is always
                 complete: without it a click would drag one end instead of starting
                 over. Neither it nor addToRange can produce a range that ends before it
-                begins, which is why no bound is passed. */}
+                begins, so the ordering needs no guard.
+
+                startMonth and endMonth are what the year dropdown lists, and they clamp
+                the chevrons with it - a bound the calendar did not have before the
+                caption gained a dropdown to fill. */}
             <DayPicker
               mode="range"
               resetOnSelect
+              numberOfMonths={2}
+              captionLayout="dropdown"
+              reverseYears
+              startMonth={bounds.start}
+              endMonth={bounds.end}
               defaultMonth={fromIsoDate(from)}
               selected={selected}
               onSelect={handleSelect}

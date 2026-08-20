@@ -471,6 +471,14 @@ place a `Date` becomes a `YYYY-MM-DD` and it is built from the local field gette
 `toISOString()` would name the previous day east of Greenwich, the mirror of the trap
 `new Date()` sets on the way in.
 
+It shows two months side by side, and its caption is a month and a year dropdown rather
+than a label, so any month is one click away instead of a run of chevron presses. Those
+dropdowns need a finite list, so the calendar is bounded: 1 January of `FIRST_YEAR` in
+`frontend/src/dates.ts` through 31 December of the current year. Both bounds are invented
+- nothing publishes the range the data actually spans - and they clamp the arrows as well
+as the dropdowns, so an expense dated before `FIRST_YEAR` cannot be reached by clicking.
+A URL naming such a day still works, since the dates are passed through as typed.
+
 The calendar also cannot be made to select a range that ends before it begins: DayPicker
 orders the pair itself, so a click before the start becomes the new start. The backend
 still refuses an inverted range, because the URL can be typed by hand.

@@ -35,3 +35,15 @@ export function currentMonth(): { from: string; to: string } {
     to: toIsoDate(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
   };
 }
+
+// The calendar reaches back to this year, and forward to the end of the current one so
+// the rest of it stays selectable. Fixed rather than derived: nothing publishes the
+// ledger's own span, and the year dropdown has to list a finite set.
+const FIRST_YEAR = 2025;
+
+export function calendarBounds(): { start: Date; end: Date } {
+  return {
+    start: new Date(FIRST_YEAR, 0, 1),
+    end: new Date(new Date().getFullYear(), 11, 31),
+  };
+}

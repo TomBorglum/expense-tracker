@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { currentMonth, fromIsoDate, toIsoDate } from "@/dates";
+import { calendarBounds, currentMonth, fromIsoDate, toIsoDate } from "@/dates";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -59,4 +59,21 @@ test("ends February on the 29th in a leap year", () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2028, 1, 14));
   expect(currentMonth()).toEqual({ from: "2028-02-01", to: "2028-02-29" });
+});
+
+test("bounds the calendar at the first selectable year and the end of this one", () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 7, 20, 12, 0));
+  const bounds = calendarBounds();
+  expect(toIsoDate(bounds.start)).toBe("2025-01-01");
+  expect(toIsoDate(bounds.end)).toBe("2026-12-31");
+});
+
+test("carries the upper bound forward with the year", () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2031, 2, 3));
+  const bounds = calendarBounds();
+  // The floor is fixed and the ceiling moves, so the dropdown grows by an entry a year.
+  expect(toIsoDate(bounds.start)).toBe("2025-01-01");
+  expect(toIsoDate(bounds.end)).toBe("2031-12-31");
 });

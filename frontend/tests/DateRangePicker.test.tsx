@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { DateRangePicker } from "@/components/DateRangePicker";
 
@@ -8,6 +8,17 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 // format(date, "PPPP") under the default en-US locale, the nav pair is a fixed English
 // string. A locale prop or a library bump moves them, and these queries are where that
 // would show up.
+// The calendar falls back to the current month when the URL carries no readable start,
+// and calendarBounds() reads the clock for its upper year, so both are pinned here.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 7, 20, 12, 0));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 function trigger() {
   return screen.getByRole("button", { name: /^Dates / });
 }
@@ -126,6 +137,64 @@ test("shows a date nobody could parse rather than correcting it", async () => {
 test("highlights nothing at all when neither end reads as a date", async () => {
   renderPicker("yesterday", "tomorrow");
   await userEvent.click(trigger());
-  const grid = await screen.findByRole("grid");
-  expect(grid.querySelectorAll("[data-selected]")).toHaveLength(0);
+  await screen.findByRole("grid", { name: "August 2026" });
+  expect(document.querySelectorAll("[data-selected]")).toHaveLength(0);
+});
+
+test("shows two months at once, the second following the first", async () => {
+  renderPicker("2026-03-05", "2026-03-09");
+  await userEvent.click(trigger());
+  const months = await screen.findAllByRole("grid");
+  expect(months.map((grid) => grid.getAttribute("aria-label"))).toEqual([
+    "March 2026",
+    "April 2026",
+  ]);
+});
+
+test("offers every year from the first selectable one to the current, newest first", async () => {
+  renderPicker("2026-03-05", "2026-03-09");
+  await userEvent.click(trigger());
+  // One caption, and so one pair of dropdowns, per month on show.
+  const [years] = await screen.findAllByRole("combobox", { name: "Choose the Year" });
+  expect(
+    [...years.querySelectorAll("option")].map((option) => option.textContent),
+  ).toEqual(["2026", "2025"]);
+});
+
+test("jumps to a month chosen from the dropdown", async () => {
+  renderPicker("2026-03-05", "2026-03-09");
+  await userEvent.click(trigger());
+  const [month] = await screen.findAllByRole("combobox", { name: "Choose the Month" });
+
+  await userEvent.selectOptions(month, "10");
+
+  expect(await screen.findByRole("grid", { name: "November 2026" })).toBeTruthy();
+});
+
+test("jumps to a year chosen from the dropdown", async () => {
+  renderPicker("2026-03-05", "2026-03-09");
+  await userEvent.click(trigger());
+  const [year] = await screen.findAllByRole("combobox", { name: "Choose the Year" });
+
+  await userEvent.selectOptions(year, "2025");
+
+  expect(await screen.findByRole("grid", { name: "March 2025" })).toBeTruthy();
+});
+
+test("will not walk back past the first selectable month", async () => {
+  // The bound exists to give the year dropdown a finite list, and it clamps the arrows
+  // with it. An expense dated earlier is only reachable by typing the URL.
+  renderPicker("2025-01-05", "2025-01-09");
+  await userEvent.click(trigger());
+  const previous = await screen.findByRole("button", {
+    name: "Go to the Previous Month",
+  });
+  expect(previous.getAttribute("aria-disabled")).toBe("true");
+});
+
+test("will not walk forward past the end of the current year", async () => {
+  renderPicker("2026-12-05", "2026-12-09");
+  await userEvent.click(trigger());
+  const next = await screen.findByRole("button", { name: "Go to the Next Month" });
+  expect(next.getAttribute("aria-disabled")).toBe("true");
 });
