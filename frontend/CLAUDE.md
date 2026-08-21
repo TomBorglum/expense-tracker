@@ -73,11 +73,13 @@ Break one of these and CI goes red on an otherwise correct change.
   `src/` nobody reviews into the one file nothing checks. The price in dependencies is
   `@babel/core`, `chokidar`, `zod` and `unplugin` behind `@tanstack/router-plugin`.
 - **`tsr.config.json` is the whole configuration, and `tanstackRouter()` takes no
-  options.** The plugin and the `tsr` CLI both read that file, so the routes directory,
-  the generated path and the header are named once rather than in two places that can
-  disagree. Passing an inline option would win over the file silently, and the schema is
-  a zod `z.object` that **strips** a key it does not know - a misspelled option is
-  discarded without a word, and the generator falls back to its defaults.
+  options.** `tsr.config.json` is the generator's own file name, hardcoded in
+  `@tanstack/router-generator` and watched by the plugin, and `getConfig` merges any
+  inline option **over** it. Splitting the settings across both would therefore resolve
+  silently in favour of `vite.config.ts` rather than failing. Keep them in one place, and
+  note the schema is a zod `z.object` that **strips** a key it does not know - a
+  misspelled option is discarded without a word and the generator falls back to its
+  defaults, so diff the emitted tree after changing anything here.
 - **`createAppRouter` is a factory rather than a module-level singleton** so the tests can
   hand it a `createMemoryHistory`, which is also what keeps `router.ts` covered without a
   new exclusion.
@@ -87,14 +89,18 @@ Break one of these and CI goes red on an otherwise correct change.
   `redirect` a typed `to`. Both are `declare module "@tanstack/react-router"` blocks and
   TypeScript merges them. Remove `Register` on the theory that the generated file replaced
   it and every path becomes `string` - nothing fails, the checking just evaporates.
-- **Only vite regenerates the tree, and `frontend-routes-check` is the only gate that
-  reads `src/routes/`.** `pnpm dev` and `pnpm build` rewrite it; `frontend-format-check`,
-  `frontend-typecheck`, `frontend-lint` and `frontend-test` all take the committed tree as
-  given. Without that check a route added without its generated half would pass every gate
-  and be regenerated inside `frontend-build`, which is too late to fail. It is `tsr
-  generate` followed by `git diff --exit-code`, so it also needs the plugin and the CLI to
-  stay on one `@tanstack/router-generator` version - they are both on it today through
-  their own pins, and a bump that splits them fails this check on a clean tree.
+- **Only vite regenerates the tree, and `tsc -b` is what makes a stale one fail.**
+  `pnpm dev` and `pnpm build` rewrite it; nothing else does. That is safe because the
+  generated tree is what types the route files: `createFileRoute("/x")` takes its path
+  from the generated `FileRoutesByPath`, so a route missing from the tree does not
+  compile, and a tree naming a file that was renamed or deleted does not resolve. Every
+  structural drift is a type error, and `frontend-typecheck` is where it lands.
+  What types cannot see is a tree that is structurally right and textually stale - the
+  output of a `tsr.config.json` edit or a generator version whose emitted shape changed.
+  `.github/workflows/ci.yml` closes that with one `git diff --exit-code` after
+  `frontend-build`, the only gate that runs the generator. The realistic trigger is a
+  Dependabot bump of `@tanstack/router-plugin`, which needs the tree regenerated and
+  committed on its own branch.
 - **The generator does not run under vitest**, and the guard is `process.env.VITEST` in
   `vite.config.ts`. Two things it would otherwise do there: resolve its paths against
   vite's root, which the `test` block moves to the repo root, creating an empty `src/` at

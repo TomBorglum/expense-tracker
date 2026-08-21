@@ -502,14 +502,19 @@ One route, generated from files under `frontend/src/routes/` by
 committed. Being generated, it is skipped by prettier and eslint and excluded from
 coverage and from the Sonar scan - but not from `tsc -b`, because `tsr.config.json`
 replaces a default file header whose `// @ts-nocheck` would leave the one file nobody
-reviews checked by nothing. That file is the plugin's whole configuration; the `tsr` CLI
-reads it too, so the routes directory and the generated path are named once.
+reviews checked by nothing. That file is the plugin's whole configuration - it is the
+generator's own hardcoded file name, and an inline plugin option would silently override
+it rather than conflict, so the settings stay in one place.
 
 Only `pnpm dev` and `pnpm build` regenerate the tree, and the suite deliberately does
 not: under vitest the generator would resolve its paths against the repo root that
-`vite.config.ts` pins vitest to, and it rewrites files rather than reading them. That
-leaves a gap `pixi run frontend-routes-check` closes - it regenerates and fails on a
-diff, and it is the only gate that reads `src/routes/` at all.
+`vite.config.ts` pins vitest to, and it rewrites files rather than reading them. A stale
+tree still fails, because the tree is what types the route files - `createFileRoute("/x")`
+draws its path from the generated `FileRoutesByPath`, so a route the tree does not know
+will not compile and a tree naming a file that is gone will not resolve. The one drift
+types cannot see is a tree that is structurally right but textually stale, after a
+`tsr.config.json` edit or a generator bump; CI catches that with a `git diff --exit-code`
+after the build.
 
 `createAppRouter` takes an optional history so the tests can pass
 `createMemoryHistory()`; `frontend/src/main.tsx` calls it with none and gets the
@@ -704,7 +709,6 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run frontend-typecheck` | `pnpm run typecheck` | Type-check the frontend with tsc |
 | `pixi run frontend-lint` | `pnpm run lint` | Lint the frontend with eslint (type-aware, plus CSS, `--max-warnings 0`) |
 | `pixi run frontend-lint-fix` | `pnpm run lint-fix` | Auto-fix frontend lint issues |
-| `pixi run frontend-routes-check` | `pnpm run routes-check` | Regenerate `src/routeTree.gen.ts` and fail if the committed one differed |
 | `pixi run frontend-test` | `pnpm run test` | Run the frontend tests (vitest) with coverage |
 | `pixi run frontend-format` | `pnpm run format` | Format the frontend with prettier |
 | `pixi run frontend-format-check` | `pnpm run format-check` | Check frontend formatting without writing changes |

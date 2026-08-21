@@ -31,9 +31,8 @@ export default defineConfig({
   envDir: fileURLToPath(new URL("./", import.meta.url)),
   // The route generator runs before react(), so the transform sees the tree it just
   // wrote rather than the one from the last run. It takes no options here:
-  // tsr.config.json is the whole configuration, and `pnpm run routes-check` reads
-  // that same file through the tsr CLI, so the routes directory and the generated
-  // path are named once.
+  // tsr.config.json is the whole configuration, and an inline option would override
+  // that file silently rather than conflict with it.
   plugins: [...routeGeneration, react(), tailwindcss()],
   resolve: {
     alias: {
