@@ -154,15 +154,17 @@ Each pair is named by the two files that hold it. Nothing checks the agreement.
   `frontend/tsconfig.app.json`, because vite does not read tsconfig `paths`.
 - **The `frontend/src/main.tsx` coverage exclusion** - `frontend/vite.config.ts` against
   `sonar-project.properties`.
-- **The `frontend/src/routeTree.gen.ts` exclusion** - declared four times, not twice:
-  `frontend/.prettierignore`, `globalIgnores` in `frontend/eslint.config.ts`,
-  `coverage.exclude` in `frontend/vite.config.ts` and `sonar.exclusions` in
-  `sonar-project.properties`. The file is generated from `frontend/src/routes/` and is
-  authored by nobody, so all four have to name it or a tool reports on machine-written
-  code. Dropping the prettier one is the loud failure - the generator formats at
-  `printWidth` 80 and the repo checks at 88, so `frontend-format-check` goes red. The
-  other three fail quietly. Explained under "The generated tree is excluded from
-  prettier, eslint, coverage and Sonar" in
+- **The `frontend/src/routeTree.gen.ts` exclusion** - declared three times:
+  `frontend/.prettierignore`, `coverage.exclude` in `frontend/vite.config.ts` and
+  `sonar.exclusions` in `sonar-project.properties`. The file is generated from
+  `frontend/src/routes/` and is authored by nobody, so each has to name it or that tool
+  reports on machine-written code. Dropping the prettier one is the loud failure - the
+  generator formats at `printWidth` 80 and the repo checks at 88, so
+  `frontend-format-check` goes red; the other two fail quietly. **eslint is deliberately
+  not a fourth**: the file's own `/* eslint-disable */` header covers it, and an ignore
+  pattern would make eslint warn "File ignored because of a matching ignore pattern"
+  every time an editor opens the file. Explained under "The generated tree is excluded
+  from prettier, coverage and Sonar" in
   [`frontend/CLAUDE.md`](frontend/CLAUDE.md).
 - **`VITE_API_BASE_URL`** - set in `frontend/.env`, typed in
   `frontend/src/vite-env.d.ts`.

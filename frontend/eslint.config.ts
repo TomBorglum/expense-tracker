@@ -22,12 +22,15 @@ export default defineConfig(
   // named. Not cosmetic: dist/ holds emitted JS that no tsconfig includes, and the
   // type-aware config below fails outright on a file it cannot get a program for.
   //
-  // routeTree.gen.ts is generated from src/routes/ by the router plugin and opens with
-  // a blanket `/* eslint-disable */`, which reportUnusedDisableDirectives would fail on
-  // under --max-warnings 0. Ignoring it here is also what the generator's own header
-  // asks for. Listed again in .prettierignore, vite.config.ts and
-  // sonar-project.properties; nothing checks the four agree.
-  globalIgnores(["dist", "src/routeTree.gen.ts"]),
+  // src/routeTree.gen.ts is deliberately NOT named here. It is generated and must not
+  // be linted, but it opens with its own blanket `/* eslint-disable */`, which already
+  // does that and is what the generator's header intends. Ignoring it by pattern
+  // instead makes eslint answer "File ignored because of a matching ignore pattern"
+  // whenever it is handed the file directly - which is exactly what an editor does
+  // when you open it, so that warning lands in the editor and `--no-warn-ignored` on
+  // the lint script cannot reach it. Its directive is never reported as unused,
+  // because the `as any` casts under it would genuinely fire rules.
+  globalIgnores(["dist"]),
 
   // Type-aware base for every TS/TSX file. projectService lets the TypeScript project
   // service pick the right tsconfig per file - tsconfig.app.json for src/ and tests/,

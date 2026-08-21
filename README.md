@@ -509,8 +509,10 @@ adding a route file fails `frontend-typecheck`, because `createFileRoute("/new")
 not assignable against a stale tree; a rename, a deletion or a changed path typechecks
 fine and is caught instead by the `git diff --exit-code` step `.github/workflows/ci.yml`
 runs after `frontend-build`, the one gate that runs vite and so the one that
-regenerates. The file is excluded from prettier, eslint, coverage and Sonar - four
-declarations that nothing checks agree. Prettier's exclusion is not a preference: the
+regenerates. The file is excluded from prettier, coverage and Sonar - three declarations
+that nothing checks agree - while eslint is covered by the file's own
+`/* eslint-disable */` header rather than by an ignore pattern, which would make eslint
+warn every time an editor opened it. Prettier's exclusion is not a preference: the
 generator formats with prettier's own defaults rather than `.prettierrc.json`, so the
 file lands at `printWidth` 80 and could never pass the check at 88.
 

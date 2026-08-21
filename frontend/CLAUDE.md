@@ -79,11 +79,18 @@ Break one of these and CI goes red on an otherwise correct change.
   instead by the `git diff --exit-code` step in `.github/workflows/ci.yml`, placed after
   `frontend-build` because that is the only gate that runs vite. Neither check is a pixi
   task; adding one would have meant a command body in two manifests for no gain.
-- **The generated tree is excluded from prettier, eslint, coverage and Sonar** -
-  `.prettierignore`, `globalIgnores` in `eslint.config.ts`, `coverage.exclude` in
-  `vite.config.ts` and `sonar.exclusions` in `sonar-project.properties`, listed under
-  "Declared twice" in the root [`CLAUDE.md`](../CLAUDE.md) because nothing checks the four
-  agree. **The prettier exclusion is not a preference.** `router-generator` formats by
+- **The generated tree is excluded from prettier, coverage and Sonar** -
+  `.prettierignore`, `coverage.exclude` in `vite.config.ts` and `sonar.exclusions` in
+  `sonar-project.properties`, listed under "Declared twice" in the root
+  [`CLAUDE.md`](../CLAUDE.md) because nothing checks the three agree. **eslint is
+  deliberately not a fourth, and `globalIgnores` must not gain it.** The file opens with
+  its own blanket `/* eslint-disable */`, which is what the generator's header intends
+  and is enough; an ignore *pattern* additionally makes eslint answer "File ignored
+  because of a matching ignore pattern" whenever it is handed the file directly, which is
+  exactly what an editor does when you open it. `--no-warn-ignored` on the `lint` script
+  cannot reach that - the editor's language server runs its own eslint - so the config is
+  the only place it can be fixed. The directive is never reported as unused either,
+  because the `as any` casts under it would genuinely fire rules. **The prettier exclusion is not a preference.** `router-generator` formats by
   calling `prettier.format(source, {...})` with explicit options only; it never resolves
   `.prettierrc.json`, so the file lands at prettier's default `printWidth` 80 against this
   repo's 88 and could not pass `--check` however it were configured. `quoteStyle` and
