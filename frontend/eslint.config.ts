@@ -60,13 +60,14 @@ export default defineConfig(
   {
     files: ["src/**/*.tsx"],
     // Every file under src/routes/ exports `Route = createFileRoute(...)({ component })`
-    // beside the component it names. Without extraHOCs the rule reads that as a
-    // non-component export sitting next to a component and reports on both;
-    // allowExportNames does not help, because it silences the export and leaves the
-    // component reported instead.
+    // beside the components it names - __root.tsx through
+    // createRootRouteWithContext, which is that call curried once. Without extraHOCs
+    // the rule reads the export as a non-component sitting next to a component and
+    // reports on both; allowExportNames does not help, because it silences the export
+    // and leaves the components reported instead.
     extends: [
       reactRefresh.configs.vite({
-        extraHOCs: ["createFileRoute", "createRootRoute"],
+        extraHOCs: ["createFileRoute", "createRootRouteWithContext"],
       }),
     ],
   },

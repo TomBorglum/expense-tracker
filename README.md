@@ -462,6 +462,14 @@ no clear button: an **empty** `?from_date=` is a malformed date to the backend r
 a request for everything, so the way to see more is to pick earlier or later days. A range
 holding no expenses is a 200 with `[]`, which the table shows as a row and not an alert.
 
+Whichever control moves, the other two parameters stay: the route declares
+`retainSearchParams(["currency", "from_date", "to_date"])` as a search middleware, so a
+navigation naming one of them carries the rest rather than having `validateSearch`
+re-default them out from under it. The defaults themselves reach the address bar - the
+router writes the validated search back over a bare `/`, replacing rather than pushing -
+which is what makes a copied link name the month it was copied from and not the month
+the recipient opens it in.
+
 The control is [DayPicker](https://daypicker.dev) in `mode="range"`, pinned as
 `@daypicker/react`. It was chosen over daisyUI's own calendar component because that one
 is the `cally` web component, which renders into a shadow root that the tests cannot see
@@ -513,21 +521,24 @@ tree still fails, because the tree is what types the route files - `createFileRo
 draws its path from the generated `FileRoutesByPath`, so a route the tree does not know
 will not compile and a tree naming a file that is gone will not resolve. The one drift
 types cannot see is a tree that is structurally right but textually stale, after a
-plugin option change or a generator bump; CI catches that with a `git diff --exit-code`
-after the build.
+plugin option change or a generator bump; `pixi run frontend-routes-check` catches
+that, and CI runs it straight after the build.
 
-`createAppRouter` takes an optional history so the tests can pass
-`createMemoryHistory()`; `frontend/src/main.tsx` calls it with none and gets the
-browser's. `frontend/src/routes/__root.tsx` - the layout wrapped around an `<Outlet />` -
+`createAppRouter` takes the `QueryClient` and an optional history, so the tests can
+pass `createMemoryHistory()` and their own client; `frontend/src/main.tsx` passes no
+history and gets the browser's. The client becomes the router's context, which is where
+the route loader reads it from. `frontend/src/routes/__root.tsx` - the layout wrapped around an `<Outlet />` -
 is the only file that renders the router's own components; there is no nav, because one
-over a single route would be dead UI. The `declare module` block at the foot of
+over a single route would be dead UI. It also carries the two failure surfaces - a
+`notFoundComponent` for a path no route matches and an `errorComponent` for a throw
+inside one - both rendered into that same `<Outlet />`, so the title bar survives either. The `declare module` block at the foot of
 `router.ts` registers `Register`, which is what makes a `Link`'s `to` typed against the
 real route tree. It is not the augmentation the generated file emits: that one declares
 `FileRoutesByPath`, and the two merge rather than replace each other.
 
 The route owns its search schema, so its component is the one that reads it:
 `ExpensesPage` lives in `frontend/src/routes/index.tsx` beside the `Route` it belongs to,
-calls `Route.useSearch()` and `useNavigate`, and its test builds a memory-history router
+calls `Route.useSearch()` and `Route.useNavigate()`, and its test builds a memory-history router
 the way `frontend/tests/routing.test.tsx` does. **The router-free layer is
 `frontend/src/components/`**: `ExpensesTable` and `CurrencySelect` take props, know
 nothing of the URL, and mount in a bare `QueryClientProvider`. A deployed SPA needs its server to
@@ -710,6 +721,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run frontend-lint` | `pnpm run lint` | Lint the frontend with eslint (type-aware, plus CSS, `--max-warnings 0`) |
 | `pixi run frontend-lint-fix` | `pnpm run lint-fix` | Auto-fix frontend lint issues |
 | `pixi run frontend-test` | `pnpm run test` | Run the frontend tests (vitest) with coverage |
+| `pixi run frontend-routes-check` | `pnpm run routes-check` | Check the committed route tree matches `src/routes/` (run straight after `frontend-build`) |
 | `pixi run frontend-format` | `pnpm run format` | Format the frontend with prettier |
 | `pixi run frontend-format-check` | `pnpm run format-check` | Check frontend formatting without writing changes |
 

@@ -96,7 +96,7 @@ jobs:
       # typed path, and a tree naming a file that is gone fails to resolve. What is
       # left is a tree that is structurally right and textually stale, from a change
       # to the generator's options or its version, which types cannot see.
-      - run: git diff --exit-code frontend/src/routeTree.gen.ts
+      - run: pixi run frontend-routes-check
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with
       # sonar.scanner.skipJreProvisioning below.

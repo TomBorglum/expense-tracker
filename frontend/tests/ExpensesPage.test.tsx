@@ -30,10 +30,16 @@ const AUGUST = { currency: "DKK", from_date: "2026-08-01", to_date: "2026-08-31"
 // Mounted through the router rather than bare: the page reads its currency and its dates
 // from the URL, so the route is part of what is under test here.
 function renderPageAt(path: string) {
-  const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
+  // The client is the router's context as well as the provider's value: the route's
+  // loader prefetches through the first, ExpensesTable subscribes through the second,
+  // and one request is what proves they are the same cache entry.
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const router = createAppRouter(
+    queryClient,
+    createMemoryHistory({ initialEntries: [path] }),
+  );
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -108,6 +114,23 @@ test("defaults to the current month when the URL names no range", async () => {
   await screen.findByRole("table", { name: "Expenses" });
   expect(requested).toEqual([AUGUST]);
   expect(dateRangeTrigger().textContent).toBe("2026-08-01 to 2026-08-31");
+});
+
+test("writes the defaults it filled in back to the URL", async () => {
+  // The router commits the validated search to the address bar itself, replacing rather
+  // than pushing, so a bare "/" does not stay bare and does not become a back-stop.
+  // Pinned because the defaults read the clock: a link copied from a "/" that stayed
+  // bare would name whatever month the recipient opened it in.
+  const requested = recordRequestedParams();
+  const router = renderPageAt("/");
+  await screen.findByRole("table", { name: "Expenses" });
+  await waitFor(() => {
+    expect(router.state.location.searchStr).toBe(
+      "?currency=DKK&from_date=2026-08-01&to_date=2026-08-31",
+    );
+  });
+  expect(router.state.location.search).toEqual(AUGUST);
+  expect(requested).toEqual([AUGUST]);
 });
 
 test("ends the default range on the day the month actually ends", async () => {

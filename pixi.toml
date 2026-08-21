@@ -102,6 +102,9 @@ frontend-install = { cmd = "pnpm install --frozen-lockfile", cwd = "frontend" }
 # every rule over it - about twice the cost, which is why CI puts it last.
 frontend-lint = { cmd = "pnpm run lint", cwd = "frontend" }
 frontend-lint-fix = { cmd = "pnpm run lint-fix", cwd = "frontend" }
+# Proves the committed route tree is what src/routes generates. Only meaningful straight
+# after frontend-build, the one task that runs the generator.
+frontend-routes-check = { cmd = "pnpm run routes-check", cwd = "frontend" }
 # vitest + coverage; writes coverage/frontend/lcov.info at the repo root for the
 # SonarCloud scan, mirroring how backend-test writes coverage.xml for Python.
 frontend-test = { cmd = "pnpm run test", cwd = "frontend" }

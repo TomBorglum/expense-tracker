@@ -83,7 +83,42 @@ Break one of these and CI goes red on an otherwise correct change.
   used, so diff the emitted tree after changing anything here.
 - **`createAppRouter` is a factory rather than a module-level singleton** so the tests can
   hand it a `createMemoryHistory`, which is also what keeps `router.ts` covered without a
-  new exclusion.
+  new exclusion. It takes the `QueryClient` as its first argument and passes it as the
+  router's `context`, so a test's router and its `QueryClientProvider` share one cache -
+  the loader below prefetches through the context and `ExpensesTable` subscribes through
+  the provider, and **one request** is what proves they are the same entry.
+- **The root route carries both failure surfaces.** `notFoundComponent` answers a path no
+  route matches and `errorComponent` a throw inside one, both in `src/routes/__root.tsx`
+  and both rendering into the same `<Outlet />` as a page, so the title bar and the shell
+  survive either. They reuse `role="alert"` and `alert alert-error` - the pair
+  `ExpensesTable` uses for a failed request - which is what keeps every colour referenced
+  by role. `routing.test.tsx` pins the not-found half; the error half is uncovered on
+  purpose, because reaching it needs a route that throws and adding one to `src/routes/`
+  would put a route in the app that the app does not have.
+- **The expenses loader prefetches and never throws.** `src/routes/index.tsx` declares
+  `loaderDeps: ({ search }) => search` and a loader calling
+  `context.queryClient.prefetchQuery(expensesQueryOptions(deps))`. **`prefetchQuery`, not
+  `ensureQueryData`**, and **not awaited**: `ensureQueryData` rejects, which would move a
+  failed request from the table's own alert to the root route's `errorComponent` and break
+  "An empty list is a row, not an alert" from the other direction. The rates request stays
+  out of the loader entirely, for the reason given under the currency options below.
+  Both halves reuse `expensesQueryOptions` from `src/api/expenses.ts`, because a key that
+  differed by so much as an object shape would make the prefetch a second request rather
+  than the one the table joins.
+- **`scrollRestoration` is live on one route; `defaultPreload` is not.** One route and no
+  `Link` does not make scroll restoration idle: `CurrencySelect` and `DateRangePicker` each
+  `navigate`, and a search-only navigation still **pushes** a history entry, so back and
+  forward across a currency or a range change is a real navigation - on a table that is
+  taller than the viewport over any wide range. Without it that back lands at the top.
+  `defaultPreloadStaleTime: 0` is set and does work. `defaultPreload: "intent"` is the one
+  that has nothing to act on, because preloading needs a `Link` to take intent from, and it
+  is kept because it is what a nav beside a second route would need.
+- **`Not implemented: Window's scrollTo()` in the suite is not this repo's doing.** jsdom
+  implements no scrolling and the router scrolls on navigation regardless of
+  `scrollRestoration`, so the count tracks router-mounting tests one-for-one:
+  `routing.test.tsx` and `ExpensesPage.test.tsx` emit them, the four component and date
+  suites emit none. Adding a test that mounts a router adds one. They are notices, not
+  failures, and nothing here suppresses them.
 - **The `Register` block in `router.ts` is not the generated augmentation, and deleting it
   breaks nothing loudly.** The generated tree augments `FileRoutesByPath`, which types
   `createFileRoute` and the route ids; `Register` is what gives `Link`, `useNavigate` and
@@ -99,8 +134,9 @@ Break one of these and CI goes red on an otherwise correct change.
   What types cannot see is a tree that is structurally right and textually stale - the
   output of a `vite.config.ts` option change or a generator version whose emitted
   shape changed.
-  `.github/workflows/ci.yml` closes that with one `git diff --exit-code` after
-  `frontend-build`, the only gate that runs the generator. The realistic trigger is a
+  `pixi run frontend-routes-check` closes that with one `git diff --exit-code`, and
+  `.github/workflows/ci.yml` runs it straight after `frontend-build`, the only gate that
+  runs the generator. It proves nothing on its own - run it after a build or not at all. The realistic trigger is a
   Dependabot bump of `@tanstack/router-plugin`, which needs the tree regenerated and
   committed on its own branch.
 - **The generator does not run under vitest**, and the guard is `process.env.VITEST` in
@@ -117,7 +153,7 @@ Break one of these and CI goes red on an otherwise correct change.
   layout shell and no more, because a nav over a single route would be dead UI.
 - **`src/components/` is the router-free layer.** The route owns its search schema and its
   component reads it, so `ExpensesPage` in `src/routes/index.tsx` calls `Route.useSearch()`
-  and `useNavigate`, and its test builds a `createMemoryHistory` router the way
+  and `Route.useNavigate()`, and its test builds a `createMemoryHistory` router the way
   `routing.test.tsx` does. The route and the component being one module is what removed the
   `getRouteApi("/")` this went through when the tree was hand-written: `router.ts` imported
   the page then, so importing the route back was a cycle. Everything under `src/components/`
@@ -140,7 +176,13 @@ Break one of these and CI goes red on an otherwise correct change.
   does not sort the two bounds, clamp them or compare them. The one thing it adds is the
   default - an absent bound becomes the first or last day of the current month - and that
   is the only default here that is not a constant, which is why `dates.test.ts` and
-  `ExpensesPage.test.tsx` pin the clock.
+  `ExpensesPage.test.tsx` pin the clock. What it fills in **does** reach the address bar:
+  the router writes the validated search back over a bare `/`, replacing rather than
+  pushing, so a copied link names the month it was copied from rather than the month the
+  recipient opens it in, and no bare `/` is left behind to go back to. That is the router's
+  own behaviour rather than anything this repo arranges, which is exactly why
+  `ExpensesPage.test.tsx` pins it: the defaults read the clock, so losing it in a version
+  bump would be silent.
 - **The currency options are what the rate table can reach, not a list of ISO codes.**
   `targetCurrencies` in `src/api/currencies.ts` keeps only the `to_currency` of a pair whose
   `from_currency` is `BASE_CURRENCY`, because a rate is never inverted and never composed -
@@ -150,16 +192,22 @@ Break one of these and CI goes red on an otherwise correct change.
   pending, 503s, empty or malformed leaves the select disabled at `BASE_CURRENCY` and **does
   not disturb the expenses table**: they are two requests, and an empty rate table is a
   legitimate `200` for the reason an empty ledger is.
-- **The date range is always bounded, and every `navigate` carries the whole search.**
+- **The date range is always bounded, and the router is what carries the whole search.**
   There is no clear button and no unbounded mode; the range is widened by picking earlier
   or later days. `DateRangePicker` holds a half-picked range in local state and reports
   nothing until both ends are set, because an empty bound is a malformed date to the
   backend rather than a request for everything - the same rule as the absent "as recorded"
   currency mode above. Because `validateSearch` re-defaults an **absent** parameter, a
   `navigate` that omitted `from_date` would silently reset the range to the current month
-  instead of leaving it alone, so both handlers in `ExpensesPage` spread the whole search
-  and override one part of it. Pinned by "picking a currency keeps the range and asks
-  again" and its twin.
+  instead of leaving it alone. Keeping that from happening is the router's job here, not
+  the caller's: the route declares
+  `search: { middlewares: [retainSearchParams(["currency", "from_date", "to_date"])] }`,
+  so a navigation naming one parameter carries the other two. Both handlers in
+  `ExpensesPage` still use the updater form -
+  `search: (prev) => ({ ...prev, currency: next })` rather than a spread of the search read
+  at render - so what they merge into is current at the moment the navigation happens, and
+  they navigate to `"."` through `Route.useNavigate()`, which is what anchors the relative
+  path. Pinned by "picking a currency keeps the range and asks again" and its twin.
 - **An inverted range is unreachable through the UI, and nothing guards against one.**
   react-day-picker's `addToRange` orders the pair itself - a click before the start
   becomes the new start - so `from > to` cannot be produced by any sequence of clicks, and

@@ -28,7 +28,8 @@ const queryClient = new QueryClient({
 });
 
 // No history argument, so the router uses the browser's. The tests pass a memory one.
-const router = createAppRouter();
+// The client above is handed on as router context, where the route loaders read it.
+const router = createAppRouter(queryClient);
 
 createRoot(root).render(
   <StrictMode>

@@ -119,7 +119,7 @@ pixi run backend-format-check && pixi run backend-lint &&
 pixi run backend-typecheck && pixi run backend-db-init && pixi run backend-test &&
 pixi run frontend-install && pixi run frontend-format-check &&
 pixi run frontend-typecheck && pixi run frontend-lint && pixi run frontend-test &&
-pixi run frontend-build && git diff --exit-code frontend/src/routeTree.gen.ts
+pixi run frontend-build && pixi run frontend-routes-check
 ```
 
 The two halves are independent, so a change to one stack can only fail that stack's gates.

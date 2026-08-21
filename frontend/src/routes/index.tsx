@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, retainSearchParams } from "@tanstack/react-router";
 
 import {
   BASE_CURRENCY,
   currenciesQueryOptions,
   targetCurrencies,
 } from "../api/currencies";
-import { type ExpensesQuery } from "../api/expenses";
+import { type ExpensesQuery, expensesQueryOptions } from "../api/expenses";
 import { CurrencySelect } from "../components/CurrencySelect";
 import { DateRangePicker } from "../components/DateRangePicker";
 import { ExpensesTable } from "../components/ExpensesTable";
@@ -32,13 +32,28 @@ export const Route = createFileRoute("/")({
       to_date: typeof search.to_date === "string" ? search.to_date : month.to,
     };
   },
+  search: {
+    // Carries all three across every navigation, so a call that names one parameter
+    // keeps the other two rather than having them re-defaulted out from under it.
+    middlewares: [retainSearchParams(["currency", "from_date", "to_date"])],
+  },
+  loaderDeps: ({ search }) => search,
+  // prefetchQuery rather than ensureQueryData: it settles its own rejection, so a failed
+  // request stays the table's alert instead of becoming the root route's errorComponent.
+  // Not awaited either, so the page renders its pending state on the first tick and the
+  // request ExpensesTable subscribes to is the one already in flight.
+  loader: ({ context, deps }) => {
+    void context.queryClient.prefetchQuery(expensesQueryOptions(deps));
+  },
 });
 
 function ExpensesPage() {
   // Read whole rather than destructured: it is both what the controls display and what
   // the table requests, and each control navigates with the others left as they were.
   const search = Route.useSearch();
-  const navigate = useNavigate();
+  // Scoped to this route, which is what gives the relative "." below a from to resolve
+  // against.
+  const navigate = Route.useNavigate();
   // The rate table is what the selector can offer. Its failure is not the table's: an
   // unreachable or empty one leaves the base currency, which needs no rate, and the
   // expenses below still load.
@@ -55,8 +70,8 @@ function ExpensesPage() {
             to={search.to_date}
             onChange={(from, to) => {
               void navigate({
-                to: "/",
-                search: { ...search, from_date: from, to_date: to },
+                to: ".",
+                search: (prev) => ({ ...prev, from_date: from, to_date: to }),
               });
             }}
           />
@@ -65,9 +80,14 @@ function ExpensesPage() {
             options={options}
             disabled={!rates.isSuccess}
             onChange={(next) => {
+              // The updater form rather than a spread of the search read at render, so
+              // the parameters kept are the ones current when the navigation happens.
               // Voided rather than awaited: navigate returns a promise nothing here
               // needs, and an unhandled one fails the lint.
-              void navigate({ to: "/", search: { ...search, currency: next } });
+              void navigate({
+                to: ".",
+                search: (prev) => ({ ...prev, currency: next }),
+              });
             }}
           />
         </div>

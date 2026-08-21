@@ -1,4 +1,5 @@
-import { createRootRoute, Outlet } from "@tanstack/react-router";
+import type { QueryClient } from "@tanstack/react-query";
+import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 
 // The shell every route renders inside: the slot the matched page fills.
 function RootLayout() {
@@ -17,4 +18,26 @@ function RootLayout() {
   );
 }
 
-export const Route = createRootRoute({ component: RootLayout });
+// Both render into the Outlet above, so a failure keeps the title bar and the shell.
+// Same role and classes as ExpensesTable's failed request.
+function NotFound() {
+  return (
+    <div role="alert" className="alert alert-error">
+      No such page.
+    </div>
+  );
+}
+
+function RouteError() {
+  return (
+    <div role="alert" className="alert alert-error">
+      Something went wrong.
+    </div>
+  );
+}
+
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  component: RootLayout,
+  notFoundComponent: NotFound,
+  errorComponent: RouteError,
+});
