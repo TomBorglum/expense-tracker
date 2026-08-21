@@ -67,15 +67,24 @@ Break one of these and CI goes red on an otherwise correct change.
   in an ordinary CSS property fails `css/no-invalid-properties`, because eslint cannot see
   what the Tailwind build injects, and the rule must not be relaxed to let one through.
   This rule passes only because it assigns to a custom property, which is not validated.
-- **The calendar marks no "today", and that is switched off at the source.** Both
-  `DayPicker`s pass `classNames={{ today: "" }}`, and `getClassNamesForModifiers` keeps
-  only truthy entries, so the day never carries `rdp-today`. Without it daisyUI fills that
-  day with the primary colour, and its selector is four classes against `.rdp-selected`'s
-  three, so it beats the range it sits inside and the current day reads as picked whatever
-  the range is. **The control reports a from date and a to date; a third day marked as
-  firmly as the range is a third thing to explain.** Suppressing the modifier is what keeps
-  the fix out of CSS - restoring an endpoint that happened to be today would have needed
-  `var(--color-base-content)` in an ordinary property, which is the lint wall above.
+- **`dayPickerClassNames` carries two fixes for daisyUI's calendar theme, and both are
+  handed to the panels rather than written as CSS.** That is deliberate: a daisyUI role
+  token used in an ordinary CSS property fails `css/no-invalid-properties`, so a utility
+  class is the way to reach one from here.
+  - **No day is marked "today".** `today` is emptied, and `getClassNamesForModifiers`
+    keeps only truthy entries, so the day never carries `rdp-today`. Without that daisyUI
+    fills it with the primary colour through a selector of four classes against
+    `.rdp-selected`'s three - it beats the range it sits inside, and the current day reads
+    as picked whatever the range is. **The control reports a from date and a to date; a
+    third marked day is a third thing to explain.**
+  - **The month and year dropdowns are given a background.** They are real `<select>`s
+    that daisyUI leaves transparent, because they sit invisible over the caption and only
+    the caption is meant to show. A browser paints the *native popup* from the control's
+    own colours, so a transparent one comes up on white while still taking the inherited
+    text colour - pale on pale, and unreadable under dim. `bg-base-100 text-base-content`
+    fixes it, and `[&>option]:bg-base-100` is not redundant: the select's colour does not
+    reach its options in every browser. Note this is not a `color-scheme` fault - that
+    resolves correctly to `dark` on the element, and the scrollbars prove it.
 - **Both filters are one control wearing two faces, and `FilterField` is what keeps them
   that way.** The date range trigger is a daisyUI `input` and the currency picker a
   `select`; they are the same height, border, fill, radius and focus treatment because they

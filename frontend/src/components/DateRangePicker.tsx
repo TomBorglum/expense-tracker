@@ -1,4 +1,4 @@
-import { type DateRange, DayPicker } from "@daypicker/react";
+import { type DateRange, DayPicker, getDefaultClassNames } from "@daypicker/react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -9,6 +9,25 @@ import {
   toIsoDate,
 } from "../dates";
 import { FilterField } from "./FilterField";
+
+const defaultClassNames = getDefaultClassNames();
+
+// What the two panels are handed beyond daisyUI's `react-day-picker` theme.
+//
+// `today` is emptied to drop the modifier: getClassNamesForModifiers keeps only truthy
+// entries, so the day carries no rdp-today and daisyUI's filled primary block - four
+// classes against selected's three, so it beats the range it sits inside - never lands.
+// This control reports a from date and a to date, and a third marked day reads as picked.
+//
+// The dropdowns are real <select>s, and daisyUI leaves them transparent because they sit
+// invisible over the caption. A browser paints a native popup from the control's own
+// colours, so a transparent one comes up on white while still taking the inherited text
+// colour - unreadable under dim. The options carry it too, because the select's colour
+// alone does not reach them in every browser.
+const dayPickerClassNames = {
+  today: "",
+  dropdown: `${defaultClassNames.dropdown} bg-base-100 text-base-content [&>option]:bg-base-100`,
+};
 
 interface DateRangePickerProps {
   readonly from: string;
@@ -169,15 +188,10 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
                 begins, so the ordering needs no guard.
 
                 startMonth and endMonth are what the year dropdown lists; with the
-                arrows hidden, that list is the whole of what bounds navigation.
-
-                An empty `today` class name is what drops the modifier: getClassNamesForModifiers
-                keeps only truthy entries, so the day carries no rdp-today and daisyUI's
-                filled primary block never lands. This control reports a from date and a to
-                date, and a third day marked as firmly as the range reads as picked. */}
+                arrows hidden, that list is the whole of what bounds navigation. */}
             <DayPicker
               className="react-day-picker"
-              classNames={{ today: "" }}
+              classNames={dayPickerClassNames}
               mode="range"
               resetOnSelect
               hideNavigation
@@ -192,7 +206,7 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
             />
             <DayPicker
               className="react-day-picker"
-              classNames={{ today: "" }}
+              classNames={dayPickerClassNames}
               mode="range"
               resetOnSelect
               hideNavigation
