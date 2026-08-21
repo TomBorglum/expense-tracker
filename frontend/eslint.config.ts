@@ -21,7 +21,13 @@ export default defineConfig(
   // eslint only ignores node_modules by default, so the vite build output has to be
   // named. Not cosmetic: dist/ holds emitted JS that no tsconfig includes, and the
   // type-aware config below fails outright on a file it cannot get a program for.
-  globalIgnores(["dist"]),
+  //
+  // routeTree.gen.ts is generated from src/routes/ by the router plugin and opens with
+  // a blanket `/* eslint-disable */`, which reportUnusedDisableDirectives would fail on
+  // under --max-warnings 0. Ignoring it here is also what the generator's own header
+  // asks for. Listed again in .prettierignore, vite.config.ts and
+  // sonar-project.properties; nothing checks the four agree.
+  globalIgnores(["dist", "src/routeTree.gen.ts"]),
 
   // Type-aware base for every TS/TSX file. projectService lets the TypeScript project
   // service pick the right tsconfig per file - tsconfig.app.json for src/ and tests/,
@@ -57,6 +63,20 @@ export default defineConfig(
   {
     files: ["src/**/*.tsx"],
     extends: [reactRefresh.configs.vite()],
+  },
+
+  // Off for route files, because the rule reasons about a module shape that never
+  // reaches the browser. A route file exports `Route = createFileRoute(...)({...})`
+  // beside a component it does not export, which is exactly what the rule rejects -
+  // but `autoCodeSplitting` in vite.config.ts moves the component into a separate
+  // `?tsr-split` module, so the two halves arrive as one export each and the router
+  // plugin owns the refresh boundary between them. Narrowing the rule instead of
+  // disabling it does not work: allowExportNames makes `Route` skipped rather than
+  // counted, which leaves the file reported for holding a local component and no
+  // exported one.
+  {
+    files: ["src/routes/**/*.tsx"],
+    rules: { "react-refresh/only-export-components": "off" },
   },
 
   // vitest rules for the test tree. No languageOptions.globals on purpose: globals

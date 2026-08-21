@@ -7,6 +7,10 @@
 node_modules/
 pnpm-lock.yaml
 dist/
+# Written by the router plugin, which formats with prettier's own defaults
+# rather than .prettierrc.json - so it lands at printWidth 80 and could never
+# pass the check at 88. Excluding it is what the generator's header asks for.
+src/routeTree.gen.ts
 
 # Hand-formatted prose we do not want reflowed
 *.md

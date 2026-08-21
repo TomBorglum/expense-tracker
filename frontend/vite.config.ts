@@ -1,6 +1,7 @@
 import { fileURLToPath, URL } from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
+import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 // vitest re-exports vite's defineConfig with the `test` block typed, so one config
 // serves both `vite build` and `vitest run`.
@@ -18,7 +19,23 @@ export default defineConfig({
   // undefined in the suite. `vite build` is unaffected either way; this is what keeps
   // the two agreeing.
   envDir: fileURLToPath(new URL("./", import.meta.url)),
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    // Before react(), which the plugin requires: it rewrites the route files and
+    // the React plugin has to see the result. Generates src/routeTree.gen.ts from
+    // src/routes/, which is committed and checked for drift in ci.yml. target and
+    // autoCodeSplitting are the documented pair; the other two are the one departure
+    // from it. The generator formats with prettier's own defaults rather than
+    // .prettierrc.json, and the file is excluded from prettier for that reason, so
+    // these are the only thing that can bring it in line with the rest of the repo.
+    tanstackRouter({
+      target: "react",
+      autoCodeSplitting: true,
+      quoteStyle: "double",
+      semicolons: true,
+    }),
+    react(),
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       // Lets tests reach into src/ without climbing (../../src/api/expenses). Declared
@@ -64,6 +81,9 @@ export default defineConfig({
         // Type declarations erase to nothing, so they would report as covered files
         // with no executable lines and pad the lcov Sonar reads.
         "frontend/src/**/*.d.ts",
+        // Generated from src/routes/ by the router plugin above, so it is not
+        // authored code. Also listed in sonar.exclusions so both tools agree.
+        "frontend/src/routeTree.gen.ts",
       ],
     },
   },
