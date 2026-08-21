@@ -90,6 +90,11 @@ jobs:
       # failure would only surface on someone's machine. Nothing is kept from the
       # output - frontend/dist/ is gitignored.
       - run: pixi run frontend-build
+      # vite is what regenerates routeTree.gen.ts, so a non-empty diff here means a
+      # route file was added, renamed or removed without committing the tree it
+      # produces. Every frontend gate above reads the committed file and would pass on
+      # a stale one, which is why this sits after the build rather than beside them.
+      - run: git diff --exit-code -- frontend/src/routeTree.gen.ts
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with
       # sonar.scanner.skipJreProvisioning below.

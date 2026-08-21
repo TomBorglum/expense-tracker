@@ -21,6 +21,15 @@ export default defineConfig(
   // eslint only ignores node_modules by default, so the vite build output has to be
   // named. Not cosmetic: dist/ holds emitted JS that no tsconfig includes, and the
   // type-aware config below fails outright on a file it cannot get a program for.
+  //
+  // src/routeTree.gen.ts is deliberately NOT named here. It is generated and must not
+  // be linted, but it opens with its own blanket `/* eslint-disable */`, which already
+  // does that and is what the generator's header intends. Ignoring it by pattern
+  // instead makes eslint answer "File ignored because of a matching ignore pattern"
+  // whenever it is handed the file directly - which is exactly what an editor does
+  // when you open it, so that warning lands in the editor and `--no-warn-ignored` on
+  // the lint script cannot reach it. Its directive is never reported as unused,
+  // because the `as any` casts under it would genuinely fire rules.
   globalIgnores(["dist"]),
 
   // Type-aware base for every TS/TSX file. projectService lets the TypeScript project
@@ -57,6 +66,20 @@ export default defineConfig(
   {
     files: ["src/**/*.tsx"],
     extends: [reactRefresh.configs.vite()],
+  },
+
+  // Off for route files, because the rule reasons about a module shape that never
+  // reaches the browser. A route file exports `Route = createFileRoute(...)({...})`
+  // beside a component it does not export, which is exactly what the rule rejects -
+  // but `autoCodeSplitting` in vite.config.ts moves the component into a separate
+  // `?tsr-split` module, so the two halves arrive as one export each and the router
+  // plugin owns the refresh boundary between them. Narrowing the rule instead of
+  // disabling it does not work: allowExportNames makes `Route` skipped rather than
+  // counted, which leaves the file reported for holding a local component and no
+  // exported one.
+  {
+    files: ["src/routes/**/*.tsx"],
+    rules: { "react-refresh/only-export-components": "off" },
   },
 
   // vitest rules for the test tree. No languageOptions.globals on purpose: globals

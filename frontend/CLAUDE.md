@@ -59,23 +59,63 @@ Break one of these and CI goes red on an otherwise correct change.
 
 ## Routing and layering
 
-- **The one route is code-based, in `src/router.ts`.** No `routeTree.gen.ts` and no
-  `@tanstack/router-plugin`: a generated route tree is a committed file that has to satisfy
-  prettier, eslint's type-aware pass, a tsconfig that owns it and the coverage exclusions,
-  and the plugin drags in `@babel/core`, `chokidar`, `zod` and `unplugin` to produce it.
-  `createAppRouter` is a factory rather than a module-level singleton so the tests can hand
-  it a `createMemoryHistory`, which is also what keeps `router.ts` covered without a new
-  exclusion. The `declare module` block registering `Register` is what gives `Link` a typed
-  `to`; without it a path matching no route compiles.
-- **Only `App.tsx` imports `Outlet`, and nothing imports `Link`** - it is the layout shell
-  and no more, because a nav over a single route would be dead UI.
-- **`src/components/` is the router-free layer, not `src/pages/`.** The route owns its
-  search schema and its component reads it, so `ExpensesPage` calls `useSearch` and
-  `useNavigate` and its test builds a `createMemoryHistory` router the way
-  `routing.test.tsx` does. It reaches the route through **`getRouteApi("/")`, never by
-  importing `expensesRoute`** - `router.ts` imports the page, so the reverse import is a
-  cycle; `getRouteApi` takes a path string, adds no import edge, and stays typed through the
-  `declare module` block. Everything under `src/components/` takes props and knows no
+- **Routes are file-based: a route is declared by where its file sits in `src/routes/`.**
+  `index.tsx` is `/`, `__root.tsx` is the layout. `@tanstack/router-plugin`, configured
+  inline in `vite.config.ts` and nowhere else - **there is no `tsr.config.json`** - reads
+  that directory and writes `src/routeTree.gen.ts`. `src/router.ts` keeps only
+  `createAppRouter` over the generated tree: a factory rather than a module-level
+  singleton so the tests can hand it a `createMemoryHistory`, which is also what keeps
+  `router.ts` covered without a new exclusion. The `declare module` block registering
+  `Register` is what gives `Link` a typed `to`; without it a path matching no route
+  compiles.
+- **`src/routeTree.gen.ts` is committed and never hand-edited.** It is runtime source,
+  not a build artifact - every frontend gate except `frontend-build` reads it and none of
+  them can produce it, so a fresh checkout without it fails `tsc` outright. **Two
+  independent checks keep it in step, and they catch different things.** Adding a route
+  file is caught by `frontend-typecheck`: `createFileRoute("/new")` is not assignable
+  until the tree names `/new`, which also means `pnpm run build` (`tsc -b && vite build`)
+  cannot regenerate after adding one - run `pnpm exec vite build` to bootstrap. A rename,
+  a deletion or a changed path typechecks fine against a stale tree, and is caught
+  instead by the `git diff --exit-code` step in `.github/workflows/ci.yml`, placed after
+  `frontend-build` because that is the only gate that runs vite. Neither check is a pixi
+  task; adding one would have meant a command body in two manifests for no gain.
+- **The generated tree is excluded from prettier, coverage and Sonar** -
+  `.prettierignore`, `coverage.exclude` in `vite.config.ts` and `sonar.exclusions` in
+  `sonar-project.properties`, listed under "Declared twice" in the root
+  [`CLAUDE.md`](../CLAUDE.md) because nothing checks the three agree. **eslint is
+  deliberately not a fourth, and `globalIgnores` must not gain it.** The file opens with
+  its own blanket `/* eslint-disable */`, which is what the generator's header intends
+  and is enough; an ignore *pattern* additionally makes eslint answer "File ignored
+  because of a matching ignore pattern" whenever it is handed the file directly, which is
+  exactly what an editor does when you open it. `--no-warn-ignored` on the `lint` script
+  cannot reach that - the editor's language server runs its own eslint - so the config is
+  the only place it can be fixed. The directive is never reported as unused either,
+  because the `as any` casts under it would genuinely fire rules. **The prettier exclusion is not a preference.** `router-generator` formats by
+  calling `prettier.format(source, {...})` with explicit options only; it never resolves
+  `.prettierrc.json`, so the file lands at prettier's default `printWidth` 80 against this
+  repo's 88 and could not pass `--check` however it were configured. `quoteStyle` and
+  `semicolons` are set on the plugin for the same reason - they are the only thing that
+  can bring the file in line with the rest of the repo. The upside of that same fact:
+  output depends on nothing but the generator version, so the CI diff is stable across
+  machines rather than a formatting race.
+- **`react-refresh/only-export-components` is off for `src/routes/**`, and that is not a
+  demotion.** A route file exports `Route = createFileRoute(...)({...})` beside a
+  component it does not export, which is exactly the shape the rule rejects - but
+  `autoCodeSplitting` moves the component into a separate `?tsr-split` module, so the file
+  eslint reads is not the module the browser gets and the router plugin owns the refresh
+  boundary. Narrowing the rule does not work and was tried: `allowExportNames: ["Route"]`
+  makes the export *skipped* rather than counted, so the file is then reported for holding
+  a local component and no exported one. This is the only rule switched off anywhere in
+  the config.
+- **Only `src/routes/__root.tsx` imports `Outlet`, and nothing imports `Link`** - it is the
+  layout shell and no more, because a nav over a single route would be dead UI.
+- **`src/components/` is the router-free layer, not `src/routes/`.** The route owns its
+  search schema and its component reads it, and under file-based routing **they are the
+  same module**: `routes/index.tsx` holds `validateSearch` and the page together and reads
+  the URL through **`Route.useSearch()`**. There is no `getRouteApi` and no `src/pages/` -
+  both existed to break a cycle (`router.ts` imported the page) that a route file owning
+  its own component does not have. Its test builds a `createMemoryHistory` router the way
+  `routing.test.tsx` does. Everything under `src/components/` takes props and knows no
   router, which is what keeps `ExpensesTable` and `CurrencySelect` mountable in a bare
   `QueryClientProvider`. Reading the URL from a component instead is what this splits to
   prevent: it would couple a leaf to a route path and put a `RouterProvider` in every test
@@ -162,6 +202,9 @@ Break one of these and CI goes red on an otherwise correct change.
 
 ## Environment and tooling
 
+- **`autoCodeSplitting` is on**, so the one route's component is emitted as its own chunk
+  and arrives through a `?tsr-split` module rather than from the route file directly.
+  That is what makes the eslint rule above inapplicable rather than merely inconvenient.
 - **The API origin lives in bare `.env`, not `.env.development`.** vite loads `.env` in
   every mode, including the `test` mode vitest runs in, where MSW binds its handlers to the
   URL built from it. `vite.config.ts` also pins `envDir` to `frontend/`, because the `test`

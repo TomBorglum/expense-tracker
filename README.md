@@ -494,27 +494,40 @@ still refuses an inverted range, because the URL can be typed by hand.
 
 ### Routing
 
-One route, declared in code in `frontend/src/router.ts` with
-[TanStack Router](https://tanstack.com/router): `/` is the expenses table. There is no
-`routeTree.gen.ts` - file-based routing would commit a generated file that has to clear
-prettier, type-aware eslint, a tsconfig and the coverage exclusions, and its vite plugin
-pulls in `@babel/core`, `chokidar`, `zod` and `unplugin`. The `declare module` block at
-the foot of `router.ts` is what would make a `Link`'s `to` typed against the real route
-tree, and it stays for the second route.
+One route, declared by where its file sits, with
+[TanStack Router](https://tanstack.com/router)'s file-based routing:
+`frontend/src/routes/index.tsx` is `/`, the expenses table, and
+`frontend/src/routes/__root.tsx` is the layout it renders inside.
+`@tanstack/router-plugin`, configured inline in `frontend/vite.config.ts`, reads that
+directory and writes `frontend/src/routeTree.gen.ts`.
 
-`createAppRouter` takes an optional history so the tests can pass
-`createMemoryHistory()`; `frontend/src/main.tsx` calls it with none and gets the
-browser's. `frontend/src/App.tsx` - the layout wrapped around an `<Outlet />` - is the
-only file that renders the router's own components; there is no nav, because one over a
-single route would be dead UI.
+**That generated file is committed and never hand-edited.** It is part of the runtime
+rather than a build artifact - `tsc`, eslint and the editor all need it on a fresh
+checkout, and every frontend gate except the build reads it without being able to
+produce it. Two independent checks keep it honest, and they catch different things:
+adding a route file fails `frontend-typecheck`, because `createFileRoute("/new")` is
+not assignable against a stale tree; a rename, a deletion or a changed path typechecks
+fine and is caught instead by the `git diff --exit-code` step `.github/workflows/ci.yml`
+runs after `frontend-build`, the one gate that runs vite and so the one that
+regenerates. The file is excluded from prettier, coverage and Sonar - three declarations
+that nothing checks agree - while eslint is covered by the file's own
+`/* eslint-disable */` header rather than by an ignore pattern, which would make eslint
+warn every time an editor opened it. Prettier's exclusion is not a preference: the
+generator formats with prettier's own defaults rather than `.prettierrc.json`, so the
+file lands at `printWidth` 80 and could never pass the check at 88.
 
-The route owns its search schema, so its component is the one that reads it:
-`ExpensesPage` calls `useSearch` and `useNavigate`, and its test builds a memory-history
-router the way `frontend/tests/routing.test.tsx` does. It reaches the route through
-`getRouteApi("/")` rather than by importing the route object, because `router.ts` imports
-the page and the reverse import would be a cycle. **The router-free layer is
-`frontend/src/components/`**: `ExpensesTable` and `CurrencySelect` take props, know
-nothing of the URL, and mount in a bare `QueryClientProvider`. A deployed SPA needs its server to
+`createAppRouter` in `frontend/src/router.ts` takes an optional history so the tests can
+pass `createMemoryHistory()`; `frontend/src/main.tsx` calls it with none and gets the
+browser's. The `declare module` block at its foot is what makes a `Link`'s `to` typed
+against the real route tree. `__root.tsx` is the only file that renders the router's own
+components; there is no nav, because one over a single route would be dead UI.
+
+The route owns its search schema, so its component is the one that reads it - and under
+file-based routing they are the same module, so `index.tsx` holds `validateSearch` and
+the page together and reads the URL through `Route.useSearch()`. **The router-free layer
+is `frontend/src/components/`**: `ExpensesTable` and `CurrencySelect` take props, know
+nothing of the URL, and mount in a bare `QueryClientProvider`. `autoCodeSplitting` is on,
+so the route's component is emitted as its own chunk. A deployed SPA needs its server to
 fall back to `index.html` so a non-root path resolves on a cold load; vite's dev server
 does that already, and nothing in this repo serves `frontend/dist/`.
 
