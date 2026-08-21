@@ -168,13 +168,6 @@ Each pair is named by the two files that hold it. Nothing checks the agreement.
   [`frontend/CLAUDE.md`](frontend/CLAUDE.md).
 - **`VITE_API_BASE_URL`** - set in `frontend/.env`, typed in
   `frontend/src/vite-env.d.ts`.
-- **react-day-picker's class and variable names** - the `.rdp-root` block at the foot of
-  `frontend/src/styles/app.css` against the `@daypicker/react` version pinned in
-  `frontend/package.json`. That selector and the five `--rdp-*` custom properties it sets
-  are the package's internals, and its stylesheet is unlayered, so a rename in a major
-  bump leaves the calendar in the library's own blue under both themes with a green build
-  - jsdom evaluates no CSS and nothing else looks. Explained under "The calendar is themed
-  through its own variables" in [`frontend/CLAUDE.md`](frontend/CLAUDE.md).
 - **daisyUI's `@plugin` descriptors** - the block in `frontend/src/styles/app.css`
   against the `plugin` override in `frontend/eslint.config.ts`, because
   `tailwind-csstree` models core Tailwind's blockless `@plugin` and rejects any

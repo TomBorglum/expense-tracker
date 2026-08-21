@@ -48,8 +48,8 @@ function ExpensesPage() {
   return (
     <div className="w-full max-w-4xl">
       <div className="flex flex-wrap items-center justify-between gap-4 pb-6">
-        <h1 className="text-3xl font-semibold tracking-tight">Expenses</h1>
-        <div className="flex flex-wrap items-center gap-4">
+        <h1 className="text-2xl font-semibold tracking-tight">Expenses</h1>
+        <div className="flex flex-wrap items-center gap-6">
           <DateRangePicker
             from={search.from_date}
             to={search.to_date}

@@ -21,14 +21,13 @@
     dim --prefersdark;
 }
 
-/* DayPicker ships its own palette - a literal blue and a near-white - which is wrong
-   under one of the two themes. Repointed at daisyUI's role tokens so the calendar
-   follows nord and dim like everything else. On .rdp-root, not :root, because that is
-   the selector the package declares them on; this block is imported after it. */
-.rdp-root {
-  --rdp-accent-color: var(--color-primary);
-  --rdp-accent-background-color: var(--color-base-200);
-  --rdp-range_start-color: var(--color-primary-content);
-  --rdp-range_end-color: var(--color-primary-content);
-  --rdp-range_middle-color: var(--color-base-content);
+/* daisyUI gives .input and .select no hover state at all - only .btn has one - so the
+   two filters above the table would sit dead under the pointer. Deepens the resting
+   border on both. Unlayered, which is what lets it reach --input-color; :focus-within
+   is excluded so a hovered field that is focused keeps the focus treatment. */
+@media (hover: hover) {
+  .input:hover:not(:focus-within, :disabled),
+  .select:hover:not(:focus-within, :disabled) {
+    --input-color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+  }
 }

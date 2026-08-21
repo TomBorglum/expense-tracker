@@ -4,7 +4,6 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { createAppRouter } from "./router";
-import "@daypicker/react/style.css";
 import "./styles/app.css";
 
 const root = document.getElementById("root");
