@@ -1,24 +1,43 @@
 import { useQuery } from "@tanstack/react-query";
-import { getRouteApi, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
 import {
   BASE_CURRENCY,
   currenciesQueryOptions,
   targetCurrencies,
 } from "../api/currencies";
+import { type ExpensesQuery } from "../api/expenses";
 import { CurrencySelect } from "../components/CurrencySelect";
 import { DateRangePicker } from "../components/DateRangePicker";
 import { ExpensesTable } from "../components/ExpensesTable";
+import { currentMonth } from "../dates";
 
-// By path rather than by importing the route: router.ts imports this module, so the
-// reverse import would be a cycle. The Register declaration at the foot of router.ts is
-// what keeps this typed.
-const routeApi = getRouteApi("/");
+// The currency the expenses are presented in and the days they are drawn from, carried
+// in the URL so a view is shareable and survives a reload. An alias rather than a second
+// declaration: the search is handed to expensesQueryOptions as it stands, so the two
+// cannot drift.
+type ExpensesSearch = ExpensesQuery;
 
-export default function ExpensesPage() {
+export const Route = createFileRoute("/")({
+  component: ExpensesPage,
+  // Supplies the default for an absent parameter and nothing else. A malformed code or
+  // date is handed on to the backend, which refuses it with a 422; re-checking either
+  // here would put the pattern in conversion.py or date_range.py in a second place to
+  // drift from. The date defaults read the clock, which is why the page tests pin it.
+  validateSearch: (search: Record<string, unknown>): ExpensesSearch => {
+    const month = currentMonth();
+    return {
+      currency: typeof search.currency === "string" ? search.currency : BASE_CURRENCY,
+      from_date: typeof search.from_date === "string" ? search.from_date : month.from,
+      to_date: typeof search.to_date === "string" ? search.to_date : month.to,
+    };
+  },
+});
+
+function ExpensesPage() {
   // Read whole rather than destructured: it is both what the controls display and what
   // the table requests, and each control navigates with the others left as they were.
-  const search = routeApi.useSearch();
+  const search = Route.useSearch();
   const navigate = useNavigate();
   // The rate table is what the selector can offer. Its failure is not the table's: an
   // unreachable or empty one leaves the base currency, which needs no rate, and the

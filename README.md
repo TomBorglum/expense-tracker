@@ -426,7 +426,7 @@ backend's** - the frontend sends a code and renders the strings that come back, 
 `Decimal` arithmetic in `conversion.py` is the only place an amount is ever computed.
 
 The choice lives in the **URL**, so `/?currency=EUR` is a link worth sending and a reload
-returns to it. `validateSearch` in `frontend/src/router.ts` supplies `DKK` when the
+returns to it. `validateSearch` in `frontend/src/routes/index.tsx` supplies `DKK` when the
 parameter is absent and checks nothing else: a code the backend refuses is passed through
 and answered with a 422, which reaches the page as its ordinary "Could not load the
 expenses." The parameter is always sent - an **empty** `?currency=` is a malformed code
@@ -453,7 +453,8 @@ and drops no row of its own.
 
 Both bounds live in the **URL** alongside the currency, so
 `/?currency=EUR&from_date=2026-01-01&to_date=2026-01-31` is a link worth sending.
-`validateSearch` in `frontend/src/router.ts` fills an absent bound with the first or last
+`validateSearch` in `frontend/src/routes/index.tsx` fills an absent bound with the first
+or last
 day of the current month, from one reading of the clock, and checks nothing else - a date
 the backend refuses is passed through and answered with a 422, which reaches the page as
 its ordinary "Could not load the expenses." Both parameters are always sent, and there is
@@ -494,25 +495,35 @@ still refuses an inverted range, because the URL can be typed by hand.
 
 ### Routing
 
-One route, declared in code in `frontend/src/router.ts` with
-[TanStack Router](https://tanstack.com/router): `/` is the expenses table. There is no
-`routeTree.gen.ts` - file-based routing would commit a generated file that has to clear
-prettier, type-aware eslint, a tsconfig and the coverage exclusions, and its vite plugin
-pulls in `@babel/core`, `chokidar`, `zod` and `unplugin`. The `declare module` block at
-the foot of `router.ts` is what would make a `Link`'s `to` typed against the real route
-tree, and it stays for the second route.
+One route, generated from files under `frontend/src/routes/` by
+[TanStack Router](https://tanstack.com/router): `__root.tsx` is the layout and
+`index.tsx` is `/`, the expenses table. The file name is the path, and
+`frontend/src/routeTree.gen.ts` is written from them by `@tanstack/router-plugin` and
+committed. Being generated, it is skipped by prettier and eslint and excluded from
+coverage and from the Sonar scan - but not from `tsc -b`, because `tsr.config.json`
+replaces a default file header whose `// @ts-nocheck` would leave the one file nobody
+reviews checked by nothing. That file is the plugin's whole configuration; the `tsr` CLI
+reads it too, so the routes directory and the generated path are named once.
+
+Only `pnpm dev` and `pnpm build` regenerate the tree, and the suite deliberately does
+not: under vitest the generator would resolve its paths against the repo root that
+`vite.config.ts` pins vitest to, and it rewrites files rather than reading them. That
+leaves a gap `pixi run frontend-routes-check` closes - it regenerates and fails on a
+diff, and it is the only gate that reads `src/routes/` at all.
 
 `createAppRouter` takes an optional history so the tests can pass
 `createMemoryHistory()`; `frontend/src/main.tsx` calls it with none and gets the
-browser's. `frontend/src/App.tsx` - the layout wrapped around an `<Outlet />` - is the
-only file that renders the router's own components; there is no nav, because one over a
-single route would be dead UI.
+browser's. `frontend/src/routes/__root.tsx` - the layout wrapped around an `<Outlet />` -
+is the only file that renders the router's own components; there is no nav, because one
+over a single route would be dead UI. The `declare module` block at the foot of
+`router.ts` registers `Register`, which is what makes a `Link`'s `to` typed against the
+real route tree. It is not the augmentation the generated file emits: that one declares
+`FileRoutesByPath`, and the two merge rather than replace each other.
 
 The route owns its search schema, so its component is the one that reads it:
-`ExpensesPage` calls `useSearch` and `useNavigate`, and its test builds a memory-history
-router the way `frontend/tests/routing.test.tsx` does. It reaches the route through
-`getRouteApi("/")` rather than by importing the route object, because `router.ts` imports
-the page and the reverse import would be a cycle. **The router-free layer is
+`ExpensesPage` lives in `frontend/src/routes/index.tsx` beside the `Route` it belongs to,
+calls `Route.useSearch()` and `useNavigate`, and its test builds a memory-history router
+the way `frontend/tests/routing.test.tsx` does. **The router-free layer is
 `frontend/src/components/`**: `ExpensesTable` and `CurrencySelect` take props, know
 nothing of the URL, and mount in a bare `QueryClientProvider`. A deployed SPA needs its server to
 fall back to `index.html` so a non-root path resolves on a cold load; vite's dev server
@@ -531,10 +542,14 @@ exported by the module under `frontend/src/api/`, because a path-only pattern wo
 resolve against jsdom's origin rather than the API's and never match.
 
 `frontend/src/main.tsx` is excluded from coverage in both `frontend/vite.config.ts` and
-`sonar-project.properties` - it only wires React to the DOM. `frontend/vite.config.ts`
+`sonar-project.properties` - it only wires React to the DOM. So is
+`frontend/src/routeTree.gen.ts`, which the router plugin generates, and which
+`sonar.exclusions` drops from analysis as well so the scan raises nothing on a file the
+next vite run overwrites. `frontend/vite.config.ts`
 also pins vitest's root back up to the repo root (`new URL("../", import.meta.url)`),
 even though vite's own root is `frontend/`. That is what makes the lcov report record
-repo-relative paths like `frontend/src/App.tsx`; without it SonarCloud resolves them
+repo-relative paths like `frontend/src/routes/index.tsx`; without it SonarCloud resolves
+them
 against the Python package and reports the frontend as uncovered - silently, with a
 green build.
 
@@ -689,6 +704,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run frontend-typecheck` | `pnpm run typecheck` | Type-check the frontend with tsc |
 | `pixi run frontend-lint` | `pnpm run lint` | Lint the frontend with eslint (type-aware, plus CSS, `--max-warnings 0`) |
 | `pixi run frontend-lint-fix` | `pnpm run lint-fix` | Auto-fix frontend lint issues |
+| `pixi run frontend-routes-check` | `pnpm run routes-check` | Regenerate `src/routeTree.gen.ts` and fail if the committed one differed |
 | `pixi run frontend-test` | `pnpm run test` | Run the frontend tests (vitest) with coverage |
 | `pixi run frontend-format` | `pnpm run format` | Format the frontend with prettier |
 | `pixi run frontend-format-check` | `pnpm run format-check` | Check frontend formatting without writing changes |

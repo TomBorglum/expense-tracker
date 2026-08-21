@@ -59,27 +59,64 @@ Break one of these and CI goes red on an otherwise correct change.
 
 ## Routing and layering
 
-- **The one route is code-based, in `src/router.ts`.** No `routeTree.gen.ts` and no
-  `@tanstack/router-plugin`: a generated route tree is a committed file that has to satisfy
-  prettier, eslint's type-aware pass, a tsconfig that owns it and the coverage exclusions,
-  and the plugin drags in `@babel/core`, `chokidar`, `zod` and `unplugin` to produce it.
-  `createAppRouter` is a factory rather than a module-level singleton so the tests can hand
-  it a `createMemoryHistory`, which is also what keeps `router.ts` covered without a new
-  exclusion. The `declare module` block registering `Register` is what gives `Link` a typed
-  `to`; without it a path matching no route compiles.
-- **Only `App.tsx` imports `Outlet`, and nothing imports `Link`** - it is the layout shell
-  and no more, because a nav over a single route would be dead UI.
-- **`src/components/` is the router-free layer, not `src/pages/`.** The route owns its
-  search schema and its component reads it, so `ExpensesPage` calls `useSearch` and
-  `useNavigate` and its test builds a `createMemoryHistory` router the way
-  `routing.test.tsx` does. It reaches the route through **`getRouteApi("/")`, never by
-  importing `expensesRoute`** - `router.ts` imports the page, so the reverse import is a
-  cycle; `getRouteApi` takes a path string, adds no import edge, and stays typed through the
-  `declare module` block. Everything under `src/components/` takes props and knows no
-  router, which is what keeps `ExpensesTable` and `CurrencySelect` mountable in a bare
-  `QueryClientProvider`. Reading the URL from a component instead is what this splits to
-  prevent: it would couple a leaf to a route path and put a `RouterProvider` in every test
-  that renders it.
+- **The routes are files under `src/routes/`, and `src/routeTree.gen.ts` is generated
+  from them and committed.** `__root.tsx` is the layout and `index.tsx` is `/`; the file
+  name is the path, and nothing declares a tree by hand. A generated file in `src/` has
+  to be placed against four gates, and each one is named where it is paid: prettier skips
+  it through `.prettierignore` (unavoidable - the generator formats by calling prettier
+  with only `semi` and `singleQuote` set and no `filepath`, so it never reads
+  `.prettierrc.json` and stays at prettier's own 80 columns), eslint skips it through
+  `globalIgnores` (it is not import-sorted and its `as any` casts fail
+  `strictTypeChecked`), coverage excludes it in `vite.config.ts` and Sonar in **two**
+  keys, and `tsc -b` still checks it because `tsr.config.json` overrides a default
+  `routeTreeFileHeader` whose `// @ts-nocheck` would otherwise turn the one file in
+  `src/` nobody reviews into the one file nothing checks. The price in dependencies is
+  `@babel/core`, `chokidar`, `zod` and `unplugin` behind `@tanstack/router-plugin`.
+- **`tsr.config.json` is the whole configuration, and `tanstackRouter()` takes no
+  options.** The plugin and the `tsr` CLI both read that file, so the routes directory,
+  the generated path and the header are named once rather than in two places that can
+  disagree. Passing an inline option would win over the file silently, and the schema is
+  a zod `z.object` that **strips** a key it does not know - a misspelled option is
+  discarded without a word, and the generator falls back to its defaults.
+- **`createAppRouter` is a factory rather than a module-level singleton** so the tests can
+  hand it a `createMemoryHistory`, which is also what keeps `router.ts` covered without a
+  new exclusion.
+- **The `Register` block in `router.ts` is not the generated augmentation, and deleting it
+  breaks nothing loudly.** The generated tree augments `FileRoutesByPath`, which types
+  `createFileRoute` and the route ids; `Register` is what gives `Link`, `useNavigate` and
+  `redirect` a typed `to`. Both are `declare module "@tanstack/react-router"` blocks and
+  TypeScript merges them. Remove `Register` on the theory that the generated file replaced
+  it and every path becomes `string` - nothing fails, the checking just evaporates.
+- **Only vite regenerates the tree, and `frontend-routes-check` is the only gate that
+  reads `src/routes/`.** `pnpm dev` and `pnpm build` rewrite it; `frontend-format-check`,
+  `frontend-typecheck`, `frontend-lint` and `frontend-test` all take the committed tree as
+  given. Without that check a route added without its generated half would pass every gate
+  and be regenerated inside `frontend-build`, which is too late to fail. It is `tsr
+  generate` followed by `git diff --exit-code`, so it also needs the plugin and the CLI to
+  stay on one `@tanstack/router-generator` version - they are both on it today through
+  their own pins, and a bump that splits them fails this check on a clean tree.
+- **The generator does not run under vitest**, and the guard is `process.env.VITEST` in
+  `vite.config.ts`. Two things it would otherwise do there: resolve its paths against
+  vite's root, which the `test` block moves to the repo root, creating an empty `src/` at
+  the top of the repo that `git status` cannot show you; and rewrite both the tree and the
+  `createFileRoute()` argument in `src/routes/` when they disagree with what it derives,
+  which would let `pnpm run test` modify tracked files. A check that writes is not a check.
+- **`src/routes/` holds routes and nothing else.** Every file there is read as a route and
+  must `export const Route`; one that does not is a generator warning and a route silently
+  missing from the tree, which reads like a route that does not work. Helpers belong beside
+  `dates.ts` in `src/`.
+- **Only `src/routes/__root.tsx` imports `Outlet`, and nothing imports `Link`** - it is the
+  layout shell and no more, because a nav over a single route would be dead UI.
+- **`src/components/` is the router-free layer.** The route owns its search schema and its
+  component reads it, so `ExpensesPage` in `src/routes/index.tsx` calls `Route.useSearch()`
+  and `useNavigate`, and its test builds a `createMemoryHistory` router the way
+  `routing.test.tsx` does. The route and the component being one module is what removed the
+  `getRouteApi("/")` this went through when the tree was hand-written: `router.ts` imported
+  the page then, so importing the route back was a cycle. Everything under `src/components/`
+  takes props and knows no router, which is what keeps `ExpensesTable` and `CurrencySelect`
+  mountable in a bare `QueryClientProvider`. Reading the URL from a component instead is
+  what this splits to prevent: it would couple a leaf to a route path and put a
+  `RouterProvider` in every test that renders it.
 - **`validateSearch` fills in an absent parameter and validates nothing else.**
   `?currency=` is handed to the backend as typed, so `/?currency=euro` gets the 422 that
   `conversion.py` raises rather than being corrected or rejected here - re-checking
@@ -177,7 +214,10 @@ Break one of these and CI goes red on an otherwise correct change.
   fails to lint rather than being skipped. `src/` and `tests/` come from
   `tsconfig.app.json`; `vite.config.ts` and `eslint.config.ts` from `tsconfig.node.json`,
   where a new file at the `frontend/` root has to be added too. Same reason
-  `eslint.config.ts` opens with `globalIgnores(["dist"])`.
+  `eslint.config.ts` opens with `globalIgnores(["dist", "src/routeTree.gen.ts"])` -
+  `dist/` is emitted JS no tsconfig includes, while the generated tree is the one file
+  a tsconfig does own and eslint skips anyway, for the reason under *Routing and
+  layering*.
 - **`package.json` must not gain a `packageManager` field**, and `pnpm-lock.yaml` must stay
   at `lockfileVersion: 9.0`. The first bypasses the pnpm pin in `pixi.toml`; both break
   Dependabot's lockfile parsing. That lockfile version is also what Dependabot reads its

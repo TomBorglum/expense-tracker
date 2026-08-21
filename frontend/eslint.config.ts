@@ -21,7 +21,10 @@ export default defineConfig(
   // eslint only ignores node_modules by default, so the vite build output has to be
   // named. Not cosmetic: dist/ holds emitted JS that no tsconfig includes, and the
   // type-aware config below fails outright on a file it cannot get a program for.
-  globalIgnores(["dist"]),
+  // src/routeTree.gen.ts is machine output: it is not import-sorted, not wrapped to
+  // 88 columns, and would fail strictTypeChecked on shapes nobody here wrote. tsc -b
+  // still owns it, and `pnpm run routes-check` is what proves it matches src/routes.
+  globalIgnores(["dist", "src/routeTree.gen.ts"]),
 
   // Type-aware base for every TS/TSX file. projectService lets the TypeScript project
   // service pick the right tsconfig per file - tsconfig.app.json for src/ and tests/,
@@ -56,7 +59,16 @@ export default defineConfig(
   // supports.
   {
     files: ["src/**/*.tsx"],
-    extends: [reactRefresh.configs.vite()],
+    // Every file under src/routes/ exports `Route = createFileRoute(...)({ component })`
+    // beside the component it names. Without extraHOCs the rule reads that as a
+    // non-component export sitting next to a component and reports on both;
+    // allowExportNames does not help, because it silences the export and leaves the
+    // component reported instead.
+    extends: [
+      reactRefresh.configs.vite({
+        extraHOCs: ["createFileRoute", "createRootRoute"],
+      }),
+    ],
   },
 
   // vitest rules for the test tree. No languageOptions.globals on purpose: globals

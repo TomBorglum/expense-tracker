@@ -1,10 +1,21 @@
 import { fileURLToPath, URL } from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
+import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 // vitest re-exports vite's defineConfig with the `test` block typed, so one config
 // serves both `vite build` and `vitest run`.
 import { defineConfig } from "vitest/config";
+
+// The route tree is generated from src/routes/ and committed, so the generator has
+// nothing to do in the suite - and two things it must not do there. It resolves its
+// paths against vite's root, which the `test` block below moves to the repo root,
+// where it creates a stray <repo>/src/ to hold a tree written outside frontend/; and
+// it rewrites both the tree and the createFileRoute() argument in src/routes/ when
+// they disagree with what it derives, which would let `pnpm run test` modify tracked
+// files. A check that writes is not a check. vitest sets VITEST before it resolves
+// this config; `vite build` and `vite dev` both leave it unset and root at frontend/.
+const routeGeneration = process.env.VITEST === undefined ? [tanstackRouter()] : [];
 
 // A standalone SPA: it builds to frontend/dist/ (vite's default, gitignored) and
 // knows nothing about the backend beyond VITE_API_BASE_URL, which src/api/expenses.ts
@@ -18,7 +29,12 @@ export default defineConfig({
   // undefined in the suite. `vite build` is unaffected either way; this is what keeps
   // the two agreeing.
   envDir: fileURLToPath(new URL("./", import.meta.url)),
-  plugins: [react(), tailwindcss()],
+  // The route generator runs before react(), so the transform sees the tree it just
+  // wrote rather than the one from the last run. It takes no options here:
+  // tsr.config.json is the whole configuration, and `pnpm run routes-check` reads
+  // that same file through the tsr CLI, so the routes directory and the generated
+  // path are named once.
+  plugins: [...routeGeneration, react(), tailwindcss()],
   resolve: {
     alias: {
       // Lets tests reach into src/ without climbing (../../src/api/expenses). Declared
@@ -61,6 +77,9 @@ export default defineConfig({
         // Bootstrap only: wires React to the DOM and has no logic worth asserting.
         // Also listed in sonar.coverage.exclusions so both tools agree.
         "frontend/src/main.tsx",
+        // Generated from src/routes, and asserted on through the routes it builds
+        // rather than directly. Also listed in sonar.coverage.exclusions.
+        "frontend/src/routeTree.gen.ts",
         // Type declarations erase to nothing, so they would report as covered files
         // with no executable lines and pad the lcov Sonar reads.
         "frontend/src/**/*.d.ts",

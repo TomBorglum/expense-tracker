@@ -117,9 +117,9 @@ Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in o
 ```sh
 pixi run backend-format-check && pixi run backend-lint &&
 pixi run backend-typecheck && pixi run backend-db-init && pixi run backend-test &&
-pixi run frontend-install && pixi run frontend-format-check &&
-pixi run frontend-typecheck && pixi run frontend-lint && pixi run frontend-test &&
-pixi run frontend-build
+pixi run frontend-install && pixi run frontend-routes-check &&
+pixi run frontend-format-check && pixi run frontend-typecheck &&
+pixi run frontend-lint && pixi run frontend-test && pixi run frontend-build
 ```
 
 The two halves are independent, so a change to one stack can only fail that stack's gates.
@@ -152,8 +152,13 @@ Each pair is named by the two files that hold it. Nothing checks the agreement.
   takes it as `--set=port="$PGPORT"`, and the rest could follow the same way.
 - **The `@` alias (`frontend/src`)** - `frontend/vite.config.ts` against
   `frontend/tsconfig.app.json`, because vite does not read tsconfig `paths`.
-- **The `frontend/src/main.tsx` coverage exclusion** - `frontend/vite.config.ts` against
-  `sonar-project.properties`.
+- **The frontend coverage exclusions** - `frontend/vite.config.ts` against
+  `sonar-project.properties`. Both name `frontend/src/main.tsx`, which only wires React
+  to the DOM, and `frontend/src/routeTree.gen.ts`, which `@tanstack/router-plugin`
+  generates from `frontend/src/routes/`. Each tool reads only its own half. The
+  generated tree is named a **third** time, in `sonar.exclusions`, because
+  `sonar.coverage.exclusions` silences the coverage half and leaves the analyzer
+  raising issues on a file the next vite run overwrites.
 - **`VITE_API_BASE_URL`** - set in `frontend/.env`, typed in
   `frontend/src/vite-env.d.ts`.
 - **react-day-picker's class and variable names** - the `.rdp-root` block at the foot of

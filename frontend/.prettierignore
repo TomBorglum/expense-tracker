@@ -10,3 +10,4 @@ dist/
 
 # Hand-formatted prose we do not want reflowed
 *.md
+src/routeTree.gen.ts

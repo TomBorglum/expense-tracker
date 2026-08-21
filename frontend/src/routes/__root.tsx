@@ -1,7 +1,7 @@
-import { Outlet } from "@tanstack/react-router";
+import { createRootRoute, Outlet } from "@tanstack/react-router";
 
 // The shell every route renders inside: the slot the matched page fills.
-export default function App() {
+function RootLayout() {
   return (
     <div className="flex min-h-full flex-col">
       {/* A title bar, not navigation: one route means a nav would be dead UI. */}
@@ -16,3 +16,5 @@ export default function App() {
     </div>
   );
 }
+
+export const Route = createRootRoute({ component: RootLayout });

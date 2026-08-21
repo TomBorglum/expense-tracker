@@ -81,6 +81,12 @@ jobs:
       # Frontend gates. Independent of the Python ones above - the two stacks share
       # no build artifact, so neither group can break the other.
       - run: pixi run frontend-install
+      # First of the frontend gates: it runs the route generator alone, with no
+      # TypeScript program behind it, and it is the only gate that reads src/routes/
+      # at all. A route added without its generated half would otherwise pass every
+      # gate below against a stale tree and be regenerated inside frontend-build,
+      # which is too late to fail.
+      - run: pixi run frontend-routes-check
       - run: pixi run frontend-format-check
       - run: pixi run frontend-typecheck
       - run: pixi run frontend-lint
