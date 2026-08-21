@@ -169,9 +169,15 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
                 begins, so the ordering needs no guard.
 
                 startMonth and endMonth are what the year dropdown lists; with the
-                arrows hidden, that list is the whole of what bounds navigation. */}
+                arrows hidden, that list is the whole of what bounds navigation.
+
+                An empty `today` class name is what drops the modifier: getClassNamesForModifiers
+                keeps only truthy entries, so the day carries no rdp-today and daisyUI's
+                filled primary block never lands. This control reports a from date and a to
+                date, and a third day marked as firmly as the range reads as picked. */}
             <DayPicker
               className="react-day-picker"
+              classNames={{ today: "" }}
               mode="range"
               resetOnSelect
               hideNavigation
@@ -186,6 +192,7 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
             />
             <DayPicker
               className="react-day-picker"
+              classNames={{ today: "" }}
               mode="range"
               resetOnSelect
               hideNavigation

@@ -63,7 +63,19 @@ Break one of these and CI goes red on an otherwise correct change.
   variable past daisyUI's own layer, `:not(:focus-within)` is what keeps a hovered
   *focused* field on its focus treatment instead of weakening it, and the
   `@media (hover: hover)` around it is what stops a touch device holding the state after a
-  tap.
+  tap. **Reach for a utility class before a second rule here**: a daisyUI role token used
+  in an ordinary CSS property fails `css/no-invalid-properties`, because eslint cannot see
+  what the Tailwind build injects, and the rule must not be relaxed to let one through.
+  This rule passes only because it assigns to a custom property, which is not validated.
+- **The calendar marks no "today", and that is switched off at the source.** Both
+  `DayPicker`s pass `classNames={{ today: "" }}`, and `getClassNamesForModifiers` keeps
+  only truthy entries, so the day never carries `rdp-today`. Without it daisyUI fills that
+  day with the primary colour, and its selector is four classes against `.rdp-selected`'s
+  three, so it beats the range it sits inside and the current day reads as picked whatever
+  the range is. **The control reports a from date and a to date; a third day marked as
+  firmly as the range is a third thing to explain.** Suppressing the modifier is what keeps
+  the fix out of CSS - restoring an endpoint that happened to be today would have needed
+  `var(--color-base-content)` in an ordinary property, which is the lint wall above.
 - **Both filters are one control wearing two faces, and `FilterField` is what keeps them
   that way.** The date range trigger is a daisyUI `input` and the currency picker a
   `select`; they are the same height, border, fill, radius and focus treatment because they
