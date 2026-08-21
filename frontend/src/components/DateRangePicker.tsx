@@ -1,4 +1,4 @@
-import { type DateRange, DayPicker } from "@daypicker/react";
+import { type DateRange, DayPicker, getDefaultClassNames } from "@daypicker/react";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -8,6 +8,26 @@ import {
   startOfMonth,
   toIsoDate,
 } from "../dates";
+import { FilterField } from "./FilterField";
+
+const defaultClassNames = getDefaultClassNames();
+
+// What the two panels are handed beyond daisyUI's `react-day-picker` theme.
+//
+// `today` is emptied to drop the modifier: getClassNamesForModifiers keeps only truthy
+// entries, so the day carries no rdp-today and daisyUI's filled primary block - four
+// classes against selected's three, so it beats the range it sits inside - never lands.
+// This control reports a from date and a to date, and a third marked day reads as picked.
+//
+// The dropdowns are real <select>s, and daisyUI leaves them transparent because they sit
+// invisible over the caption. A browser paints a native popup from the control's own
+// colours, so a transparent one comes up on white while still taking the inherited text
+// colour - unreadable under dim. The options carry it too, because the select's colour
+// alone does not reach them in every browser.
+const dayPickerClassNames = {
+  today: "",
+  dropdown: `${defaultClassNames.dropdown} bg-base-100 text-base-content [&>option]:bg-base-100`,
+};
 
 interface DateRangePickerProps {
   readonly from: string;
@@ -120,16 +140,17 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
   }
 
   return (
-    <div ref={containerRef} className="flex items-center gap-3">
-      <span id="date-range-label" className="text-sm text-base-content/60">
-        Dates
-      </span>
+    <FilterField label="Dates" labelId="date-range-label">
       {/* Positioned by hand rather than with daisyUI's dropdown classes. Those hide
           .dropdown-content until :focus-within or :popover-open, which fights a panel
           whose open state is React's - the calendar would vanish the moment focus left
           it while still mounted. The panel needs w-max because an absolute box
-          shrink-wraps to one month. jsdom evaluates no CSS, so no test sees either. */}
-      <div className="relative">
+          shrink-wraps to one month. jsdom evaluates no CSS, so no test sees either.
+
+          This div is also what an outside click is measured against, so it holds the
+          trigger and the panel and nothing else: a click on the caption FilterField
+          renders is outside the control and dismisses it. */}
+      <div ref={containerRef} className="relative">
         {/* Labelled by the caption and by itself, so the accessible name carries both
             the control's purpose and the range it currently shows. */}
         <button
@@ -138,7 +159,7 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
           type="button"
           aria-expanded={open}
           aria-labelledby="date-range-label date-range-value"
-          className="btn btn-outline btn-sm font-normal tabular-nums"
+          className="input w-auto cursor-pointer tabular-nums"
           onClick={() => {
             if (open) {
               setOpen(false);
@@ -152,10 +173,12 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
             setOpen(true);
           }}
         >
-          {from} to {to}
+          <span>
+            {from} to {to}
+          </span>
         </button>
         {open && (
-          <div className="absolute top-full right-0 z-10 mt-2 flex w-max gap-4 rounded-box bg-base-100 p-2 shadow-lg">
+          <div className="absolute top-full right-0 z-10 mt-2 flex w-max gap-2 rounded-box bg-base-100 p-2 shadow-lg">
             {/* Two calendars rather than one showing two months: numberOfMonths keeps
                 the pair consecutive, and these navigate independently. They share
                 `selected` and `onSelect`, so a range can start in either and end in the
@@ -167,6 +190,8 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
                 startMonth and endMonth are what the year dropdown lists; with the
                 arrows hidden, that list is the whole of what bounds navigation. */}
             <DayPicker
+              className="react-day-picker"
+              classNames={dayPickerClassNames}
               mode="range"
               resetOnSelect
               hideNavigation
@@ -180,6 +205,8 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
               onSelect={handleSelect}
             />
             <DayPicker
+              className="react-day-picker"
+              classNames={dayPickerClassNames}
               mode="range"
               resetOnSelect
               hideNavigation
@@ -195,6 +222,6 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
           </div>
         )}
       </div>
-    </div>
+    </FilterField>
   );
 }

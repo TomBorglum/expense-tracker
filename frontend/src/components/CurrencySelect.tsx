@@ -1,3 +1,5 @@
+import { FilterField } from "./FilterField";
+
 interface CurrencySelectProps {
   readonly value: string;
   readonly options: readonly string[];
@@ -20,15 +22,12 @@ export function CurrencySelect({
   const shown = options.includes(value) ? options : [value, ...options];
 
   return (
-    <div className="flex items-center gap-3">
-      {/* A real label rather than aria-label: the select needs a visible name here, and
-          an associated one is what gives it an accessible name for free. */}
-      <label htmlFor="currency" className="text-sm text-base-content/60">
-        Currency
-      </label>
+    // A real label rather than aria-label: the select needs a visible name here, and an
+    // associated one is what gives it an accessible name for free.
+    <FilterField label="Currency" htmlFor="currency">
       <select
         id="currency"
-        className="select select-bordered select-sm"
+        className="select w-auto"
         value={value}
         disabled={disabled}
         onChange={(event) => {
@@ -41,6 +40,6 @@ export function CurrencySelect({
           </option>
         ))}
       </select>
-    </div>
+    </FilterField>
   );
 }

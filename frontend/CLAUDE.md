@@ -41,16 +41,61 @@ Break one of these and CI goes red on an otherwise correct change.
   so the surface is `bg-base-200 text-base-content` on `<body>` in `index.html`: a body
   background is what propagates to the canvas beyond the app shell, and moving it onto a
   `<div>` is what leaves an unpainted band below short content.
-- **The calendar is themed through its own variables, not through utility classes.**
-  `@daypicker/react/style.css` is imported from `src/main.tsx` and is **unlayered**, while
-  everything `@import "tailwindcss"` emits sits inside `@layer`; unlayered rules win
-  regardless of source order, so a Tailwind or daisyUI class aimed at the calendar through
-  `classNames` loses silently. Its five colours are reachable only as custom properties,
-  and the `.rdp-root` block at the foot of `src/styles/app.css` repoints them at daisyUI's
-  role tokens. That block is unlayered for the same reason and has to stay after the
-  package stylesheet in the bundle, which is what the import order in `main.tsx` is for.
-  Those names are the package's own and nothing checks them, so the pair is listed under
-  "Declared twice" in the root [`CLAUDE.md`](../CLAUDE.md).
+- **The calendar is themed by daisyUI, and `@daypicker/react/style.css` is deliberately
+  not imported.** daisyUI ships a first-party theme for this library - the
+  `react-day-picker` class, which both `DayPicker` instances in `DateRangePicker.tsx`
+  carry - and it writes every part in role tokens, so the calendar follows nord and dim
+  like everything else. **Importing the package's own stylesheet would silently beat it**:
+  that file is unlayered, everything `@import "tailwindcss"` emits sits inside `@layer`,
+  and unlayered rules win regardless of source order. It is also what made the calendar
+  look nothing like the rest of the page, because it hardcodes `font-size: large` on the
+  month caption and on selected days - so a day grew when it was picked - and neither is
+  reachable through a `--rdp-*` variable. **Nothing local names a `--rdp-*` property any
+  more; the class name is the whole contract.** Only `frontend-build` proves the theme is
+  in the bundle: daisyUI registers it through `addComponents`, so it is emitted solely
+  because a source file `@source "../"` scans names the class. A `grep` for
+  `react-day-picker` in `frontend/dist/assets/*.css` is that check, and jsdom evaluates no
+  CSS, so no test is.
+- **`src/styles/app.css` holds exactly one local rule, and it is unlayered on purpose.**
+  daisyUI gives `.input` and `.select` no hover state - only `.btn` has one - which is half
+  of why the two filters above the table used to read as different kinds of control. The
+  rule deepens `--input-color` on hover for both; unlayered is what lets it reach that
+  variable past daisyUI's own layer, `:not(:focus-within)` is what keeps a hovered
+  *focused* field on its focus treatment instead of weakening it, and the
+  `@media (hover: hover)` around it is what stops a touch device holding the state after a
+  tap. **Reach for a utility class before a second rule here**: a daisyUI role token used
+  in an ordinary CSS property fails `css/no-invalid-properties`, because eslint cannot see
+  what the Tailwind build injects, and the rule must not be relaxed to let one through.
+  This rule passes only because it assigns to a custom property, which is not validated.
+- **`dayPickerClassNames` carries two fixes for daisyUI's calendar theme, and both are
+  handed to the panels rather than written as CSS.** That is deliberate: a daisyUI role
+  token used in an ordinary CSS property fails `css/no-invalid-properties`, so a utility
+  class is the way to reach one from here.
+  - **No day is marked "today".** `today` is emptied, and `getClassNamesForModifiers`
+    keeps only truthy entries, so the day never carries `rdp-today`. Without that daisyUI
+    fills it with the primary colour through a selector of four classes against
+    `.rdp-selected`'s three - it beats the range it sits inside, and the current day reads
+    as picked whatever the range is. **The control reports a from date and a to date; a
+    third marked day is a third thing to explain.**
+  - **The month and year dropdowns are given a background.** They are real `<select>`s
+    that daisyUI leaves transparent, because they sit invisible over the caption and only
+    the caption is meant to show. A browser paints the *native popup* from the control's
+    own colours, so a transparent one comes up on white while still taking the inherited
+    text colour - pale on pale, and unreadable under dim. `bg-base-100 text-base-content`
+    fixes it, and `[&>option]:bg-base-100` is not redundant: the select's colour does not
+    reach its options in every browser. Note this is not a `color-scheme` fault - that
+    resolves correctly to `dark` on the element, and the scrollbars prove it.
+- **Both filters are one control wearing two faces, and `FilterField` is what keeps them
+  that way.** The date range trigger is a daisyUI `input` and the currency picker a
+  `select`; they are the same height, border, fill, radius and focus treatment because they
+  are the same kind of daisyUI component, and neither is a `btn`.
+  `src/components/FilterField.tsx` owns the shell and the caption for both, which is what
+  stops the pair drifting apart again. Its props are a union rather than two optionals
+  **because the two cannot be named the same way**: a `<select>` takes a real
+  `<label htmlFor>` and a `<button>` cannot, so the trigger gets `labelId` and a
+  `<span id>` instead. That also means `DateRangePicker`'s `containerRef` sits on its own
+  positioning `div` and not on the shell - a click on the caption is outside the control
+  and dismisses the panel.
 - **Every colour is referenced by role** - `bg-base-100`, `bg-base-200`,
   `text-base-content`, `alert-error` - because a hard-coded shade like `slate-700` is not
   merely awkward with two themes, it is wrong in one of them. jsdom evaluates no CSS, so no

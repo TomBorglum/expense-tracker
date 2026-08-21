@@ -22,7 +22,7 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
     // spelling it out would be recreating semantics HTML already has (sonar S6819).
     // The error branch keeps its role - no element implies role="alert".
     return (
-      <output className="flex items-center gap-3 text-base-content/60">
+      <output className="flex items-center gap-3 text-sm text-base-content/60">
         <span className="loading loading-spinner loading-sm" />
         <span>Loading expenses...</span>
       </output>
@@ -44,14 +44,24 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
             sight because the page already shows the same word as its heading. */}
         <caption className="sr-only">Expenses</caption>
         <thead>
+          {/* font-semibold on every th, because daisyUI puts 600 on <thead> and the
+              browser's own `th { font-weight: bold }` beats an inherited value. */}
           <tr>
-            <th scope="col" className="text-right">
+            <th scope="col" className="text-right font-semibold">
               Amount
             </th>
-            <th scope="col">Currency</th>
-            <th scope="col">Date</th>
-            <th scope="col">Category</th>
-            <th scope="col">Details</th>
+            <th scope="col" className="font-semibold">
+              Currency
+            </th>
+            <th scope="col" className="font-semibold">
+              Date
+            </th>
+            <th scope="col" className="font-semibold">
+              Category
+            </th>
+            <th scope="col" className="font-semibold">
+              Details
+            </th>
           </tr>
         </thead>
         <tbody>
