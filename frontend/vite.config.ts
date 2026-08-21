@@ -15,7 +15,31 @@ import { defineConfig } from "vitest/config";
 // they disagree with what it derives, which would let `pnpm run test` modify tracked
 // files. A check that writes is not a check. vitest sets VITEST before it resolves
 // this config; `vite build` and `vite dev` both leave it unset and root at frontend/.
-const routeGeneration = process.env.VITEST === undefined ? [tanstackRouter()] : [];
+//
+// Only what differs from the generator's defaults is set below. routesDirectory and
+// generatedRouteTree are already ./src/routes and ./src/routeTree.gen.ts, and both
+// resolve against the root above - which is the other reason the guard is not optional.
+const routeGeneration =
+  process.env.VITEST === undefined
+    ? [
+        tanstackRouter({
+          target: "react",
+          // The generator formats the tree by handing prettier these two options and
+          // no filepath, so it never reads .prettierrc.json. They are the whole of
+          // this repo's style it can be told about - printWidth stays prettier's own
+          // 80, which is why the tree is listed in .prettierignore.
+          quoteStyle: "double",
+          semicolons: true,
+          // Replaces a default of "/* eslint-disable */", "// @ts-nocheck" and
+          // "// noinspection JSUnusedGlobalSymbols". The first is a bare suppression;
+          // the second would stop tsc -b checking the one file in src/ nobody reviews,
+          // and that check is what catches a route missing from the tree.
+          routeTreeFileHeader: [
+            "// Generated from src/routes by @tanstack/router-plugin. Do not edit.",
+          ],
+        }),
+      ]
+    : [];
 
 // A standalone SPA: it builds to frontend/dist/ (vite's default, gitignored) and
 // knows nothing about the backend beyond VITE_API_BASE_URL, which src/api/expenses.ts
@@ -30,9 +54,7 @@ export default defineConfig({
   // the two agreeing.
   envDir: fileURLToPath(new URL("./", import.meta.url)),
   // The route generator runs before react(), so the transform sees the tree it just
-  // wrote rather than the one from the last run. It takes no options here:
-  // tsr.config.json is the whole configuration, and an inline option would override
-  // that file silently rather than conflict with it.
+  // wrote rather than the one from the last run.
   plugins: [...routeGeneration, react(), tailwindcss()],
   resolve: {
     alias: {

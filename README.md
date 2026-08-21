@@ -500,11 +500,11 @@ One route, generated from files under `frontend/src/routes/` by
 `index.tsx` is `/`, the expenses table. The file name is the path, and
 `frontend/src/routeTree.gen.ts` is written from them by `@tanstack/router-plugin` and
 committed. Being generated, it is skipped by prettier and eslint and excluded from
-coverage and from the Sonar scan - but not from `tsc -b`, because `tsr.config.json`
-replaces a default file header whose `// @ts-nocheck` would leave the one file nobody
-reviews checked by nothing. That file is the plugin's whole configuration - it is the
-generator's own hardcoded file name, and an inline plugin option would silently override
-it rather than conflict, so the settings stay in one place.
+coverage and from the Sonar scan - but not from `tsc -b`, because the plugin is given a
+file header replacing a default whose `// @ts-nocheck` would leave the one file nobody
+reviews checked by nothing. The plugin is configured inline in `frontend/vite.config.ts`,
+and only where it differs from its defaults; there is no `tsr.config.json`, which the
+plugin would read and then let inline options silently override.
 
 Only `pnpm dev` and `pnpm build` regenerate the tree, and the suite deliberately does
 not: under vitest the generator would resolve its paths against the repo root that
@@ -513,7 +513,7 @@ tree still fails, because the tree is what types the route files - `createFileRo
 draws its path from the generated `FileRoutesByPath`, so a route the tree does not know
 will not compile and a tree naming a file that is gone will not resolve. The one drift
 types cannot see is a tree that is structurally right but textually stale, after a
-`tsr.config.json` edit or a generator bump; CI catches that with a `git diff --exit-code`
+plugin option change or a generator bump; CI catches that with a `git diff --exit-code`
 after the build.
 
 `createAppRouter` takes an optional history so the tests can pass

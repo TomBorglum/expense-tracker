@@ -95,7 +95,7 @@ jobs:
       # structural drift - a route file missing from the tree fails createFileRoute's
       # typed path, and a tree naming a file that is gone fails to resolve. What is
       # left is a tree that is structurally right and textually stale, from a change
-      # to tsr.config.json or to the generator's own version, which types cannot see.
+      # to the generator's options or its version, which types cannot see.
       - run: git diff --exit-code frontend/src/routeTree.gen.ts
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with

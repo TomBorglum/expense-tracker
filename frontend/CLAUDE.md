@@ -68,18 +68,19 @@ Break one of these and CI goes red on an otherwise correct change.
   `.prettierrc.json` and stays at prettier's own 80 columns), eslint skips it through
   `globalIgnores` (it is not import-sorted and its `as any` casts fail
   `strictTypeChecked`), coverage excludes it in `vite.config.ts` and Sonar in **two**
-  keys, and `tsc -b` still checks it because `tsr.config.json` overrides a default
-  `routeTreeFileHeader` whose `// @ts-nocheck` would otherwise turn the one file in
-  `src/` nobody reviews into the one file nothing checks. The price in dependencies is
+  keys, and `tsc -b` still checks it because the plugin is given a
+  `routeTreeFileHeader` overriding a default whose `// @ts-nocheck` would otherwise
+  turn the one file in `src/` nobody reviews into the one file nothing checks. The price in dependencies is
   `@babel/core`, `chokidar`, `zod` and `unplugin` behind `@tanstack/router-plugin`.
-- **`tsr.config.json` is the whole configuration, and `tanstackRouter()` takes no
-  options.** `tsr.config.json` is the generator's own file name, hardcoded in
-  `@tanstack/router-generator` and watched by the plugin, and `getConfig` merges any
-  inline option **over** it. Splitting the settings across both would therefore resolve
-  silently in favour of `vite.config.ts` rather than failing. Keep them in one place, and
-  note the schema is a zod `z.object` that **strips** a key it does not know - a
-  misspelled option is discarded without a word and the generator falls back to its
-  defaults, so diff the emitted tree after changing anything here.
+- **The generator is configured inline, in `vite.config.ts`, and only where it differs
+  from its defaults.** `quoteStyle` and `semicolons` match `.prettierrc.json` as far as
+  the generator can be told about it, and `routeTreeFileHeader` drops the `@ts-nocheck`.
+  `routesDirectory` and `generatedRouteTree` are left unset because their defaults are
+  already right. There is no `tsr.config.json`: the plugin would read one, and
+  `getConfig` merges inline options **over** it, so a setting in both places resolves
+  silently rather than failing. Note the schema is a zod `z.object` that **strips** a key
+  it does not know - a misspelled option is discarded without a word and the default is
+  used, so diff the emitted tree after changing anything here.
 - **`createAppRouter` is a factory rather than a module-level singleton** so the tests can
   hand it a `createMemoryHistory`, which is also what keeps `router.ts` covered without a
   new exclusion.
@@ -96,7 +97,8 @@ Break one of these and CI goes red on an otherwise correct change.
   compile, and a tree naming a file that was renamed or deleted does not resolve. Every
   structural drift is a type error, and `frontend-typecheck` is where it lands.
   What types cannot see is a tree that is structurally right and textually stale - the
-  output of a `tsr.config.json` edit or a generator version whose emitted shape changed.
+  output of a `vite.config.ts` option change or a generator version whose emitted
+  shape changed.
   `.github/workflows/ci.yml` closes that with one `git diff --exit-code` after
   `frontend-build`, the only gate that runs the generator. The realistic trigger is a
   Dependabot bump of `@tanstack/router-plugin`, which needs the tree regenerated and
