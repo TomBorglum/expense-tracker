@@ -10,14 +10,22 @@ allowBuilds:
   # script is unanswered, which fails `pixi run frontend-install` in CI.
   msw: false
 
-# pnpm 11's own default, stated rather than inherited, because DEPENDABOT DOES NOT RUN
-# PNPM 11. It picks its pnpm major from the lockfile, and `lockfileVersion: 9.0` - a pin
-# that exists for its parser (see ../.github/dependabot.yml) - lands it on pnpm 10, where
-# this setting defaults to 0 instead of 1440.
+# Three days, and it must stay equal to `default-days` in ../.github/dependabot.yml
+# (3 there, 4320 minutes here). Dependabot pushes its cooldown into the resolver as
+# `pnpm --config.minimumReleaseAge=<minutes>` and enforces the higher of that and this
+# value across its whole resolution, so a gap either way fails the weekly update job
+# outright rather than skipping an update: too low here and a pin merged by hand is
+# younger than the gate, too high and the version Dependabot itself selected is the one
+# rejected. The mechanism is spelled out in that file.
 #
-# Left implicit, the 24-hour supply-chain guard therefore applies where the lockfile is
+# Stated rather than inherited, because DEPENDABOT DOES NOT RUN PNPM 11. It picks its
+# pnpm major from the lockfile, and `lockfileVersion: 9.0` - a pin that exists for its
+# parser (see ../.github/dependabot.yml) - lands it on pnpm 10, where this setting
+# defaults to 0 rather than to pnpm 11's 1440.
+#
+# Left implicit, the supply-chain guard would therefore apply where the lockfile is
 # VERIFIED (CI, pnpm 11) but not where it is RESOLVED (Dependabot, pnpm 10). A transitive
-# package published in the last day then lands in pnpm-lock.yaml and fails
+# package published inside the window then lands in pnpm-lock.yaml and fails
 # `pixi run frontend-install` with ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION, which is what
 # broke the frontend bump in PR #48. Both majors have the setting - it arrived in pnpm
 # 10.16.0 - so stating it is all it takes for the two halves to agree.
@@ -31,4 +39,4 @@ allowBuilds:
 # also flips pnpm 11's `minimumReleaseAgeStrict` default from false to true. It only
 # applies when NO version in range is old enough, and it turns "install the too-young one
 # anyway" into a failure.
-minimumReleaseAge: 1440
+minimumReleaseAge: 4320

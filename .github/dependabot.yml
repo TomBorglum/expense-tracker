@@ -49,16 +49,29 @@ updates:
     #
     # Longer for majors because they cost the most here: a React or Vite major needs
     # the rest of the toolchain (plugin-react, @types/*, testing-library) to catch up
-    # first, and arrives as its own PR outside the group. Patches keep the 3-day
-    # default. Security updates ignore cooldown.
+    # first, and arrives as its own PR outside the group. Security updates ignore
+    # cooldown.
     #
-    # This holds back the packages Dependabot UPDATES, and nothing else. The transitive
-    # versions its lockfile resolution drags along are outside it (dependabot-core#14683,
-    # #13165) - those are held by minimumReleaseAge in frontend/pnpm-workspace.yaml,
-    # which is a separate mechanism with a separate window. Raising the days here does
-    # not cover them.
+    # `default-days` must stay equal to `minimumReleaseAge` in
+    # frontend/pnpm-workspace.yaml (3 days here, 4320 minutes there), and no tier may
+    # sit below it. These windows do not only decide which versions Dependabot offers:
+    # it passes min(tier, default-days) to the resolver as
+    # `pnpm --config.minimumReleaseAge=<minutes>`, and pnpm applies that single value
+    # to everything it resolves or verifies - every other pin in package.json and
+    # every entry already in the lockfile, none of which was vetted against anything
+    # but pnpm-workspace.yaml's own value. A gap between the two numbers is a band of
+    # ages that is legal to install and illegal to update against, and a run landing
+    # in it fails with ERR_PNPM_NO_MATURE_MATCHING_VERSION instead of skipping the
+    # update. That is what killed the runs of 2026-08-21 and 2026-08-22: plugin-react
+    # 6.1.0, merged by hand at 1 day old under the old 1440, met a 4320 gate.
+    #
+    # Tiers above the floor never reach pnpm, because dependabot-core caps the gate at
+    # default-days. semver-major-days therefore holds majors back from selection
+    # without raising the gate. That same gate is what now holds the transitive
+    # versions a resolution drags along (dependabot-core#14683, #13165); they are no
+    # longer a separate mechanism with a window of their own.
     cooldown:
-      default-days: 7
+      default-days: 3
       semver-major-days: 30
       semver-minor-days: 7
       semver-patch-days: 3
