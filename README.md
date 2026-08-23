@@ -589,22 +589,32 @@ alongside Node. Three deliberate choices:
 - **`frontend/package.json` has no `packageManager` field, and must not gain one.**
   pnpm's `pmOnFail` defaults to `download`, so that field would make pnpm fetch and run
   its own copy of the declared version, bypassing the pixi pin.
-- **Pins must be at least 24 hours old.** `frontend/pnpm-workspace.yaml` sets
-  `minimumReleaseAge: 1440`, so pnpm refuses to install versions published in the last 24
-  hours as a supply-chain guard. Because this project pins exact versions, pnpm cannot
-  fall back to an older release - it asks you to exempt the version instead. **Pick a
-  newer release that already clears the window rather than adding an exemption**, which
-  would disable the guard for precisely the least-vetted package.
+- **Pins must be at least three days old.** `frontend/pnpm-workspace.yaml` sets
+  `minimumReleaseAge: 4320`, so pnpm refuses to install versions published in the last
+  three days as a supply-chain guard. Because this project pins exact versions, pnpm
+  cannot fall back to an older release - it asks you to exempt the version instead.
+  **Pick a newer release that already clears the window rather than adding an
+  exemption**, which would disable the guard for precisely the least-vetted package.
 
-  The value is 1440 because that is already pnpm 11's default; it is written down for
-  **Dependabot**, which is not running pnpm 11. It picks its pnpm major from the
-  lockfile, and the `lockfileVersion: 9.0` pin lands it on pnpm 10, where the setting
-  defaults to 0. Left implicit, the guard would hold where the lockfile is *verified*
-  (CI) and not where it is *resolved* (Dependabot), which is how a transitive package
-  five hours old reached `pnpm-lock.yaml` and failed CI in PR #48. One case stays outside
-  it: Dependabot deliberately disables the guard for **security** updates, so such a PR
-  can still carry a too-young entry. Re-run the job once that version clears 24 hours
-  (`gh run rerun <run-id> --failed`) - the check recomputes the cutoff at install time.
+  The value is 4320 because it has to equal `cooldown.default-days` in
+  `.github/dependabot.yml`, which is three days. Dependabot does not use that window
+  only to choose versions: it passes `min(semver tier, default-days)` to pnpm as
+  `--config.minimumReleaseAge`, enforced across its entire resolution, so anything
+  already in the repo that is younger than the gate fails the weekly update job with
+  `ERR_PNPM_NO_MATURE_MATCHING_VERSION` instead of skipping an update. Equal values
+  leave no such gap. Tiers above the floor - `semver-minor-days`, `semver-major-days` -
+  delay selection only and never raise the gate, because Dependabot caps it at
+  `default-days`.
+
+  Writing the value down at all is for **Dependabot**, which is not running pnpm 11. It
+  picks its pnpm major from the lockfile, and the `lockfileVersion: 9.0` pin lands it on
+  pnpm 10, where the setting defaults to 0. Left implicit, the guard would hold where the
+  lockfile is *verified* (CI) and not where it is *resolved* (Dependabot), which is how a
+  transitive package five hours old reached `pnpm-lock.yaml` and failed CI in PR #48. One
+  case stays outside it: Dependabot deliberately disables the guard for **security**
+  updates, so such a PR can still carry a too-young entry. Re-run the job once that
+  version clears the window (`gh run rerun <run-id> --failed`) - the check recomputes the
+  cutoff at install time.
 - **Install scripts are answered explicitly.** pnpm 11 exits non-zero while a
   dependency's install script is neither allowed nor denied, which would fail
   `pixi run frontend-install` in CI. The decision lives in `frontend/pnpm-workspace.yaml`

@@ -271,15 +271,18 @@ Break one of these and CI goes red on an otherwise correct change.
   Dependabot's lockfile parsing. That lockfile version is also what Dependabot reads its
   pnpm major from, which is why the next rule exists. See
   [`README.md`](../README.md#package-manager).
-- **`pnpm-workspace.yaml` states `minimumReleaseAge: 1440` and must never gain a
-  `minimumReleaseAgeExclude`.** Stating the value and excusing a package from it are
-  opposites: 1440 is already pnpm 11's default, written down because Dependabot resolves
-  this lockfile with pnpm 10 (per the `lockfileVersion: 9.0` pin above), where the default
-  is 0 - so without it the 24-hour guard covers CI's *verification* but not Dependabot's
-  *resolution*. An exclusion, by contrast, disables the guard for the least-vetted release
-  there is; pick a version that already clears the window. Naming the value also turns on
-  `minimumReleaseAgeStrict`, which is intended. The file's two settings are the whole of it
-  - the other is `allowBuilds`.
+- **`pnpm-workspace.yaml` states `minimumReleaseAge: 4320` and must never gain a
+  `minimumReleaseAgeExclude`.** The value mirrors `cooldown.default-days` in
+  [`.github/dependabot.yml`](../.github/dependabot.yml) and has to keep mirroring it:
+  Dependabot enforces the higher of the two across its whole resolution, so a gap in
+  either direction fails the weekly update job outright rather than skipping an update.
+  Stating the value also matters because Dependabot resolves this lockfile with pnpm 10
+  (per the `lockfileVersion: 9.0` pin above), where the default is 0 - so without it the
+  guard covers CI's *verification* but not Dependabot's *resolution*. An exclusion, by
+  contrast, disables the guard for the least-vetted release there is; pick a version that
+  already clears the window. Naming the value also turns on `minimumReleaseAgeStrict`,
+  which is intended. The file's two settings are the whole of it - the other is
+  `allowBuilds`.
 
 ## Quality gates
 
