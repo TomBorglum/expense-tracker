@@ -6,7 +6,14 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import make_url
 from starlette.testclient import TestClient
 
-from expense_tracker import CurrencyPayload, ExpensePayload, config, create_app
+from expense_tracker import (
+    CategoryTotalPayload,
+    CurrencyPayload,
+    ExpensePayload,
+    PeriodTotalPayload,
+    config,
+    create_app,
+)
 from expense_tracker.currency_repository import CurrencyRateRecord
 from expense_tracker.date_range import UNBOUNDED, DateRange
 from expense_tracker.expense_repository import ExpenseRecord
@@ -18,6 +25,10 @@ _ORIGIN = "http://localhost:5173"
 # response.content, which is bytes, so Response.json()'s Any never enters the picture.
 _EXPENSES = TypeAdapter(list[ExpensePayload])
 _CURRENCIES = TypeAdapter(list[CurrencyPayload])
+_PERIOD_TOTALS = TypeAdapter(list[PeriodTotalPayload])
+_CATEGORY_TOTALS = TypeAdapter(list[CategoryTotalPayload])
+# The body as plain objects, which keeps every key a payload model would drop.
+_RAW_ROWS = TypeAdapter(list[dict[str, str]])
 
 # What the requested_ranges fixture collects: every DateRange the route handed the
 # expense repository.
@@ -318,6 +329,195 @@ def test_a_range_is_applied_before_the_amounts_are_converted(
         "EUR",
         "EUR",
     ]
+
+
+def test_totals_endpoint_returns_json(
+    same_period_expenses_client: TestClient,
+) -> None:
+    """Two March rows in one category become one total; the EUR one stays its own.
+
+    currency is in the group key whatever was asked for, because adding DKK to EUR is
+    a number that means nothing.
+    """
+    response = same_period_expenses_client.get(
+        "/api/expenses/totals", params={"period": "month", "group_by": "category"}
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert _CATEGORY_TOTALS.validate_json(response.content) == [
+        # 100.00 + 25.50, both DKK and both Housing, both in March.
+        CategoryTotalPayload(
+            amount="125.50", currency="DKK", period="2026-03", category="Housing"
+        ),
+        CategoryTotalPayload(
+            amount="10.00", currency="EUR", period="2026-03", category="Housing"
+        ),
+        CategoryTotalPayload(
+            amount="7.25", currency="DKK", period="2026-02", category="Food"
+        ),
+    ]
+
+
+def test_totals_drop_the_category_key_when_it_was_not_grouped_by(
+    same_period_expenses_client: TestClient,
+) -> None:
+    """Absent, not null and not an empty string.
+
+    Read as plain dicts rather than through the payload models: pydantic ignores
+    extra fields, so validating against PeriodTotalPayload would pass with a category
+    still in the object.
+    """
+    response = same_period_expenses_client.get(
+        "/api/expenses/totals", params={"period": "month"}
+    )
+    assert response.status_code == 200
+    body = _RAW_ROWS.validate_json(response.content)
+    assert all("category" not in row for row in body)
+    assert _PERIOD_TOTALS.validate_json(response.content) == [
+        # The two Housing rows and the Food row now share a key.
+        PeriodTotalPayload(amount="125.50", currency="DKK", period="2026-03"),
+        PeriodTotalPayload(amount="10.00", currency="EUR", period="2026-03"),
+        PeriodTotalPayload(amount="7.25", currency="DKK", period="2026-02"),
+    ]
+
+
+def test_total_amounts_are_strings_not_numbers(
+    same_period_expenses_client: TestClient,
+) -> None:
+    """125.50 must not arrive as 125.5, the twin of the expenses assertion above."""
+    body = _PERIOD_TOTALS.validate_json(
+        same_period_expenses_client.get(
+            "/api/expenses/totals", params={"period": "month"}
+        ).content
+    )
+    assert [row.amount for row in body] == ["125.50", "10.00", "7.25"]
+
+
+def test_totals_are_an_empty_list_when_nothing_is_loaded(
+    empty_expenses_client: TestClient,
+) -> None:
+    """200 and [], the empty-table invariant again: nothing to total is not a fault."""
+    response = empty_expenses_client.get(
+        "/api/expenses/totals", params={"period": "month"}
+    )
+    assert response.status_code == 200
+    assert _PERIOD_TOTALS.validate_json(response.content) == []
+
+
+def test_totals_can_be_requested_in_another_currency(
+    same_period_expenses_client: TestClient,
+) -> None:
+    """Converted first, so the two March currencies collapse into one total."""
+    response = same_period_expenses_client.get(
+        "/api/expenses/totals",
+        params={"period": "month", "group_by": "category", "currency": "EUR"},
+    )
+    assert response.status_code == 200
+    assert _CATEGORY_TOTALS.validate_json(response.content) == [
+        # 13.40 + 3.42 from the two DKK rows, plus the 10.00 that was already EUR.
+        CategoryTotalPayload(
+            amount="26.82", currency="EUR", period="2026-03", category="Housing"
+        ),
+        CategoryTotalPayload(
+            amount="0.97", currency="EUR", period="2026-02", category="Food"
+        ),
+    ]
+
+
+def test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows(
+    same_period_expenses_client: TestClient,
+) -> None:
+    """The property the route's ordering exists for.
+
+    convert_expenses quantizes per record, so converting and then adding is not the
+    arithmetic that adding and then converting would do. Summing after the conversion
+    is what keeps this equality true whatever the amounts are.
+    """
+    rows = _EXPENSES.validate_json(
+        same_period_expenses_client.get(
+            "/api/expenses", params={"currency": "EUR"}
+        ).content
+    )
+    summed: dict[tuple[str, str], Decimal] = {}
+    for row in rows:
+        key = (row.date[:7], row.category)
+        summed[key] = summed.get(key, Decimal("0")) + Decimal(row.amount)
+    totals = _CATEGORY_TOTALS.validate_json(
+        same_period_expenses_client.get(
+            "/api/expenses/totals",
+            params={"period": "month", "group_by": "category", "currency": "EUR"},
+        ).content
+    )
+    assert {(row.period, row.category): Decimal(row.amount) for row in totals} == summed
+
+
+def test_totals_hand_a_date_range_to_the_repository(
+    client: TestClient, requested_ranges: _Ranges
+) -> None:
+    """The same parsed DateRange the list endpoint sends, filtered in SQL not here."""
+    response = client.get(
+        "/api/expenses/totals",
+        params={"period": "month", "from_date": "2026-01-01", "to_date": "2026-01-31"},
+    )
+    assert response.status_code == 200
+    assert requested_ranges == [
+        DateRange(datetime.date(2026, 1, 1), datetime.date(2026, 1, 31))
+    ]
+
+
+def test_totals_without_a_range_ask_for_every_expense(
+    client: TestClient, requested_ranges: _Ranges
+) -> None:
+    assert (
+        client.get("/api/expenses/totals", params={"period": "month"}).status_code
+        == 200
+    )
+    assert requested_ranges == [UNBOUNDED]
+
+
+def test_a_total_without_a_period_is_refused(client: TestClient) -> None:
+    """Refused rather than defaulted: a grain nobody chose is an assumption in a sum."""
+    response = client.get("/api/expenses/totals")
+    assert response.status_code == 422
+    assert response.json() == {"detail": "period is required"}
+    # A registered handler runs inside the middleware, so a 422 is decorated too.
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_a_period_that_is_not_a_known_grain_is_refused(client: TestClient) -> None:
+    """year is the next grain to arrive, and refuses loudly until it does."""
+    response = client.get("/api/expenses/totals", params={"period": "year"})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "unknown period: year"}
+
+
+def test_a_grouping_that_is_not_a_known_dimension_is_refused(
+    client: TestClient,
+) -> None:
+    response = client.get(
+        "/api/expenses/totals", params={"period": "month", "group_by": "currency"}
+    )
+    assert response.status_code == 422
+    assert response.json() == {"detail": "unknown group_by: currency"}
+
+
+def test_totals_refuse_a_currency_with_no_loaded_rate(client: TestClient) -> None:
+    """The conversion refusals reach this route too, and cost no aggregation."""
+    response = client.get(
+        "/api/expenses/totals", params={"period": "month", "currency": "CHF"}
+    )
+    assert response.status_code == 422
+    assert response.json() == {"detail": "no exchange rate from DKK to CHF"}
+
+
+def test_totals_refuse_a_from_date_that_is_not_a_date(client: TestClient) -> None:
+    """The date refusals reach it too, and with the same plain-string detail."""
+    response = client.get(
+        "/api/expenses/totals", params={"period": "month", "from_date": "yesterday"}
+    )
+    assert response.status_code == 422
+    assert response.json() == {"detail": "from_date must be a date in YYYY-MM-DD form"}
 
 
 def test_currencies_endpoint_returns_json(

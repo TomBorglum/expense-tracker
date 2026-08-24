@@ -20,7 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from starlette.testclient import TestClient
 
-from expense_tracker import ExpensePayload, create_app
+from expense_tracker import CategoryTotalPayload, ExpensePayload, create_app
 from expense_tracker.config import database_url
 from expense_tracker.expense_loader import ExpenseFileError, load_directory, main
 from expense_tracker.expense_repository import Expense, LoadedExpenseFile
@@ -33,6 +33,7 @@ _DATA = Path(__file__).resolve().parents[1] / "data" / "expenses"
 _HEADER = "Amount\tCurrency\tDate\tCategory\tDetails\n"
 
 _EXPENSES = TypeAdapter(list[ExpensePayload])
+_CATEGORY_TOTALS = TypeAdapter(list[CategoryTotalPayload])
 
 
 async def _truncate() -> None:
@@ -318,6 +319,55 @@ def test_a_date_range_matching_nothing_is_still_an_empty_list(tmp_path: Path) ->
 
     assert response.status_code == 200
     assert _EXPENSES.validate_json(response.content) == []
+
+
+def test_totals_group_the_loaded_expenses_by_month(tmp_path: Path) -> None:
+    """The whole path against real rows: three January expenses become one total.
+
+    No new SQL is involved - list_expenses reads the same rows the list endpoint does
+    and the summing happens after - so this confirms the path rather than a clause.
+    """
+    _load_four_days(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses/totals", params={"period": "month", "group_by": "category"}
+        )
+
+    assert response.status_code == 200
+    assert _CATEGORY_TOTALS.validate_json(response.content) == [
+        CategoryTotalPayload(
+            amount="400.00", currency="DKK", period="2026-02", category="Car"
+        ),
+        # 100.00 + 200.00 + 300.00, the three rows on either side of mid-January.
+        CategoryTotalPayload(
+            amount="600.00", currency="DKK", period="2026-01", category="Car"
+        ),
+    ]
+
+
+def test_a_date_range_narrows_what_the_totals_are_taken_over(tmp_path: Path) -> None:
+    """The range is applied in SQL, so the row outside it is not in the sum at all."""
+    _load_four_days(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses/totals",
+            params={
+                "period": "month",
+                "group_by": "category",
+                "from_date": "2026-01-02",
+                "to_date": "2026-01-31",
+            },
+        )
+
+    # 100.00 on 01/01 is outside the range, so January totals 500.00 and February,
+    # having no rows left, is not a period at all.
+    assert _CATEGORY_TOTALS.validate_json(response.content) == [
+        CategoryTotalPayload(
+            amount="500.00", currency="DKK", period="2026-01", category="Car"
+        )
+    ]
 
 
 def test_main_prints_a_summary(

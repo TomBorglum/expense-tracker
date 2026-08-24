@@ -9,10 +9,11 @@ Break one of these and CI goes red on an otherwise correct change.
 ## The HTTP surface
 
 - **The backend serves no frontend.** It is a REST API whose whole surface is
-  `GET /api/expenses` and `GET /api/currencies`: no `/` route, no `StaticFiles` mount, no
-  build artifact under `backend/`. Pinned by `test_root_is_not_served`,
-  `test_static_files_are_not_served` and `test_unknown_api_routes_404`.
-- **Both endpoints are read-only over HTTP.** Rows arrive through
+  `GET /api/expenses`, `GET /api/expenses/totals` and `GET /api/currencies`: no `/`
+  route, no `StaticFiles` mount, no build artifact under `backend/`. Pinned by
+  `test_root_is_not_served`, `test_static_files_are_not_served` and
+  `test_unknown_api_routes_404`.
+- **All three endpoints are read-only over HTTP.** Rows arrive through
   `pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere
   else, so there is no POST, PUT or DELETE and no plan for one. The database is a view of
   the files in `data/expenses/` and `data/currencies/`, which are `*.tsv`: tab-separated,
@@ -35,12 +36,14 @@ Break one of these and CI goes red on an otherwise correct change.
   `if not rows: raise` counterpart. Pinned by
   `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` in `test_app.py`
   and `test_the_endpoint_returns_an_empty_list_when_nothing_is_loaded` in
-  `test_expense_postgres.py`, and by the `currencies` twins of both -
+  `test_expense_postgres.py`, by `test_totals_are_an_empty_list_when_nothing_is_loaded`
+  for the totals, and by the `currencies` twins of both -
   `PostgresCurrencyRepository` keeps the same shape. The frontend keeps its half of that
   asymmetry; see [`frontend/CLAUDE.md`](../frontend/CLAUDE.md).
 - **`amount` goes out as `str(Decimal)`**, precisely so no float round trip can drift a
   total by a cent, and `date` as a bare `YYYY-MM-DD`. Pinned by
-  `test_expense_amounts_are_strings_not_numbers` and
+  `test_expense_amounts_are_strings_not_numbers`,
+  `test_total_amounts_are_strings_not_numbers` and
   `test_exchange_rates_are_strings_not_numbers`. The frontend renders both verbatim for
   reasons in its own file.
 
@@ -116,6 +119,54 @@ Break one of these and CI goes red on an otherwise correct change.
 - **`conversion.py` took a layer of its own.** It imports both repository modules, so it
   sits over them, and the entry points may import it, so it sits under them; a `|` sibling
   of `deps` could be neither.
+
+## Aggregation
+
+- **`GET /api/expenses/totals` sums the rows `/api/expenses` lists**, grouped by
+  `(period, currency, category)`. It takes `?currency=`, `?from_date=` and `?to_date=` on
+  exactly the terms that endpoint does, and reuses the same `parse_date_range`,
+  `validate_currency_code` and `convert_expenses`. It adds **no repository method**:
+  `list_expenses` is what it reads, so the two fakes in `tests/conftest.py` are untouched
+  and the whole grouping rule is pinned by the HTTP suite without a database.
+- **The conversion runs before the summing, and the order is the point.**
+  `convert_expenses` quantizes every record to cents, so converting and then adding is
+  not the arithmetic that adding and then converting would do - the two differ by cents.
+  Only the first makes a total equal what a reader adds up from
+  `/api/expenses?currency=EUR` for the same filter. That is what puts the summing in
+  Python rather than in a SQL `GROUP BY`, which can only do the second. Pinned by
+  `test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows`.
+- **`currency` is in the group key whatever was asked for**, because DKK added to EUR is
+  a number that means nothing - the error `conversion.py` exists to refuse. Under
+  `?currency=` every record already carries the target code, so the key collapses on its
+  own and no branch says so. Pinned by
+  `test_two_currencies_in_one_month_stay_two_totals`.
+- **`?group_by=category` is what puts `category` in the key**, and without it the field
+  is **absent from the JSON object** - not `null`, not `""`, which `schema.sql` forbids
+  anyway. That is why there are two payload models rather than one with an optional
+  field: each is a fixed set of keys a client can require. Pinned by
+  `test_totals_drop_the_category_key_when_it_was_not_grouped_by`, which reads the body
+  as plain dicts - pydantic ignores extra fields, so validating it against
+  `PeriodTotalPayload` would pass with a category still in the object.
+- **`?period=` is required and refuses rather than defaulting.** A grain nobody chose is
+  an assumption inside a sum. It is typed `str | None = None` like every other parameter
+  here, because a parameter FastAPI itself refuses answers with a list of errors instead
+  of the plain-string `detail`; `AggregationError` and its handler in `create_app()` are
+  the repositories' pattern reused, and 422 for the same reason `ConversionError` is.
+  `month` is the only grain today and `?period=year` refuses until someone adds it - one
+  enum member and one `match` arm, with no rename anywhere, which is why the payload
+  field is the grain-neutral `period` and its value is `"2026-08"`.
+- **`?group_by=` takes one value**, and a list or an unknown dimension is refused rather
+  than parsed. Accepting a list later widens nothing a client relies on.
+- **Rows come back newest period first, then category, then currency** - exactly the
+  group key, so the order is total and needs no tiebreak. It is a **stable two-pass
+  sort**, not one key: `reverse=True` on a tuple would reverse the category and currency
+  components too.
+- **`schema.sql` did not change and gained no index.** Every row in range is read and
+  summed in Python, so a grouping index would serve no query - the reasoning the date
+  range already used, and it avoids a `backend-db-reset` for nothing.
+- **`aggregation.py` is a `|` sibling of `conversion`.** It imports `ExpenseRecord` from
+  the layer below and neither sibling imports the other. Like every new module it goes in
+  three lists, not one.
 
 ## The date range
 

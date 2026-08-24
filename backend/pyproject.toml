@@ -147,7 +147,7 @@ type = "layers"
 containers = ["expense_tracker"]
 layers = [
   "deps | currency_loader | expense_loader",
-  "conversion",
+  "conversion | aggregation",
   "currency_repository | expense_repository",
   "db | config | date_range",
 ]
@@ -165,6 +165,7 @@ exhaustive = true
 name = "only the HTTP layer knows about HTTP"
 type = "forbidden"
 source_modules = [
+  "expense_tracker.aggregation",
   "expense_tracker.config",
   "expense_tracker.conversion",
   "expense_tracker.currency_loader",
@@ -185,6 +186,7 @@ forbidden_modules = ["fastapi", "starlette"]
 name = "nothing imports back into create_app"
 type = "forbidden"
 source_modules = [
+  "expense_tracker.aggregation",
   "expense_tracker.config",
   "expense_tracker.conversion",
   "expense_tracker.currency_loader",

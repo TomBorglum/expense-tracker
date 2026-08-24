@@ -6,6 +6,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.middleware.base import RequestResponseEndpoint
 
+from .aggregation import (
+    AggregationError,
+    TotalRecord,
+    aggregate,
+    parse_grouping,
+    parse_period,
+)
 from .conversion import ConversionError, convert_expenses, validate_currency_code
 from .currency_repository import CurrenciesUnavailableError, CurrencyRepository
 from .date_range import DateRangeError, parse_date_range
@@ -47,6 +54,45 @@ class CurrencyPayload(BaseModel):
     from_currency: str
     to_currency: str
     exchange_rate: str
+
+
+class PeriodTotalPayload(BaseModel):
+    """One total as GET /api/expenses/totals sends it.
+
+    Every field is a string here too, amount included, for the reason ExpensePayload
+    gives. There is no category: a request that did not group by one has none to send.
+    """
+
+    amount: str
+    currency: str
+    period: str
+
+
+class CategoryTotalPayload(PeriodTotalPayload):
+    """The same total when ?group_by=category split it, which adds the one field.
+
+    A subclass rather than an optional field, so each payload is a fixed set of keys a
+    client can require rather than one shape that is sometimes short.
+    """
+
+    category: str
+
+
+def _total_payload(total: TotalRecord) -> PeriodTotalPayload:
+    """The wider payload when the total carries a category, the narrower when not."""
+    if total.category is None:
+        return PeriodTotalPayload(
+            # str(), never float(): the summed column is numeric(12, 2).
+            amount=str(total.amount),
+            currency=total.currency,
+            period=total.period,
+        )
+    return CategoryTotalPayload(
+        amount=str(total.amount),
+        currency=total.currency,
+        period=total.period,
+        category=total.category,
+    )
 
 
 def create_app() -> FastAPI:
@@ -115,6 +161,40 @@ def create_app() -> FastAPI:
             headers={"Cache-Control": "no-store"},
         )
 
+    # The same rows /api/expenses lists, summed. Read-only for the same reason.
+    @app.get("/api/expenses/totals")
+    async def totals(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        expenses: Annotated[ExpenseRepository, Depends(provide_expense_repository)],
+        currencies: Annotated[CurrencyRepository, Depends(provide_currency_repository)],
+        # period is required, but typed with a default like the rest: a parameter
+        # FastAPI itself refuses answers with a list of errors rather than the
+        # plain-string detail every refusal here sends.
+        period: str | None = None,
+        group_by: str | None = None,
+        currency: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> JSONResponse:
+        # All three read before the query, so a malformed parameter costs no round trip.
+        grain = parse_period(period)
+        grouping = parse_grouping(group_by)
+        dates = parse_date_range(from_date, to_date)
+        records = await expenses.list_expenses(dates)
+        if currency is not None:
+            target = validate_currency_code(currency)
+            records = convert_expenses(
+                records, await currencies.list_currencies(), target
+            )
+        # After the conversion, never before: converting each amount and then adding is
+        # what makes a total equal the sum of the rows /api/expenses shows for it.
+        payload = [
+            _total_payload(total) for total in aggregate(records, grain, grouping)
+        ]
+        return JSONResponse(
+            [item.model_dump() for item in payload],
+            headers={"Cache-Control": "no-store"},
+        )
+
     # Read-only: rates arrive through `pixi run backend-load-currencies` and nowhere
     # else.
     @app.get("/api/currencies")
@@ -172,6 +252,14 @@ def create_app() -> FastAPI:
     ) -> JSONResponse:
         # The conversion handler's twin, and reading its exception for the same
         # reason: the message names the parameter the client sent and nothing else.
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    @app.exception_handler(AggregationError)
+    async def handle_aggregation_error(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        _request: Request, exc: Exception
+    ) -> JSONResponse:
+        # Reads its exception, like the two above and for the same reason: the message
+        # names the parameter the client sent and nothing of the database.
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
     # Added last, so it is the outermost middleware and can answer a preflight itself
