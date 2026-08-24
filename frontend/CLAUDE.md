@@ -16,6 +16,14 @@ Break one of these and CI goes red on an otherwise correct change.
   amount rather than coercing it, pinned by `ExpensesTable.test.tsx`'s "shows an alert when
   an amount arrives as a number"; the backend half is pinned by
   `test_expense_amounts_are_strings_not_numbers`.
+- **The type scale is three sizes at two weights, and 0.875rem is the body of it.** The
+  filter controls, their captions, the table and its headers, the alert, the loading line
+  and the calendar panel are all 0.875rem; `text-xl` is the app title and `text-2xl` the
+  page heading, and nothing else has a size. There is no root `font-size` anywhere, so
+  every one of those resolves against the browser's default 16px root. **A daisyUI
+  component's own default is not a decision** - the calendar arrived at 0.75rem that way,
+  and reads as a smaller document than the page until a `text-sm` is put on it. Nothing
+  checks any of this: jsdom evaluates no CSS, so it is a by-eye check like the theme.
 - **A `Date` is never built from a string and never named through UTC.** The picker deals
   in `Date` objects and the API deals in bare `YYYY-MM-DD`, so `src/dates.ts` is the one
   place either crosses over, and it is built from `getFullYear`/`getMonth`/`getDate` and
@@ -51,9 +59,11 @@ Break one of these and CI goes red on an otherwise correct change.
   look nothing like the rest of the page, because it hardcodes `font-size: large` on the
   month caption and on selected days - so a day grew when it was picked - and neither is
   reachable through a `--rdp-*` variable. **Nothing local names a `--rdp-*` property any
-  more; the class name is the whole contract.** Only `frontend-build` proves the theme is
-  in the bundle: daisyUI registers it through `addComponents`, so it is emitted solely
-  because a source file `@source "../"` scans names the class. A `grep` for
+  more; the class name is the whole of the theming contract.** The one thing handed on top
+  of it is the type scale, and that goes on as utility classes rather than as CSS - see
+  `dayPickerClassNames` below. Only `frontend-build` proves the theme is in the bundle:
+  daisyUI registers it through `addComponents`, so it is emitted solely because a source
+  file `@source "../"` scans names the class. A `grep` for
   `react-day-picker` in `frontend/dist/assets/*.css` is that check, and jsdom evaluates no
   CSS, so no test is.
 - **`src/styles/app.css` holds exactly one local rule, and it is unlayered on purpose.**
@@ -67,10 +77,10 @@ Break one of these and CI goes red on an otherwise correct change.
   in an ordinary CSS property fails `css/no-invalid-properties`, because eslint cannot see
   what the Tailwind build injects, and the rule must not be relaxed to let one through.
   This rule passes only because it assigns to a custom property, which is not validated.
-- **`dayPickerClassNames` carries two fixes for daisyUI's calendar theme, and both are
-  handed to the panels rather than written as CSS.** That is deliberate: a daisyUI role
-  token used in an ordinary CSS property fails `css/no-invalid-properties`, so a utility
-  class is the way to reach one from here.
+- **`dayPickerClassNames` carries three corrections to daisyUI's calendar theme, and all
+  of them are handed to the panels rather than written as CSS.** That is deliberate: a
+  daisyUI role token used in an ordinary CSS property fails `css/no-invalid-properties`, so
+  a utility class is the way to reach one from here.
   - **No day is marked "today".** `today` is emptied, and `getClassNamesForModifiers`
     keeps only truthy entries, so the day never carries `rdp-today`. Without that daisyUI
     fills it with the primary colour through a selector of four classes against
@@ -85,6 +95,22 @@ Break one of these and CI goes red on an otherwise correct change.
     fixes it, and `[&>option]:bg-base-100` is not redundant: the select's colour does not
     reach its options in every browser. Note this is not a `color-scheme` fault - that
     resolves correctly to `dark` on the element, and the scrollbars prove it.
+  - **The panel is brought onto the page's type scale.** daisyUI writes the calendar at
+    0.75rem, one step below every control around it, so the popover read as a smaller
+    document than the page that opened it. `text-sm` goes on the `className` of both panels
+    and on `month_caption`, `weekday` and `selected`. **Only `selected` is not obvious**:
+    an ordinary day number takes the root's size through `.rdp-day_button`'s `font: inherit`,
+    and the month and year `<select>`s are `opacity: 0` over `.rdp-caption_label` - the
+    caption is what renders, and `month_caption` already sizes it - so neither needs naming,
+    but `.rdp-selected` sets `font-size: .75rem` of its own and a picked day would shrink
+    out of the scale the moment it was picked. That is the fault f26600b fixed in the other
+    direction, when the package stylesheet grew a day to `large`. It works without
+    `!important` because daisyUI registers the theme inside
+    `@layer utilities { @layer daisyui.* }` while Tailwind's own utilities are unlayered
+    *within* `utilities`, and an unlayered rule beats its layer's nested sublayers whatever
+    the specificity. The one visible consequence is the weekday row, which gains a little
+    height from `text-sm`'s line-height; the day cells are fixed `2.25rem` boxes and do not
+    move.
 - **Both filters are one control wearing two faces, and `FilterField` is what keeps them
   that way.** The date range trigger is a daisyUI `input` and the currency picker a
   `select`; they are the same height, border, fill, radius and focus treatment because they
