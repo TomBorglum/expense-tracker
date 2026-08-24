@@ -24,9 +24,17 @@ const defaultClassNames = getDefaultClassNames();
 // colours, so a transparent one comes up on white while still taking the inherited text
 // colour - unreadable under dim. The options carry it too, because the select's colour
 // alone does not reach them in every browser.
+//
+// daisyUI writes the calendar at 0.75rem; text-sm brings it to the 0.875rem the controls,
+// the captions and the table use. Four names carry it: the ordinary day numbers follow the
+// root through `font: inherit` and the dropdowns are transparent over the caption, but a
+// selected day is sized by the theme again and would shrink when it was picked.
 const dayPickerClassNames = {
   today: "",
   dropdown: `${defaultClassNames.dropdown} bg-base-100 text-base-content [&>option]:bg-base-100`,
+  month_caption: `${defaultClassNames.month_caption} text-sm`,
+  weekday: `${defaultClassNames.weekday} text-sm`,
+  selected: `${defaultClassNames.selected} text-sm`,
 };
 
 interface DateRangePickerProps {
@@ -190,7 +198,7 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
                 startMonth and endMonth are what the year dropdown lists; with the
                 arrows hidden, that list is the whole of what bounds navigation. */}
             <DayPicker
-              className="react-day-picker"
+              className="react-day-picker text-sm"
               classNames={dayPickerClassNames}
               mode="range"
               resetOnSelect
@@ -205,7 +213,7 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
               onSelect={handleSelect}
             />
             <DayPicker
-              className="react-day-picker"
+              className="react-day-picker text-sm"
               classNames={dayPickerClassNames}
               mode="range"
               resetOnSelect
