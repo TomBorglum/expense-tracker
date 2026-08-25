@@ -1,343 +1,199 @@
 # backend/CLAUDE.md
 
-Invariants for the backend stack. Repo-wide rules - branching, ASCII-only, version
-pinning, the command layers and the gate sequence - are in the root
-[`CLAUDE.md`](../CLAUDE.md).
-
-Break one of these and CI goes red on an otherwise correct change.
+Invariants for the backend stack. Repo-wide rules and [what earns a place
+here](../CLAUDE.md#adding-to-these-files) are in the root [`CLAUDE.md`](../CLAUDE.md).
+**This file stays under 200 lines.** Break one of these and either CI goes red on an
+otherwise correct change, or nothing does; each bullet says which.
 
 ## The HTTP surface
 
-- **The backend serves no frontend.** It is a REST API whose whole surface is
-  `GET /api/expenses`, `GET /api/expenses/totals` and `GET /api/currencies`: no `/`
-  route, no `StaticFiles` mount, no build artifact under `backend/`. Pinned by
-  `test_root_is_not_served`, `test_static_files_are_not_served` and
-  `test_unknown_api_routes_404`.
+- **The backend serves no frontend and publishes no OpenAPI.** The whole surface is
+  `GET /api/expenses`, `GET /api/expenses/totals` and `GET /api/currencies`: no `/` route,
+  no `StaticFiles` mount, no build artifact, and `docs_url`, `redoc_url` and `openapi_url`
+  stay `None`. Pinned by `test_root_is_not_served` and its three surface neighbours.
 - **All three endpoints are read-only over HTTP.** Rows arrive through
-  `pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere
-  else, so there is no POST, PUT or DELETE and no plan for one. The database is a view of
-  the files in `data/expenses/` and `data/currencies/`, which are `*.tsv`: tab-separated,
-  named columns checked strictly, expense dates `DD/MM/YYYY`.
-- **No OpenAPI.** `docs_url`, `redoc_url` and `openapi_url` stay `None` in `create_app()`.
-  Pinned by `test_openapi_docs_are_disabled`.
+  `backend-load-expenses` and `backend-load-currencies` and nowhere else, so there is no
+  POST, PUT or DELETE. The database is a view of the `*.tsv` files under `data/`: named
+  columns checked strictly, dates `DD/MM/YYYY`. Nothing checks this.
 - **CORS is wildcard with `allow_credentials=False`.** The spec forbids the pair, so the
-  day the API grows cookies or an `Authorization` header the wildcard is what has to
-  become a real origin list. Pinned by `test_cors_does_not_allow_credentials`. It is
-  registered after the security-headers middleware, which makes it outermost and lets it
-  answer preflights itself.
-- **`create_app()` opens no socket.** The engine is built by the lifespan in
-  `src/expense_tracker/deps.py`, not by the factory, which is what keeps
-  `TestClient(app)` (without `with`) database-free and `uvicorn --factory` working. Moving
-  engine creation into `create_app()` breaks the entire HTTP suite.
-- **An empty `expense` table is 200 with `[]`, not 503.** A database nobody has run the
-  loader against yet is a legitimate state and not a fault, and a 503 would train a client
-  to retry forever against a server that is working perfectly. So
-  `PostgresExpenseRepository` raises only from its `except` arm, with no
-  `if not rows: raise` counterpart. Pinned by
-  `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` in `test_app.py`
-  and `test_the_endpoint_returns_an_empty_list_when_nothing_is_loaded` in
-  `test_expense_postgres.py`, by `test_totals_are_an_empty_list_when_nothing_is_loaded`
-  for the totals, and by the `currencies` twins of both -
-  `PostgresCurrencyRepository` keeps the same shape. The frontend keeps its half of that
-  asymmetry; see [`frontend/CLAUDE.md`](../frontend/CLAUDE.md).
-- **`amount` goes out as `str(Decimal)`**, precisely so no float round trip can drift a
-  total by a cent, and `date` as a bare `YYYY-MM-DD`. Pinned by
-  `test_expense_amounts_are_strings_not_numbers`,
-  `test_total_amounts_are_strings_not_numbers` and
-  `test_exchange_rates_are_strings_not_numbers`. The frontend renders both verbatim for
-  reasons in its own file.
+  day the API grows cookies or an `Authorization` header the wildcard has to become a real
+  origin list. It is registered outermost, after the security-headers middleware, so it
+  answers preflights itself. Pinned by `test_cors_does_not_allow_credentials`.
+- **`create_app()` opens no socket.** The engine is built by the lifespan in `deps.py`,
+  which keeps `TestClient(app)` (without `with`) database-free and `uvicorn --factory`
+  working. Moving engine creation into the factory breaks the entire HTTP suite.
+- **An empty table is 200 with `[]`, not 503.** A database nobody has loaded yet is a
+  legitimate state, and a 503 would train a client to retry forever against a working
+  server, so both repositories raise only from their `except` arm. Pinned by
+  `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` and its twins.
+- **`amount` goes out as `str(Decimal)`** so no float round trip can drift a total by a
+  cent, and `date` as a bare `YYYY-MM-DD`. The frontend renders both verbatim. Pinned by
+  `test_expense_amounts_are_strings_not_numbers` and its totals and rates twins.
 
 ## Module layering
 
-- **Only `deps.py` imports fastapi, and nothing imports `deps`.** The wiring points one
-  way: `deps.py` imports the two repository modules, never the reverse, and those plus
-  `db.py`, `config.py` and the two loaders know no HTTP at all. A failed read leaves the
-  repository as `ExpensesUnavailableError` or `CurrenciesUnavailableError`, and the two
-  handlers registered in `create_app()` are the only place that turn them into a 503.
-  Putting an `HTTPException` back in a repository is what this split exists to prevent.
-  Pinned by the import-linter contracts in `pyproject.toml`, not by a test.
-- **A new module under `src/expense_tracker/` goes in three lists, not one:** the `layers`
-  contract (where `exhaustive = true` fails the gate by itself), and the `source_modules`
-  of *both* `forbidden` contracts - a `forbidden` contract has no `exhaustive` option, so
-  an unnamed module is silently uncovered by them.
-- **`db.py` holds `Base` and nothing else.** Every repository module needs the same
-  `DeclarativeBase`, and giving it a module of its own is what lets a second one arrive
-  without importing the first - which the `|` between siblings in a layer forbids.
-  `currency_repository.py` is that second one, and it imports `Base` from `db`, never from
-  `expense_repository`. A new model goes in the repository module that reads it, not in
-  `db.py`.
-- **Every repository subclasses its ABC and carries `@override`.**
-  `PostgresExpenseRepository` and `PostgresCurrencyRepository`, and the two fakes in
-  `tests/conftest.py`, all do; a new implementation or test double does too. The base class
-  is an `ABC`, so this is enforced, not a convention - a look-alike that matches the shape
-  without inheriting is rejected. It has to be enforced somewhere, because
-  `dependency_overrides` is an untyped dict and would accept anything.
-- **`@abstractmethod` on each repository ABC is load-bearing.** Without it the `...` body
-  is an ordinary method returning `None` and an empty subclass passes. Removing it fails
-  `pixi run backend-lint` three ways: `B027` on the method, `B024` on the class, `F401` on
-  the unused import. That gate is why no test asserts it. Keep the body a same-line `...`;
-  `raise NotImplementedError` would be a statement coverage counts and nothing executes.
+- **Only the HTTP layer knows about HTTP.** `__init__.py` and `deps.py` are that layer;
+  every other module imports no fastapi and no starlette. A failed read leaves a repository
+  raising `ExpensesUnavailableError` or `CurrenciesUnavailableError`, which the
+  `create_app()` handlers alone turn into a 503 - putting an `HTTPException` back in a
+  repository is what this prevents. Pinned by the import-linter contracts, not by a test.
+- **A new module goes in three lists, not one:** the `layers` contract, where
+  `exhaustive = true` fails the gate by itself, and the `source_modules` of *both*
+  `forbidden` contracts, which have no `exhaustive` option and so leave an unnamed module
+  silently uncovered. The layer order lives in `[tool.importlinter]`; read it there.
+- **Every refusal is a plain-string `detail`, and the module raising it knows no status
+  code.** `ConversionError`, `DateRangeError` and `AggregationError` each become a 422 in a
+  `create_app()` handler, as the repository errors become 503s, which is why the query
+  parameters are typed `str` rather than `date` or `Literal`: a parameter FastAPI itself
+  refuses answers with a list of errors instead. Only the 422 handlers read their
+  exception, the message being about the client's own input.
+- **`db.py` holds `Base` and nothing else.** A shared `DeclarativeBase` in its own module
+  is what lets a second repository arrive without importing the first, which the `|`
+  between siblings forbids. A new model goes in the repository module that reads it. Pinned
+  by the layers contract.
+- **Every repository subclasses its ABC and carries `@override`**, the two fakes in
+  `tests/conftest.py` included, because `dependency_overrides` is an untyped dict that
+  would accept a look-alike matching the shape without inheriting. Keep `@abstractmethod`
+  and its same-line `...`: without it an empty subclass passes. Pinned by the `ABC`, and by
+  ruff's `B027` and `B024`.
 
 ## The loaders
 
 - **The two loaders differ on reloading, and that difference is the design.**
   `expense_loader` is append-only: the `loaded_expense_file` ledger skips a file whose
-  sha256 matches and *refuses* one that changed, because two identical expense lines are
-  two real purchases and nothing in a row says whether it has been loaded before.
-  `currency_loader` has no ledger and replaces the whole `currency_rate` table on every
-  run, because a rate for a pair is a current fact rather than an event - so editing
-  `data/currencies/rates.tsv` and reloading is the supported workflow, not the refused one.
-  It parses every file before it deletes anything, so a typo leaves the loaded rates
-  untouched, and the delete and the insert share one transaction. Pinned by
-  `test_an_edited_rate_replaces_the_old_one` and
-  `test_a_bad_file_leaves_the_loaded_rates_intact`.
+  sha256 matches and *refuses* one that changed, two identical expense lines being two real
+  purchases. `currency_loader` has no ledger and replaces the whole `currency_rate` table
+  every run, a rate being a current fact rather than an event, so editing `rates.tsv` and
+  reloading is supported. It parses every file before deleting anything, in one
+  transaction. Pinned by `test_an_edited_rate_replaces_the_old_one`.
 
 ## Conversion
 
-- **`?currency=` converts in `conversion.py`, and refuses rather than approximates.** The
-  module is pure - it takes `ExpenseRecord`s and `CurrencyRateRecord`s and returns
-  `ExpenseRecord`s, so `amount` and `currency` are replaced in place and the payload shape
-  is the same with the parameter as without it. That is what keeps the payload half of the
-  frontend out of this: the `Expense` interface and its guard are untouched, and only the
-  request URL and the query key gained the parameter.
-- **Four refusals are the design, not gaps to fill in later.** A rate is used **only** in
-  the direction `data/currencies/rates.tsv` states it, never inverted and never composed
-  through a third currency. A pair loaded twice is refused rather than picked between, and
-  only when that pair is needed, so an unrelated duplicate refuses nothing. One
-  unconvertible expense refuses the **whole** request, because a list mixing converted and
-  unconverted amounts is a column nobody can add up. A code that is not `\A[A-Z]{3}\Z` is
-  refused rather than uppercased, matching the loaders.
-- **The identity is the one thing it does not refuse:** `record.currency == target`
-  returns the record before any lookup, which is why no `DKK DKK 1.000000` row exists.
-- **Arithmetic is `Decimal` throughout**, `quantize(Decimal("0.01"),
-  rounding=ROUND_HALF_UP)` - spelled out because `Decimal` rounds half to **even** by
-  default.
-- **`ConversionError` is the repositories' pattern reused:** the module knows no status
-  code, and the handler in `create_app()` is the only place it becomes a 422. That handler
-  reads its exception, unlike the two 503s, because the message is about the client's own
-  input and names nothing of the database.
-- **`conversion.py` took a layer of its own.** It imports both repository modules, so it
-  sits over them, and the entry points may import it, so it sits under them; a `|` sibling
-  of `deps` could be neither.
+- **`?currency=` converts in `conversion.py`, and four refusals are the design, not gaps to
+  fill in later.** A rate is used **only** in the direction `rates.tsv` states it, never
+  inverted, never composed through a third currency. A pair loaded twice is refused rather
+  than picked between, and only when needed. One unconvertible expense refuses the
+  **whole** request: a list mixing converted and unconverted amounts is a column nobody can
+  add up. A code that is not `\A[A-Z]{3}\Z` is refused rather than uppercased. Pinned by
+  the refusal tests in `test_conversion.py`.
+- **The identity is the one thing it does not refuse:** `record.currency == target` returns
+  the record before any lookup, which is why no `DKK DKK 1.000000` row exists. Pinned by
+  `test_an_expense_already_in_the_target_currency_is_untouched`.
+- **Arithmetic is `Decimal` throughout**,
+  `quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)` - spelled out because `Decimal`
+  rounds half to **even** by default. Pinned by
+  `test_a_half_cent_rounds_up_rather_than_to_even`.
 
 ## Aggregation
 
 - **`GET /api/expenses/totals` sums the rows `/api/expenses` lists**, grouped by
-  `(period, currency, category)`. It takes `?currency=`, `?from_date=` and `?to_date=` on
-  exactly the terms that endpoint does, and reuses the same `parse_date_range`,
-  `validate_currency_code` and `convert_expenses`. It adds **no repository method**:
-  `list_expenses` is what it reads, so the two fakes in `tests/conftest.py` are untouched
-  and the whole grouping rule is pinned by the HTTP suite without a database.
-- **The conversion runs before the summing, and the order is the point.**
-  `convert_expenses` quantizes every record to cents, so converting and then adding is
-  not the arithmetic that adding and then converting would do - the two differ by cents.
-  Only the first makes a total equal what a reader adds up from
-  `/api/expenses?currency=EUR` for the same filter. That is what puts the summing in
-  Python rather than in a SQL `GROUP BY`, which can only do the second. Pinned by
-  `test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows`.
-- **`currency` is in the group key whatever was asked for**, because DKK added to EUR is
-  a number that means nothing - the error `conversion.py` exists to refuse. Under
-  `?currency=` every record already carries the target code, so the key collapses on its
-  own and no branch says so. Pinned by
+  `(period, currency, category)` - `currency` stays in the key whatever was asked for,
+  because DKK added to EUR means nothing - and takes the same three query parameters. It
+  adds **no repository method** - `list_expenses` is what it reads, so the fakes are
+  untouched and the grouping needs no database. Pinned by
   `test_two_currencies_in_one_month_stay_two_totals`.
+- **The conversion runs before the summing, and the order is the point.**
+  `convert_expenses` quantizes to cents, so converting then adding differs by cents from
+  adding then converting, and only the first makes a total equal what a reader adds up from
+  `/api/expenses?currency=EUR`. That is what puts the summing in Python rather than a SQL
+  `GROUP BY`. Pinned by `test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows`.
 - **`period`, `from_date` and `to_date` are on every row; `amount`, `currency` and
-  `category` are there only when they have a value.** Never `null`, never `""` - the
-  route dumps with **`exclude_none=True`**, and that one argument is the whole rule.
-  Not `exclude_unset`: `_total_payload` sets all six fields, so it would drop nothing
-  and say nothing about it. That is why there is one payload model with three optional
-  fields rather than the two it started as - a subclass adds no enforceable field once
-  `category` can be absent. Pinned by
-  `test_totals_drop_the_category_key_when_it_was_not_grouped_by` and
-  `test_a_period_with_no_expenses_carries_only_its_span`, both reading the body as plain
-  dicts: the optional fields make the model accept a row missing all three, and pydantic
-  ignoring extra fields makes it accept one carrying all three, so parsing proves
-  nothing about a key's presence in either direction.
-- **`?group_by=category` is what puts `category` in the key**, and without it the field
-  is absent for the reason above - `""` is what `schema.sql` forbids anyway.
-- **The response is a dense calendar: one row for every period from the newest matching
-  expense to the oldest**, whether or not anything was spent in it. A period nobody
-  spent in carries its span and nothing else, and **absent is not `0.00`** - a month of
-  refunds can genuinely net to zero, and conflating the two would lose that. The extent
-  is `min` and `max` over the records `list_expenses` returned, not the ends of the
-  sequence, so this module relies on no ordering of the repository's - and it is still
-  **no second query and no repository method**. No matching rows is no extent, which is
-  how `200 []` survives a requested range as well as an empty table. Pinned by
-  `test_a_month_nobody_spent_in_is_still_a_row` and
-  `test_a_range_the_expenses_fall_outside_totals_to_an_empty_list`.
-- **A requested bound narrows a period only when it falls inside it**, so the outer
-  periods are partial and every one between them is whole. An absent or over-wide bound
-  narrows nothing, which is what keeps an explicit `?from_date=2026-01-01` honoured as
-  the 1st even when nothing was spent until the 7th: the span states what was asked for,
-  not what happened to be there. The "only when inside" test is load-bearing rather than
-  an optimisation of an intersection - the fake in `tests/conftest.py` filters nothing,
-  so it *can* hand a March period a January range, and a plain `max`/`min` would end the
-  span before it began. `_clamp`'s second test reads the start the first may already
-  have moved, for the same reason. Pinned by
+  `category` only when they have a value** - never `null`, never `""`. `exclude_none=True`
+  on the route dump is the whole rule, not `exclude_unset` - `_total_payload` sets all six
+  fields. `?group_by=category` is what puts `category` in the key, and takes one value.
+  Pinned by `test_totals_drop_the_category_key_when_it_was_not_grouped_by` and its
+  neighbours, read as plain dicts because parsing proves nothing about a key's presence.
+- **The response is a dense calendar: one row per period from the newest matching expense
+  to the oldest**, spent in or not, and **absent is not `0.00`** - a month of refunds can
+  net to zero. The extent is `min`/`max` over the records returned, so it relies on no
+  ordering of the repository's. **Dense in periods only**: a date range has a defined
+  universe of periods and categories do not. Pinned by
+  `test_a_month_nobody_spent_in_is_still_a_row`.
+- **A requested bound narrows a period only when it falls inside it**, which keeps
+  `?from_date=2026-01-01` honoured as the 1st even when nothing was spent until the 7th.
+  Load-bearing rather than an optimisation of an intersection: the fake filters nothing, so
+  it *can* hand a March period a January range, and a plain `max`/`min` would end the span
+  before it began. A period's `to_date` is inclusive, from `calendar.monthrange`. Pinned by
   `test_a_range_that_cannot_touch_a_period_leaves_it_whole` and
-  `test_the_query_bounds_narrow_only_the_periods_they_fall_inside`.
-- **`to_date` is inclusive**, so January ends on the 31st. Same semantics as `?to_date=`,
-  which is the reason the two response fields carry the query parameters' names. The
-  last day comes from `calendar.monthrange`, pinned by
   `test_a_leap_february_ends_on_the_twenty_ninth`.
-- **The grid is dense in periods only.** Within a period, only the currencies and
-  categories that actually had spending. A date range has a defined universe of periods;
-  categories do not - one exists only because some row used it, so zero-filling them
-  would report an accident of the filter as a fact about the data.
-- **`period` stays beside the two dates although it is `from_date[:7]` at this grain.**
-  It names which month a clamped row belongs to, and it is what a grain that is not
-  calendar-aligned would have no other way to say.
-- **`?period=` is required and refuses rather than defaulting.** A grain nobody chose is
-  an assumption inside a sum. It is typed `str | None = None` like every other parameter
-  here, because a parameter FastAPI itself refuses answers with a list of errors instead
-  of the plain-string `detail`; `AggregationError` and its handler in `create_app()` are
-  the repositories' pattern reused, and 422 for the same reason `ConversionError` is.
-  `month` is the only grain today and `?period=year` refuses until someone adds it - one
-  enum member and the three `match` arms that name the grain (`_period_key`,
-  `_period_keys`, `_period_bounds`), with no rename anywhere, which is why the payload
-  field is the grain-neutral `period` and its value is `"2026-08"`.
-- **`?group_by=` takes one value**, and a list or an unknown dimension is refused rather
-  than parsed. Accepting a list later widens nothing a client relies on.
-- **Rows come back newest period first, then category, then currency** - exactly the
-  group key, so the order is total and needs no tiebreak. Only the rows *within* a
-  period are sorted: walking the calendar newest-first is what orders the periods, so
-  there is no second pass and no `reverse=True` on a tuple key, which would have
-  reversed the category and currency components too.
-- **`schema.sql` did not change and gained no index.** Every row in range is read and
-  summed in Python, so a grouping index would serve no query - the reasoning the date
-  range already used, and it avoids a `backend-db-reset` for nothing.
-- **`aggregation.py` is a `|` sibling of `conversion`.** It imports `ExpenseRecord` from
-  the layer below and `DateRange` from below that, and neither sibling imports the other.
-  Like every new module it goes in three lists, not one.
+- **`?period=` is required and refuses rather than defaulting**, because a grain nobody
+  chose is an assumption inside a sum. `month` is the only grain, which is why the payload
+  field is the grain-neutral `period`. Pinned by `test_a_total_without_a_period_is_refused`
+  and its unknown-grain twin.
 
 ## The date range
 
-- **`?from_date=` and `?to_date=` filter in SQL, not in the route.** The `DateRange`
-  goes to `PostgresExpenseRepository.list_expenses`, which adds one `>=` and one `<=`
-  clause and only for the bounds that are set. Both ends are **inclusive** and each is
-  open on its own; `None` is what adds no clause, which is why an absent parameter and
-  an empty one are not the same request. A range holding no rows is 200 `[]`, the
-  empty-table invariant again. Pinned by the four range tests in
-  `test_expense_postgres.py`.
+- **`?from_date=` and `?to_date=` filter in SQL, not in the route.** The `DateRange` goes
+  to `list_expenses`, which adds one `>=` and one `<=` clause and only for the bounds that
+  are set. Both ends are **inclusive** and each is open on its own; `None` adds no clause,
+  so an absent parameter and an empty one are not the same request. Pinned by the four
+  range tests in `test_expense_postgres.py`.
 - **`DateRange` validates in `__post_init__`, so the repository does not.** The frozen
-  dataclass refuses `start > end` at **every** construction, not only the parsed one,
-  which is what lets `list_expenses` take the type and stop trusting its caller to have
-  checked. `list_expenses` therefore compares nothing and only reads the two fields;
-  putting the check back there would give one rule two homes. `UNBOUNDED` is the default
-  and means every expense there is. Pinned by
-  `test_the_type_refuses_an_inverted_range_however_it_is_built`.
-- **The fake in `tests/conftest.py` records the range and filters nothing**, appending
-  each `DateRange` to the `requested_ranges` fixture. A fake that filtered would hide a
-  repository that stopped filtering, exactly as a fake that sorted would hide a route
-  that re-sorted, so the `WHERE` clause is pinned behind the `postgres` marker and the
-  HTTP suite pins only what the route owes it: one parsed `DateRange`.
-- **The query parameters are `str`, not `datetime.date`.** A `date` annotation hands the
-  refusal to FastAPI, whose body is a list of errors; `date_range.py` raising
-  `DateRangeError` keeps the plain-string `detail` that `ConversionError` and the two
-  503s already send. One endpoint, one error shape. The two refusal messages name
-  `from_date` and `to_date` - query-parameter vocabulary reaching a type the repository
-  also builds, which is the price of one wording for one rule.
-- **`\A\d{4}-\d{2}-\d{2}\Z` is the accepted form, and the only one.**
-  `date.fromisoformat` also takes `20260102` and `2026-W01-1`, which this API never
-  sends; the regex refuses them before it parses, matching `validate_currency_code`
-  refusing a lowercase code rather than uppercasing it. Both bounds are read before
-  either is compared, so a value that cannot be read is refused as itself.
-- **`date_range.py` sits below the repositories because it defines what they are
-  asked**, not because it happens to import nothing. Below the repository layer is what
-  a query needs in order to be asked - `DateRange`, and `config`'s DSN - and above it is
-  what is done with the answer, which is where `conversion.py` sits and has to, since it
-  imports both record types. `expense_repository` importing `DateRange` is what makes
-  that placement enforced rather than conventional: move `date_range` up and
-  `lint-imports` names the edge and fails. **The argument types stay stdlib** - the
-  bounds are `datetime.date` - because a `DateRange` field typed by a repository would
-  drag the module above the layer its role belongs in.
-- **`schema.sql` did not change.** `expense_newest_first_idx` on
-  `(expense_date DESC, id DESC)` already serves a range predicate on `expense_date`
-  together with the endpoint's ordering, and an index added for this would have meant a
-  `backend-db-reset` for nothing.
+  dataclass refuses `start > end` at **every** construction, which lets `list_expenses`
+  take the type and stop trusting its caller; checking again there would give one rule two
+  homes. Pinned by `test_the_type_refuses_an_inverted_range_however_it_is_built`.
+- **`\A\d{4}-\d{2}-\d{2}\Z` is the accepted form, and the only one.** `date.fromisoformat`
+  also takes `20260102` and `2026-W01-1`, which this API never sends, so the regex refuses
+  them before parsing, as `validate_currency_code` refuses a lowercase code rather than
+  uppercasing it. Both bounds are read before either is compared, so an unreadable value is
+  refused as itself. Pinned by
+  `test_a_malformed_bound_is_refused_before_the_two_are_compared`.
 
 ## Database and configuration
 
-- **The HTTP suite never touches PostgreSQL.** `tests/conftest.py` overrides the
-  `provide_expense_repository` and `provide_currency_repository` dependencies with fake
-  repositories; only `test_expense_postgres.py` and `test_currency_postgres.py`, behind the
-  registered `postgres` marker, connect. A new test that hits an endpoint takes the
-  `client` fixture. Those modules skip when no server answers and **fail** under `CI=true`,
-  so a database that did not come up cannot go green. They TRUNCATE the tables they read
-  before and after every test, so running the suite empties a developer's loaded data -
-  `pixi run backend-load-expenses` and `pixi run backend-load-currencies` put it back.
+- **The HTTP suite never touches PostgreSQL.** `tests/conftest.py` overrides both
+  repository dependencies with fakes; only the two `*_postgres.py` modules, behind the
+  registered `postgres` marker, connect, and a new test that hits an endpoint takes the
+  `client` fixture. They skip when no server answers and **fail** under `CI=true`, so a
+  database that did not come up cannot go green. They TRUNCATE what they read, so the suite
+  empties a developer's loaded data and the loaders put it back.
 - **`schema.sql` is the only DDL.** No Alembic, no `Base.metadata.create_all`, and every
-  statement in it stays idempotent because `db-init` re-runs against live clusters. The
-  loader issues DML only. New tables use `GENERATED ALWAYS AS IDENTITY`, not
-  `serial`/`bigserial`, which PostgreSQL's own "Don't Do This" page advises against for new
-  applications. `IF NOT EXISTS` adds what is missing but never renames or alters, so a
-  change to an existing table means `backend-db-reset` and a reload, not another `db-init`.
+  statement stays idempotent because `db-init` re-runs against live clusters. New tables
+  use `GENERATED ALWAYS AS IDENTITY`, not `serial`, and `IF NOT EXISTS` never alters, so
+  changing a table means `backend-db-reset` and a reload. Nothing checks this.
 - **The app reads the environment; loading `.env` is a launcher's job.** `config.py` opens
-  no file and resolves no path - no `__file__`, no `env_file=`, no `parents[N]`.
-  Reintroducing dotenv reading into the package is the specific regression this rule exists
-  to prevent: a wheel-installed package has no project directory to derive a path from, so
-  the code either finds nothing or finds a developer's settings, depending on how it
-  happened to be installed. direnv is the one launcher that puts those names there. There
-  is **no `.env.local` layer** - one file, loaded once - and a dotenv **overwrites** the
-  ambient environment, so `export PGPORT=...` is not an override; moving the cluster off a
-  taken port means editing `.env` and rebuilding. `[tool.poe]` declares **no `envfile`**,
-  and adding one back would be a second loader for one file.
+  no file and resolves no path: no `__file__`, no `env_file=`, no `parents[N]`.
+  Reintroducing dotenv reading is the regression this prevents: a wheel-installed package
+  has no project directory to derive a path from. There is **no `.env.local` layer**, a
+  dotenv **overwrites** the environment so `export PGPORT=...` is not an override, and
+  `[tool.poe]` declares **no `envfile`**. Pinned by
+  `test_missing_database_settings_are_refused_at_startup`.
 - **CI is a cross-repo dependency, and that is the price of the single loader.**
-  `setup-direnv` activates `.envrc` and then forwards the resulting environment to
-  `$GITHUB_ENV`; that forwarding arrived in **v1.4.1**, and the pin in `ci.yml` is what
-  every later `pixi run` depends on for those names. A `PGPORT` failure in CI means
-  checking that pin first, before anything in this repo.
-- **`.env` is the single source of the connection settings.** `PGHOST`, `PGPORT`, `PGUSER`
-  and `PGDATABASE` live there and nowhere else - `pixi.toml` declares no
-  `[activation.env]`, and that absence is deliberate rather than an omission. **The DSN is
-  stored nowhere**: `DatabaseSettings.dsn` builds it with `sqlalchemy.URL`, which stops the
-  port being written into a URL string a second time and escapes parts containing `@`, `:`
-  or `/`. `DATABASE_URL` overrides the four wholesale. Do not reintroduce a literal DSN in
-  any manifest, and do not go back to f-string interpolation.
+  `setup-direnv` activates `.envrc` and forwards the result to `$GITHUB_ENV`, which every
+  later `pixi run` depends on. A `PGPORT` failure in CI means checking that pin in
+  `.github/workflows/ci.yml` first, before anything in this repo.
+- **`.env` is the single source of the connection settings**, and `pixi.toml` declares no
+  `[activation.env]` by design. **The DSN is stored nowhere**: `DatabaseSettings.dsn`
+  builds it with `sqlalchemy.URL`, which stops the port being written into a URL string
+  twice and escapes parts containing `@`, `:` or `/`. `DATABASE_URL` overrides the four
+  wholesale. Do not reintroduce a literal DSN, or f-string interpolation.
 - **`database_url()` returns a `URL`, not a `str`.** `str()` and `repr()` of it redact the
-  password as `***`, which is what stops a deployment credential reaching a log or a
-  traceback; a `str` return would silently give that up. `create_async_engine` and
-  `load_directory` both take the `URL` unchanged.
+  password as `***`, which stops a deployment credential reaching a log or a traceback; a
+  `str` return would silently give that up. Nothing checks this.
 - **The dev server's port is `UVICORN_PORT` in `.env`, and `dev` passes no `--port`.**
-  uvicorn's CLI is a click command carrying
-  `context_settings={"auto_envvar_prefix": "UVICORN"}`, so uvicorn itself resolves `--port`
-  from that name - the same shape as `PGHOST` and `psql`, which is the whole reason the
-  port belongs in that file rather than in a flag. It is not a connection setting:
-  `DatabaseSettings` never sees it and `DATABASE_URL` has nothing to do with it. It also
-  takes **no `${UVICORN_PORT:?}` guard**, unlike the db tasks: a lost name makes uvicorn
-  *bind* 8000 rather than silently *reach* the wrong server, and `dev` aborts on the
-  `${PGPORT:?}` in the `db-init` behind it before uvicorn is ever reached.
+  uvicorn's CLI carries `auto_envvar_prefix="UVICORN"`, so uvicorn resolves the flag
+  itself. It takes **no `${UVICORN_PORT:?}` guard**, unlike the db tasks, because a lost
+  name makes uvicorn *bind* 8000 rather than silently *reach* the wrong server. Pinned by
+  `test_a_non_numeric_port_is_refused`.
 - **Nothing here falls back to port 5432.** `config.py` refuses to start without its
   settings (`_needs_a_source`), and `db-create` and `db-init` open with a
-  `: "${PGPORT:?...}"` guard for the same reason: initdb, psql and createdb each default to
-  5432 and the OS username on their own, so a task that lost the four names would reach
-  whatever cluster answers there - applying `schema.sql` to it and reporting success -
-  instead of failing. Any new task that reaches a server without passing `--port`
-  explicitly takes the guard too. The `pg_ctl` tasks do not need it: the port is baked into
-  `.pgdata/postgresql.conf` by `db-create`, not passed at launch.
-- **`prod` installs the app as a wheel; only `default` installs it editable.** The two
-  `[feature.*.pypi-dependencies]` blocks in `pixi.toml` are why `[dependencies]` holds
-  runtime *libraries* and not the app. An editable install is a redirect to `src`, so it
-  ships the source tree, `tests/` and `data/` and pins a container to a directory layout
-  rather than an artifact. **No correctness property rests on this** - the app reads the
-  environment either way, so a misconfigured process refuses to start in both environments.
-  It is about shipping the right thing. Pinned by no test - `pixi run -e prod` is the
+  `: "${PGPORT:?...}"` guard: initdb, psql and createdb each default to 5432 and the OS
+  username, so a task that lost those names would reach whatever cluster answers there and
+  report success. Any new task reaching a server without an explicit `--port` takes the
+  guard too; the `pg_ctl` tasks read the port from `.pgdata/postgresql.conf`.
+- **`feature.prod` installs the app as a wheel; only `feature.dev` installs it editable.**
+  An editable install ships the source tree, `tests/` and `data/`, and pins a container to
+  a directory layout rather than an artifact. **No correctness property rests on this** -
+  the app reads the environment either way. Pinned by no test; `pixi run -e prod` is the
   check, described in [`README.md`](../README.md#environments).
 
 ## Quality gates
 
-- **basedpyright in `recommended` mode and ruff** with
-  `select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]`, both in `pyproject.toml`. There is
-  no config file at the repo root and no Python setting duplicated in the editor config.
-  `recommended` sets `failOnWarnings`, so a warning fails the build like an error.
-- **Module layering is import-linter**, `[tool.importlinter]` in the same file, run by
-  `pixi run backend-lint` as the second half of that task. Imports are just another
-  artifact to lint, so they get no gate of their own; `lint-fix` is ruff alone, because
-  where a new module belongs in the layer order is a design decision, not a mechanical
-  edit. Four contracts: the layering (`deps | currency_loader | expense_loader` above
-  `conversion` above `currency_repository | expense_repository` above `db | config`), the
-  fastapi/starlette ban on everything but `deps`, a ban on importing the package root, and
-  `acyclic_siblings` for cycles at any depth. In a layer list `|` joins siblings that may
-  **not** import each other and `:` joins siblings that **may** - the two are easy to
-  transpose and only one of them enforces anything. ruff cannot cover this: `TID251` bans a
-  name project-wide rather than per-module, and ruff builds no cross-module graph, so it
-  detects no cycles.
+- **basedpyright's `recommended` mode sets `failOnWarnings`**, which is what makes a
+  warning fail the build like an error. It and ruff are configured in `pyproject.toml` and
+  nowhere else.
+- **Module layering is import-linter**, run by `backend-lint` as the second half of that
+  task; `lint-fix` is ruff alone, because where a new module belongs in the layer order is
+  a design decision, not a mechanical edit. In a layer list `|` joins siblings that may
+  **not** import each other and `:` joins siblings that **may** - easy to transpose, and
+  only one enforces anything. ruff builds no cross-module graph.
