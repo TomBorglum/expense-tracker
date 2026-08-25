@@ -138,6 +138,59 @@ def empty_expenses_client(app: FastAPI) -> TestClient:
 
 
 @pytest.fixture
+def same_period_expenses_client(app: FastAPI) -> TestClient:
+    """Expenses that share a month, so a route that grouped nothing is visible.
+
+    The expense_records fixture holds one row per month, where a total and a
+    pass-through look identical. Two rows share March and a category, a third shares
+    March in another currency, and a fourth falls in February.
+    """
+    app.dependency_overrides[provide_expense_repository] = lambda: (
+        _FakeExpenseRepository(
+            [
+                ExpenseRecord(
+                    Decimal("100.00"), "DKK", datetime.date(2026, 3, 4), "Housing", ""
+                ),
+                ExpenseRecord(
+                    Decimal("25.50"), "DKK", datetime.date(2026, 3, 9), "Housing", ""
+                ),
+                ExpenseRecord(
+                    Decimal("10.00"), "EUR", datetime.date(2026, 3, 9), "Housing", ""
+                ),
+                ExpenseRecord(
+                    Decimal("7.25"), "DKK", datetime.date(2026, 2, 28), "Food", ""
+                ),
+            ],
+            [],
+        )
+    )
+    return TestClient(app)
+
+
+@pytest.fixture
+def gapped_expenses_client(app: FastAPI) -> TestClient:
+    """January and March with nothing in February, so the gap has to be filled in.
+
+    A period nobody spent in reaches the HTTP suite no other way: every other fixture
+    holds a contiguous run of months.
+    """
+    app.dependency_overrides[provide_expense_repository] = lambda: (
+        _FakeExpenseRepository(
+            [
+                ExpenseRecord(
+                    Decimal("300.00"), "DKK", datetime.date(2026, 3, 20), "Housing", ""
+                ),
+                ExpenseRecord(
+                    Decimal("100.00"), "DKK", datetime.date(2026, 1, 5), "Housing", ""
+                ),
+            ],
+            [],
+        )
+    )
+    return TestClient(app)
+
+
+@pytest.fixture
 def empty_currencies_client(app: FastAPI) -> TestClient:
     """The rates half of the same asymmetry: nothing loaded is still a 200."""
     app.dependency_overrides[provide_currency_repository] = lambda: (
