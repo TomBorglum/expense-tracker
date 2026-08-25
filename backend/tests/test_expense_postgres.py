@@ -20,7 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from starlette.testclient import TestClient
 
-from expense_tracker import CategoryTotalPayload, ExpensePayload, create_app
+from expense_tracker import ExpensePayload, PeriodTotalPayload, create_app
 from expense_tracker.config import database_url
 from expense_tracker.expense_loader import ExpenseFileError, load_directory, main
 from expense_tracker.expense_repository import Expense, LoadedExpenseFile
@@ -33,7 +33,7 @@ _DATA = Path(__file__).resolve().parents[1] / "data" / "expenses"
 _HEADER = "Amount\tCurrency\tDate\tCategory\tDetails\n"
 
 _EXPENSES = TypeAdapter(list[ExpensePayload])
-_CATEGORY_TOTALS = TypeAdapter(list[CategoryTotalPayload])
+_TOTALS = TypeAdapter(list[PeriodTotalPayload])
 
 
 async def _truncate() -> None:
@@ -335,13 +335,23 @@ def test_totals_group_the_loaded_expenses_by_month(tmp_path: Path) -> None:
         )
 
     assert response.status_code == 200
-    assert _CATEGORY_TOTALS.validate_json(response.content) == [
-        CategoryTotalPayload(
-            amount="400.00", currency="DKK", period="2026-02", category="Car"
+    assert _TOTALS.validate_json(response.content) == [
+        PeriodTotalPayload(
+            period="2026-02",
+            from_date="2026-02-01",
+            to_date="2026-02-28",
+            amount="400.00",
+            currency="DKK",
+            category="Car",
         ),
         # 100.00 + 200.00 + 300.00, the three rows on either side of mid-January.
-        CategoryTotalPayload(
-            amount="600.00", currency="DKK", period="2026-01", category="Car"
+        PeriodTotalPayload(
+            period="2026-01",
+            from_date="2026-01-01",
+            to_date="2026-01-31",
+            amount="600.00",
+            currency="DKK",
+            category="Car",
         ),
     ]
 
@@ -362,12 +372,38 @@ def test_a_date_range_narrows_what_the_totals_are_taken_over(tmp_path: Path) -> 
         )
 
     # 100.00 on 01/01 is outside the range, so January totals 500.00 and February,
-    # having no rows left, is not a period at all.
-    assert _CATEGORY_TOTALS.validate_json(response.content) == [
-        CategoryTotalPayload(
-            amount="500.00", currency="DKK", period="2026-01", category="Car"
+    # having no rows left, is not a period at all. The span states the range asked
+    # for rather than the whole month, because both bounds fall inside January.
+    assert _TOTALS.validate_json(response.content) == [
+        PeriodTotalPayload(
+            period="2026-01",
+            from_date="2026-01-02",
+            to_date="2026-01-31",
+            amount="500.00",
+            currency="DKK",
+            category="Car",
         )
     ]
+
+
+def test_a_range_the_expenses_fall_outside_totals_to_an_empty_list(
+    tmp_path: Path,
+) -> None:
+    """No rows in range is no extent, so there is no calendar of empty periods."""
+    _load_four_days(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses/totals",
+            params={
+                "period": "month",
+                "from_date": "2026-06-01",
+                "to_date": "2026-06-30",
+            },
+        )
+
+    assert response.status_code == 200
+    assert _TOTALS.validate_json(response.content) == []
 
 
 def test_main_prints_a_summary(

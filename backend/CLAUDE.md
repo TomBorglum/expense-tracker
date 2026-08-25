@@ -140,33 +140,74 @@ Break one of these and CI goes red on an otherwise correct change.
   `?currency=` every record already carries the target code, so the key collapses on its
   own and no branch says so. Pinned by
   `test_two_currencies_in_one_month_stay_two_totals`.
+- **`period`, `from_date` and `to_date` are on every row; `amount`, `currency` and
+  `category` are there only when they have a value.** Never `null`, never `""` - the
+  route dumps with **`exclude_none=True`**, and that one argument is the whole rule.
+  Not `exclude_unset`: `_total_payload` sets all six fields, so it would drop nothing
+  and say nothing about it. That is why there is one payload model with three optional
+  fields rather than the two it started as - a subclass adds no enforceable field once
+  `category` can be absent. Pinned by
+  `test_totals_drop_the_category_key_when_it_was_not_grouped_by` and
+  `test_a_period_with_no_expenses_carries_only_its_span`, both reading the body as plain
+  dicts: the optional fields make the model accept a row missing all three, and pydantic
+  ignoring extra fields makes it accept one carrying all three, so parsing proves
+  nothing about a key's presence in either direction.
 - **`?group_by=category` is what puts `category` in the key**, and without it the field
-  is **absent from the JSON object** - not `null`, not `""`, which `schema.sql` forbids
-  anyway. That is why there are two payload models rather than one with an optional
-  field: each is a fixed set of keys a client can require. Pinned by
-  `test_totals_drop_the_category_key_when_it_was_not_grouped_by`, which reads the body
-  as plain dicts - pydantic ignores extra fields, so validating it against
-  `PeriodTotalPayload` would pass with a category still in the object.
+  is absent for the reason above - `""` is what `schema.sql` forbids anyway.
+- **The response is a dense calendar: one row for every period from the newest matching
+  expense to the oldest**, whether or not anything was spent in it. A period nobody
+  spent in carries its span and nothing else, and **absent is not `0.00`** - a month of
+  refunds can genuinely net to zero, and conflating the two would lose that. The extent
+  is `min` and `max` over the records `list_expenses` returned, not the ends of the
+  sequence, so this module relies on no ordering of the repository's - and it is still
+  **no second query and no repository method**. No matching rows is no extent, which is
+  how `200 []` survives a requested range as well as an empty table. Pinned by
+  `test_a_month_nobody_spent_in_is_still_a_row` and
+  `test_a_range_the_expenses_fall_outside_totals_to_an_empty_list`.
+- **A requested bound narrows a period only when it falls inside it**, so the outer
+  periods are partial and every one between them is whole. An absent or over-wide bound
+  narrows nothing, which is what keeps an explicit `?from_date=2026-01-01` honoured as
+  the 1st even when nothing was spent until the 7th: the span states what was asked for,
+  not what happened to be there. The "only when inside" test is load-bearing rather than
+  an optimisation of an intersection - the fake in `tests/conftest.py` filters nothing,
+  so it *can* hand a March period a January range, and a plain `max`/`min` would end the
+  span before it began. `_clamp`'s second test reads the start the first may already
+  have moved, for the same reason. Pinned by
+  `test_a_range_that_cannot_touch_a_period_leaves_it_whole` and
+  `test_the_query_bounds_narrow_only_the_periods_they_fall_inside`.
+- **`to_date` is inclusive**, so January ends on the 31st. Same semantics as `?to_date=`,
+  which is the reason the two response fields carry the query parameters' names. The
+  last day comes from `calendar.monthrange`, pinned by
+  `test_a_leap_february_ends_on_the_twenty_ninth`.
+- **The grid is dense in periods only.** Within a period, only the currencies and
+  categories that actually had spending. A date range has a defined universe of periods;
+  categories do not - one exists only because some row used it, so zero-filling them
+  would report an accident of the filter as a fact about the data.
+- **`period` stays beside the two dates although it is `from_date[:7]` at this grain.**
+  It names which month a clamped row belongs to, and it is what a grain that is not
+  calendar-aligned would have no other way to say.
 - **`?period=` is required and refuses rather than defaulting.** A grain nobody chose is
   an assumption inside a sum. It is typed `str | None = None` like every other parameter
   here, because a parameter FastAPI itself refuses answers with a list of errors instead
   of the plain-string `detail`; `AggregationError` and its handler in `create_app()` are
   the repositories' pattern reused, and 422 for the same reason `ConversionError` is.
   `month` is the only grain today and `?period=year` refuses until someone adds it - one
-  enum member and one `match` arm, with no rename anywhere, which is why the payload
+  enum member and the three `match` arms that name the grain (`_period_key`,
+  `_period_keys`, `_period_bounds`), with no rename anywhere, which is why the payload
   field is the grain-neutral `period` and its value is `"2026-08"`.
 - **`?group_by=` takes one value**, and a list or an unknown dimension is refused rather
   than parsed. Accepting a list later widens nothing a client relies on.
 - **Rows come back newest period first, then category, then currency** - exactly the
-  group key, so the order is total and needs no tiebreak. It is a **stable two-pass
-  sort**, not one key: `reverse=True` on a tuple would reverse the category and currency
-  components too.
+  group key, so the order is total and needs no tiebreak. Only the rows *within* a
+  period are sorted: walking the calendar newest-first is what orders the periods, so
+  there is no second pass and no `reverse=True` on a tuple key, which would have
+  reversed the category and currency components too.
 - **`schema.sql` did not change and gained no index.** Every row in range is read and
   summed in Python, so a grouping index would serve no query - the reasoning the date
   range already used, and it avoids a `backend-db-reset` for nothing.
 - **`aggregation.py` is a `|` sibling of `conversion`.** It imports `ExpenseRecord` from
-  the layer below and neither sibling imports the other. Like every new module it goes in
-  three lists, not one.
+  the layer below and `DateRange` from below that, and neither sibling imports the other.
+  Like every new module it goes in three lists, not one.
 
 ## The date range
 

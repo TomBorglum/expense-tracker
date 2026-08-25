@@ -57,40 +57,33 @@ class CurrencyPayload(BaseModel):
 
 
 class PeriodTotalPayload(BaseModel):
-    """One total as GET /api/expenses/totals sends it.
+    """One period as GET /api/expenses/totals sends it.
 
     Every field is a string here too, amount included, for the reason ExpensePayload
-    gives. There is no category: a request that did not group by one has none to send.
+    gives, and the two dates are strings rather than dates because the route hands
+    model_dump() to JSONResponse, which cannot encode a datetime.date.
+
+    The first three are on every row. The last three are dumped with exclude_none, so
+    each is present with a value or absent altogether - never null and never "".
     """
 
-    amount: str
-    currency: str
     period: str
-
-
-class CategoryTotalPayload(PeriodTotalPayload):
-    """The same total when ?group_by=category split it, which adds the one field.
-
-    A subclass rather than an optional field, so each payload is a fixed set of keys a
-    client can require rather than one shape that is sometimes short.
-    """
-
-    category: str
+    from_date: str
+    to_date: str
+    amount: str | None = None
+    currency: str | None = None
+    category: str | None = None
 
 
 def _total_payload(total: TotalRecord) -> PeriodTotalPayload:
-    """The wider payload when the total carries a category, the narrower when not."""
-    if total.category is None:
-        return PeriodTotalPayload(
-            # str(), never float(): the summed column is numeric(12, 2).
-            amount=str(total.amount),
-            currency=total.currency,
-            period=total.period,
-        )
-    return CategoryTotalPayload(
-        amount=str(total.amount),
-        currency=total.currency,
+    """The total on the wire, with what it has no value for left as None."""
+    return PeriodTotalPayload(
         period=total.period,
+        from_date=total.from_date.isoformat(),
+        to_date=total.to_date.isoformat(),
+        # str(), never float(): the summed column is numeric(12, 2).
+        amount=None if total.amount is None else str(total.amount),
+        currency=total.currency,
         category=total.category,
     )
 
@@ -188,10 +181,13 @@ def create_app() -> FastAPI:
         # After the conversion, never before: converting each amount and then adding is
         # what makes a total equal the sum of the rows /api/expenses shows for it.
         payload = [
-            _total_payload(total) for total in aggregate(records, grain, grouping)
+            _total_payload(total)
+            for total in aggregate(records, grain, grouping, dates)
         ]
         return JSONResponse(
-            [item.model_dump() for item in payload],
+            # exclude_none, not exclude_unset: _total_payload sets all six fields, so
+            # exclude_unset would drop nothing and say nothing about it.
+            [item.model_dump(exclude_none=True) for item in payload],
             headers={"Cache-Control": "no-store"},
         )
 

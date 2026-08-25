@@ -7,7 +7,6 @@ from sqlalchemy import make_url
 from starlette.testclient import TestClient
 
 from expense_tracker import (
-    CategoryTotalPayload,
     CurrencyPayload,
     ExpensePayload,
     PeriodTotalPayload,
@@ -25,9 +24,11 @@ _ORIGIN = "http://localhost:5173"
 # response.content, which is bytes, so Response.json()'s Any never enters the picture.
 _EXPENSES = TypeAdapter(list[ExpensePayload])
 _CURRENCIES = TypeAdapter(list[CurrencyPayload])
-_PERIOD_TOTALS = TypeAdapter(list[PeriodTotalPayload])
-_CATEGORY_TOTALS = TypeAdapter(list[CategoryTotalPayload])
-# The body as plain objects, which keeps every key a payload model would drop.
+# Parses period, from_date and to_date, which every row carries. It says nothing
+# about the other three: they are optional here and pydantic ignores extra fields, so
+# the model accepts a row missing all of them and one carrying all of them alike.
+_TOTALS = TypeAdapter(list[PeriodTotalPayload])
+# The body as plain objects, which is the only way to read a key's absence.
 _RAW_ROWS = TypeAdapter(list[dict[str, str]])
 
 # What the requested_ranges fixture collects: every DateRange the route handed the
@@ -345,17 +346,48 @@ def test_totals_endpoint_returns_json(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     assert response.headers["Cache-Control"] == "no-store"
-    assert _CATEGORY_TOTALS.validate_json(response.content) == [
+    assert _TOTALS.validate_json(response.content) == [
         # 100.00 + 25.50, both DKK and both Housing, both in March.
-        CategoryTotalPayload(
-            amount="125.50", currency="DKK", period="2026-03", category="Housing"
+        PeriodTotalPayload(
+            period="2026-03",
+            from_date="2026-03-01",
+            to_date="2026-03-31",
+            amount="125.50",
+            currency="DKK",
+            category="Housing",
         ),
-        CategoryTotalPayload(
-            amount="10.00", currency="EUR", period="2026-03", category="Housing"
+        PeriodTotalPayload(
+            period="2026-03",
+            from_date="2026-03-01",
+            to_date="2026-03-31",
+            amount="10.00",
+            currency="EUR",
+            category="Housing",
         ),
-        CategoryTotalPayload(
-            amount="7.25", currency="DKK", period="2026-02", category="Food"
+        PeriodTotalPayload(
+            period="2026-02",
+            from_date="2026-02-01",
+            to_date="2026-02-28",
+            amount="7.25",
+            currency="DKK",
+            category="Food",
         ),
+    ]
+
+
+def test_every_total_carries_the_span_it_covers(
+    same_period_expenses_client: TestClient,
+) -> None:
+    """to_date is the month's last day: inclusive, like ?to_date= already is."""
+    body = _RAW_ROWS.validate_json(
+        same_period_expenses_client.get(
+            "/api/expenses/totals", params={"period": "month"}
+        ).content
+    )
+    assert [(row["period"], row["from_date"], row["to_date"]) for row in body] == [
+        ("2026-03", "2026-03-01", "2026-03-31"),
+        ("2026-03", "2026-03-01", "2026-03-31"),
+        ("2026-02", "2026-02-01", "2026-02-28"),
     ]
 
 
@@ -364,9 +396,8 @@ def test_totals_drop_the_category_key_when_it_was_not_grouped_by(
 ) -> None:
     """Absent, not null and not an empty string.
 
-    Read as plain dicts rather than through the payload models: pydantic ignores
-    extra fields, so validating against PeriodTotalPayload would pass with a category
-    still in the object.
+    Read as plain dicts rather than through the payload model: category is optional
+    there, so validating proves nothing about whether the key arrived.
     """
     response = same_period_expenses_client.get(
         "/api/expenses/totals", params={"period": "month"}
@@ -374,11 +405,53 @@ def test_totals_drop_the_category_key_when_it_was_not_grouped_by(
     assert response.status_code == 200
     body = _RAW_ROWS.validate_json(response.content)
     assert all("category" not in row for row in body)
-    assert _PERIOD_TOTALS.validate_json(response.content) == [
-        # The two Housing rows and the Food row now share a key.
-        PeriodTotalPayload(amount="125.50", currency="DKK", period="2026-03"),
-        PeriodTotalPayload(amount="10.00", currency="EUR", period="2026-03"),
-        PeriodTotalPayload(amount="7.25", currency="DKK", period="2026-02"),
+    # The two Housing rows and the Food row now share a key.
+    assert [(row["period"], row["amount"], row["currency"]) for row in body] == [
+        ("2026-03", "125.50", "DKK"),
+        ("2026-03", "10.00", "EUR"),
+        ("2026-02", "7.25", "DKK"),
+    ]
+
+
+def test_a_period_with_no_expenses_carries_only_its_span(
+    gapped_expenses_client: TestClient,
+) -> None:
+    """February holds nothing, so it sends no amount, no currency and no category.
+
+    Absent rather than 0.00, which would say the month's expenses cancelled out - a
+    thing a month of refunds can genuinely do.
+    """
+    response = gapped_expenses_client.get(
+        "/api/expenses/totals", params={"period": "month", "group_by": "category"}
+    )
+    assert response.status_code == 200
+    body = _RAW_ROWS.validate_json(response.content)
+    assert [row["period"] for row in body] == ["2026-03", "2026-02", "2026-01"]
+    assert body[1] == {
+        "period": "2026-02",
+        "from_date": "2026-02-01",
+        "to_date": "2026-02-28",
+    }
+
+
+def test_the_query_bounds_narrow_only_the_periods_they_fall_inside(
+    gapped_expenses_client: TestClient,
+) -> None:
+    """The outer periods are partial; the month between them is whole."""
+    body = _RAW_ROWS.validate_json(
+        gapped_expenses_client.get(
+            "/api/expenses/totals",
+            params={
+                "period": "month",
+                "from_date": "2026-01-12",
+                "to_date": "2026-03-14",
+            },
+        ).content
+    )
+    assert [(row["from_date"], row["to_date"]) for row in body] == [
+        ("2026-03-01", "2026-03-14"),
+        ("2026-02-01", "2026-02-28"),
+        ("2026-01-12", "2026-01-31"),
     ]
 
 
@@ -386,7 +459,7 @@ def test_total_amounts_are_strings_not_numbers(
     same_period_expenses_client: TestClient,
 ) -> None:
     """125.50 must not arrive as 125.5, the twin of the expenses assertion above."""
-    body = _PERIOD_TOTALS.validate_json(
+    body = _TOTALS.validate_json(
         same_period_expenses_client.get(
             "/api/expenses/totals", params={"period": "month"}
         ).content
@@ -397,12 +470,15 @@ def test_total_amounts_are_strings_not_numbers(
 def test_totals_are_an_empty_list_when_nothing_is_loaded(
     empty_expenses_client: TestClient,
 ) -> None:
-    """200 and [], the empty-table invariant again: nothing to total is not a fault."""
+    """200 and [], the empty-table invariant again: nothing to total is not a fault.
+
+    No expenses is also no extent, so there is no calendar of empty periods either.
+    """
     response = empty_expenses_client.get(
         "/api/expenses/totals", params={"period": "month"}
     )
     assert response.status_code == 200
-    assert _PERIOD_TOTALS.validate_json(response.content) == []
+    assert _TOTALS.validate_json(response.content) == []
 
 
 def test_totals_can_be_requested_in_another_currency(
@@ -414,13 +490,23 @@ def test_totals_can_be_requested_in_another_currency(
         params={"period": "month", "group_by": "category", "currency": "EUR"},
     )
     assert response.status_code == 200
-    assert _CATEGORY_TOTALS.validate_json(response.content) == [
+    assert _TOTALS.validate_json(response.content) == [
         # 13.40 + 3.42 from the two DKK rows, plus the 10.00 that was already EUR.
-        CategoryTotalPayload(
-            amount="26.82", currency="EUR", period="2026-03", category="Housing"
+        PeriodTotalPayload(
+            period="2026-03",
+            from_date="2026-03-01",
+            to_date="2026-03-31",
+            amount="26.82",
+            currency="EUR",
+            category="Housing",
         ),
-        CategoryTotalPayload(
-            amount="0.97", currency="EUR", period="2026-02", category="Food"
+        PeriodTotalPayload(
+            period="2026-02",
+            from_date="2026-02-01",
+            to_date="2026-02-28",
+            amount="0.97",
+            currency="EUR",
+            category="Food",
         ),
     ]
 
@@ -443,13 +529,18 @@ def test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows(
     for row in rows:
         key = (row.date[:7], row.category)
         summed[key] = summed.get(key, Decimal("0")) + Decimal(row.amount)
-    totals = _CATEGORY_TOTALS.validate_json(
+    totals = _TOTALS.validate_json(
         same_period_expenses_client.get(
             "/api/expenses/totals",
             params={"period": "month", "group_by": "category", "currency": "EUR"},
         ).content
     )
-    assert {(row.period, row.category): Decimal(row.amount) for row in totals} == summed
+    assert {
+        (row.period, row.category): Decimal(row.amount)
+        # Every period here holds expenses; a gap would carry no amount to compare.
+        for row in totals
+        if row.amount is not None and row.category is not None
+    } == summed
 
 
 def test_totals_hand_a_date_range_to_the_repository(

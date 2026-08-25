@@ -168,6 +168,29 @@ def same_period_expenses_client(app: FastAPI) -> TestClient:
 
 
 @pytest.fixture
+def gapped_expenses_client(app: FastAPI) -> TestClient:
+    """January and March with nothing in February, so the gap has to be filled in.
+
+    A period nobody spent in reaches the HTTP suite no other way: every other fixture
+    holds a contiguous run of months.
+    """
+    app.dependency_overrides[provide_expense_repository] = lambda: (
+        _FakeExpenseRepository(
+            [
+                ExpenseRecord(
+                    Decimal("300.00"), "DKK", datetime.date(2026, 3, 20), "Housing", ""
+                ),
+                ExpenseRecord(
+                    Decimal("100.00"), "DKK", datetime.date(2026, 1, 5), "Housing", ""
+                ),
+            ],
+            [],
+        )
+    )
+    return TestClient(app)
+
+
+@pytest.fixture
 def empty_currencies_client(app: FastAPI) -> TestClient:
     """The rates half of the same asymmetry: nothing loaded is still a 200."""
     app.dependency_overrides[provide_currency_repository] = lambda: (
