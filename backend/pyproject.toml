@@ -140,7 +140,7 @@ include_external_packages = true
 #
 # __init__.py is the container's own module rather than one of its children, so it is not
 # a layer and is unconstrained. The contract that stops anything importing back into it is
-# below. Why conversion takes a layer of its own is in backend/CLAUDE.md.
+# below. Where a new module belongs in this order is in backend/CLAUDE.md.
 [[tool.importlinter.contracts]]
 name = "expense_tracker layers: the entry points above persistence"
 type = "layers"
@@ -155,7 +155,7 @@ layers = [
 # So the gate covers new code by default: an unnamed module fails it.
 exhaustive = true
 
-# The "only deps.py imports fastapi" half of the invariant, which the layers contract
+# The "only the HTTP layer knows about HTTP" half of the invariant, which the layers contract
 # cannot express because fastapi is outside the root package. starlette is named too - it
 # is what an HTTPException import reaches through, and fastapi re-exports from it.
 #
