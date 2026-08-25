@@ -36,6 +36,17 @@ export function currentMonth(): { from: string; to: string } {
   };
 }
 
+// The whole calendar year the clock is in. What /totals defaults to, where a one-month
+// range would report a single period: twelve whole months, and no partial outer one for a
+// requested bound to narrow.
+export function currentYear(): { from: string; to: string } {
+  const year = new Date().getFullYear();
+  return {
+    from: toIsoDate(new Date(year, 0, 1)),
+    to: toIsoDate(new Date(year, 11, 31)),
+  };
+}
+
 // The calendar reaches back to this year, and forward to the end of the current one so
 // the rest of it stays selectable. Fixed rather than derived: nothing publishes the
 // ledger's own span, and the year dropdown has to list a finite set.
