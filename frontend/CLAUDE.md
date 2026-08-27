@@ -37,12 +37,12 @@ and prints a day early west of Greenwich, and `period` as `YYYY-MM`, so a month 
 - **The theme follows the OS, and nothing can override it.** The single `@plugin "daisyui"`
   block in `src/styles/app.css` names `nord --default` and `dim --prefersdark`. There is no
   `data-theme`, no theme provider and no `dark:` variant in `src/`; a toggle would be a
-  feature on top of the pair, not a config change. A theme paints nothing itself, so the
-  surface is `bg-base-200 text-base-content` on `<body>` in `index.html` - a body
-  background is what propagates beyond the app shell. **Every colour is referenced by
-  role**, never a hard-coded shade, which is wrong in one of the two themes rather than
-  merely awkward. Chromium's `prefers-color-scheme` emulation reaches the theme your OS is
-  not set to.
+  feature on top of the pair, not a config change. daisyUI paints `base-100` on `:root`, so
+  the surface is `bg-base-200 text-base-content` on `<html>` in `index.html` - the root
+  element's background is the one that covers the whole canvas. **Every colour is
+  referenced by role**, never a hard-coded shade, which is wrong in one of the two themes
+  rather than merely awkward. Chromium's `prefers-color-scheme` emulation reaches the
+  theme your OS is not set to.
 - **The calendar is themed by daisyUI, and `@daypicker/react/style.css` is deliberately not
   imported.** daisyUI ships a first-party theme keyed on the `react-day-picker` class,
   written in role tokens. **Importing the package's own stylesheet would silently beat

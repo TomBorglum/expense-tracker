@@ -35,6 +35,12 @@ function rowKey(total: PeriodTotal): string {
   return `${total.period} ${total.category ?? ""} ${total.currency ?? ""}`;
 }
 
+// The period's row is the group's heading. A band opens each period and the next band is
+// what ends it, so this row carries no rule of its own: daisyUI puts its border under every
+// row but a tbody's last, which is the period's total, so the only line it draws falls
+// between a period and its own subtotal.
+const PERIOD_HEADING = "border-b-0 bg-base-200";
+
 // The expenses of /api/expenses summed by month, newest first, restated in the currency
 // asked for and narrowed to the days asked for. Amounts, the period and its span are
 // rendered exactly as they arrive: the backend sends amount as a string so no float round
@@ -109,10 +115,16 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
           totals.data.map((total) => (
             <tbody key={rowKey(total)}>
               <tr>
-                <th scope="rowgroup" className="font-semibold tabular-nums">
+                <th
+                  scope="rowgroup"
+                  className={`${PERIOD_HEADING} font-semibold tabular-nums`}
+                >
                   {total.period}
                 </th>
-                <td colSpan={2} className="text-base-content/60 tabular-nums">
+                <td
+                  colSpan={2}
+                  className={`${PERIOD_HEADING} text-base-content/60 tabular-nums`}
+                >
                   {total.from_date} to {total.to_date}
                 </td>
               </tr>
