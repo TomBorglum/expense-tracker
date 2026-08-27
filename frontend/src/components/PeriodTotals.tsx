@@ -92,7 +92,17 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
     <div className="overflow-x-auto">
       {/* No table-zebra: the stripes run per row and would cut across the period groups
           rather than with them. */}
-      <table className="table">
+      <table className="table table-fixed min-w-md">
+        {/* The columns are pinned so the category toggle only adds and removes rows:
+            daisyUI leaves table-layout auto, where each view's own rows size the
+            columns and the leftover is re-spread across them, so the amounts land at a
+            different x in each. min-w-md is what the wrapper's overflow-x-auto scrolls
+            once a fixed layout has no room left to take from the first column. */}
+        <colgroup>
+          <col />
+          <col className="w-40" />
+          <col className="w-24" />
+        </colgroup>
         {/* The table's accessible name, which is how the tests reach it. Hidden from sight
             because the page already shows the same word as its heading. */}
         <caption className="sr-only">Totals</caption>
