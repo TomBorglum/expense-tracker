@@ -42,10 +42,10 @@ function rowKey(total: PeriodTotal): string {
 const PERIOD_HEADING = "border-b-0 bg-base-200";
 
 // The expenses of /api/expenses summed by month, newest first, restated in the currency
-// asked for and narrowed to the days asked for. Amounts, the period and its span are
-// rendered exactly as they arrive: the backend sends amount as a string so no float round
-// trip can drift a total by a cent, and the three dates are bare YYYY-MM(-DD), which
-// new Date() would read as UTC and print a day early west of Greenwich.
+// asked for and narrowed to the days asked for. Amounts and the bounds each period was
+// summed over are rendered exactly as they arrive: the backend sends amount as a string so
+// no float round trip can drift a total by a cent, and the two dates are bare YYYY-MM-DD,
+// which new Date() would read as UTC and print a day early west of Greenwich.
 export function PeriodTotals({ query }: PeriodTotalsProps) {
   // Destructured out rather than overwritten with undefined, so the ungrouped query key
   // holds no dead entry.
@@ -127,16 +127,11 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
               <tr>
                 <th
                   scope="rowgroup"
-                  className={`${PERIOD_HEADING} font-semibold tabular-nums`}
-                >
-                  {total.period}
-                </th>
-                <td
-                  colSpan={2}
-                  className={`${PERIOD_HEADING} text-base-content/60 tabular-nums`}
+                  colSpan={3}
+                  className={`${PERIOD_HEADING} text-left font-semibold tabular-nums`}
                 >
                   {total.from_date} to {total.to_date}
-                </td>
+                </th>
               </tr>
               {total.amount === undefined ? (
                 <tr>

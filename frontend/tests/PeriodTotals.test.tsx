@@ -56,11 +56,11 @@ test("renders a section per period, newest first, each carrying its span", async
   renderPeriodTotals();
   await screen.findByRole("table", { name: "Totals" });
   expect(rowTexts()).toEqual([
-    ["2001-03", "2001-03-01 to 2001-03-31"],
+    ["2001-03-01 to 2001-03-31"],
     ["Total", "30.00", "EUR"],
-    ["2001-02", "2001-02-01 to 2001-02-28"],
+    ["2001-02-01 to 2001-02-28"],
     ["None recorded"],
-    ["2001-01", "2001-01-01 to 2001-01-31"],
+    ["2001-01-01 to 2001-01-31"],
     ["Total", "11.00", "EUR"],
   ]);
 });
@@ -71,13 +71,13 @@ test("adds a line per category when the grouping was asked for", async () => {
   // The categories arrive in the order the backend sorted them and are not reordered
   // here, and each period still ends with the subtotal.
   expect(rowTexts()).toEqual([
-    ["2001-03", "2001-03-01 to 2001-03-31"],
+    ["2001-03-01 to 2001-03-31"],
     ["Stub category", "12.50", "EUR"],
     ["Other stub category", "17.50", "EUR"],
     ["Total", "30.00", "EUR"],
-    ["2001-02", "2001-02-01 to 2001-02-28"],
+    ["2001-02-01 to 2001-02-28"],
     ["None recorded"],
-    ["2001-01", "2001-01-01 to 2001-01-31"],
+    ["2001-01-01 to 2001-01-31"],
     ["Stub category", "11.00", "EUR"],
     ["Total", "11.00", "EUR"],
   ]);
@@ -93,11 +93,11 @@ test("drops the category lines when the grouping is switched off", async () => {
   // No await: the grouped render waited on both requests, and the ungrouped one is keyed
   // on a range that did not change, so this render is a cache hit and is synchronous.
   expect(rowTexts()).toEqual([
-    ["2001-03", "2001-03-01 to 2001-03-31"],
+    ["2001-03-01 to 2001-03-31"],
     ["Total", "30.00", "EUR"],
-    ["2001-02", "2001-02-01 to 2001-02-28"],
+    ["2001-02-01 to 2001-02-28"],
     ["None recorded"],
-    ["2001-01", "2001-01-01 to 2001-01-31"],
+    ["2001-01-01 to 2001-01-31"],
     ["Total", "11.00", "EUR"],
   ]);
 });
@@ -118,7 +118,7 @@ test("takes the subtotal from the ungrouped request rather than adding the lines
   renderPeriodTotals(GROUPED);
   await screen.findByRole("table", { name: "Totals" });
   expect(rowTexts()).toEqual([
-    ["2001-03", "2001-03-01 to 2001-03-31"],
+    ["2001-03-01 to 2001-03-31"],
     ["Stub category", "12.50", "EUR"],
     ["Other stub category", "17.50", "EUR"],
     ["Total", "999.99", "EUR"],
@@ -138,10 +138,7 @@ test("says a period holds nothing rather than showing it as zero", async () => {
   );
   renderPeriodTotals();
   await screen.findByRole("table", { name: "Totals" });
-  expect(rowTexts()).toEqual([
-    ["2001-02", "2001-02-01 to 2001-02-28"],
-    ["None recorded"],
-  ]);
+  expect(rowTexts()).toEqual([["2001-02-01 to 2001-02-28"], ["None recorded"]]);
 });
 
 test("shows a status while the request is in flight", () => {

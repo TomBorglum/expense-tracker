@@ -11,9 +11,9 @@ construction.
 - **Both tables render every amount and date verbatim.** No `Intl.NumberFormat`, no
   `new Date()`. The backend sends `amount` as `str(Decimal)` so no float round trip can
   drift a total by a cent, its dates as bare `YYYY-MM-DD`, which `new Date()` reads as UTC
-and prints a day early west of Greenwich, and `period` as `YYYY-MM`, so a month heads
-  its section `2026-12` and never "December". Both guards reject a numeric amount.
-  Pinned by "shows an alert when an amount arrives as a number", in each file.
+  and prints a day early west of Greenwich. A period is headed by those bounds,
+  `2026-12-01 to 2026-12-31`, never by its `YYYY-MM` label. Both guards reject a numeric
+  amount. Pinned by "shows an alert when an amount arrives as a number", in each file.
 - **A `Date` is never built from a string and never named through UTC.** The picker deals
   in `Date` objects and the API in bare `YYYY-MM-DD`, so `src/dates.ts` is the one crossing
   point, built from `getFullYear`/`getMonth`/`getDate`. **No code in `src/` calls
