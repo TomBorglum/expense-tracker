@@ -35,11 +35,12 @@ function rowKey(total: PeriodTotal): string {
   return `${total.period} ${total.category ?? ""} ${total.currency ?? ""}`;
 }
 
-// The period's row is the group's heading. A band opens each period and the next band is
-// what ends it, so this row carries no rule of its own: daisyUI puts its border under every
-// row but a tbody's last, which is the period's total, so the only line it draws falls
-// between a period and its own subtotal.
-const PERIOD_HEADING = "border-b-0 bg-base-200";
+// The period's row is the group's heading and carries the period's own total. The rule
+// between two periods is drawn above a band rather than under it: daisyUI puts its border
+// under every row but a tbody's last, and ungrouped the band is that last row, so nothing
+// would separate one band from the next. border-b-0 drops the one border daisyUI does
+// reach, between a band and the first category listed under it.
+const PERIOD_BAND = "border-b-0 bg-base-200";
 
 // The expenses of /api/expenses summed by month, newest first, restated in the currency
 // asked for and narrowed to the days asked for. Amounts and the bounds each period was
@@ -106,10 +107,10 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
         {/* The table's accessible name, which is how the tests reach it. Hidden from sight
             because the page already shows the same word as its heading. */}
         <caption className="sr-only">Totals</caption>
-        {/* No thead: the first column holds a category on some rows and the word Total on
-            others, and in the ungrouped view holds no category at all, so no column header
-            is true for every row. The rowgroup and row headers below are what give each
-            amount its association. */}
+        {/* No thead: the first column holds a period's bounds on the band rows and a
+            category on the lines under them, so no column header is true for every row.
+            The rowgroup and row headers below are what give each amount its
+            association. */}
         {totals.data.length === 0 ? (
           <tbody>
             <tr>
@@ -122,49 +123,48 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
             </tr>
           </tbody>
         ) : (
-          totals.data.map((total) => (
-            <tbody key={rowKey(total)}>
-              <tr>
-                <th
-                  scope="rowgroup"
-                  colSpan={3}
-                  className={`${PERIOD_HEADING} text-left font-semibold tabular-nums`}
-                >
-                  {total.from_date} to {total.to_date}
-                </th>
-              </tr>
-              {total.amount === undefined ? (
+          totals.data.map((total, index) => {
+            const band =
+              index === 0 ? PERIOD_BAND : `${PERIOD_BAND} border-t border-t-base-300`;
+            return (
+              <tbody key={rowKey(total)}>
                 <tr>
-                  {/* Absent, not "0.00": a month of refunds can genuinely net to zero, and
-                      that is a different fact from having recorded nothing. */}
-                  <td colSpan={3} className="pl-8 text-base-content/60">
-                    None recorded
-                  </td>
-                </tr>
-              ) : (
-                <>
-                  {(categories.get(total.period) ?? []).map((row) => (
-                    <tr key={rowKey(row)}>
-                      <th scope="row" className="pl-8 font-normal">
-                        {row.category}
-                      </th>
-                      <td className="text-right tabular-nums">{row.amount}</td>
-                      <td>{row.currency}</td>
-                    </tr>
-                  ))}
-                  <tr>
-                    <th scope="row" className="pl-8 font-semibold">
-                      Total
-                    </th>
-                    <td className="text-right font-semibold tabular-nums">
-                      {total.amount}
+                  <th
+                    scope="rowgroup"
+                    className={`${band} text-left font-semibold tabular-nums`}
+                  >
+                    {total.from_date} to {total.to_date}
+                  </th>
+                  {total.amount === undefined ? (
+                    // Absent, not "0.00": a month of refunds can genuinely net to zero,
+                    // and that is a different fact from having recorded nothing.
+                    <td
+                      colSpan={2}
+                      className={`${band} text-right text-base-content/60`}
+                    >
+                      None recorded
                     </td>
-                    <td>{total.currency}</td>
+                  ) : (
+                    <>
+                      <td className={`${band} text-right font-semibold tabular-nums`}>
+                        {total.amount}
+                      </td>
+                      <td className={band}>{total.currency}</td>
+                    </>
+                  )}
+                </tr>
+                {(categories.get(total.period) ?? []).map((row) => (
+                  <tr key={rowKey(row)}>
+                    <th scope="row" className="pl-8 font-normal">
+                      {row.category}
+                    </th>
+                    <td className="text-right tabular-nums">{row.amount}</td>
+                    <td>{row.currency}</td>
                   </tr>
-                </>
-              )}
-            </tbody>
-          ))
+                ))}
+              </tbody>
+            );
+          })
         )}
       </table>
     </div>
