@@ -2,8 +2,12 @@
 <!-- The theme surface sits on <html>: the root element's background paints the whole
      canvas whatever its own box height is, so a page taller than the viewport carries it
      past the fold. daisyUI paints base-100 on :root, which a utility on the same element
-     overrides from the utilities layer. -->
-<html lang="en" class="h-full bg-base-200 text-base-content">
+     overrides from the utilities layer.
+
+     The gutter is reserved whether or not a page scrolls: the shell centres its content,
+     so a view that fits when a sibling view scrolls would re-centre into a viewport
+     narrower by the scrollbar and shift the table sideways under the category toggle. -->
+<html lang="en" class="h-full scrollbar-gutter-stable bg-base-200 text-base-content">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
