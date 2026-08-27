@@ -28,11 +28,19 @@ function renderPeriodTotals(query: TotalsQuery = QUERY) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  render(
+  const tree = (next: TotalsQuery) => (
     <QueryClientProvider client={queryClient}>
-      <PeriodTotals query={query} />
-    </QueryClientProvider>,
+      <PeriodTotals query={next} />
+    </QueryClientProvider>
   );
+  const { rerender } = render(tree(query));
+  // The same client across both renders, which is the whole point of handing this back:
+  // only a cache still holding the grouped payload can make the ungrouped render wrong.
+  return {
+    rerenderWith: (next: TotalsQuery) => {
+      rerender(tree(next));
+    },
+  };
 }
 
 // Every row as the list of its cells, headers included. The period heading, the category
@@ -71,6 +79,25 @@ test("adds a line per category when the grouping was asked for", async () => {
     ["None recorded"],
     ["2001-01", "2001-01-01 to 2001-01-31"],
     ["Stub category", "11.00", "EUR"],
+    ["Total", "11.00", "EUR"],
+  ]);
+});
+
+test("drops the category lines when the grouping is switched off", async () => {
+  // enabled: false stops the request and evicts nothing, so the disabled breakdown query
+  // goes on reporting success against the payload it already fetched. Reading it anyway
+  // is what left the categories on screen after the toggle went off.
+  const { rerenderWith } = renderPeriodTotals(GROUPED);
+  await screen.findByRole("table", { name: "Totals" });
+  rerenderWith(QUERY);
+  // No await: the grouped render waited on both requests, and the ungrouped one is keyed
+  // on a range that did not change, so this render is a cache hit and is synchronous.
+  expect(rowTexts()).toEqual([
+    ["2001-03", "2001-03-01 to 2001-03-31"],
+    ["Total", "30.00", "EUR"],
+    ["2001-02", "2001-02-01 to 2001-02-28"],
+    ["None recorded"],
+    ["2001-01", "2001-01-01 to 2001-01-31"],
     ["Total", "11.00", "EUR"],
   ]);
 });

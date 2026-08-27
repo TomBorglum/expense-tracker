@@ -49,14 +49,17 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
   // the category rows up here instead would be arithmetic on amounts this side of the
   // wire, which is the thing sending them as strings exists to avoid.
   const totals = useQuery(totalsQueryOptions(range));
-  const breakdown = useQuery({
+  const breakdownQuery = useQuery({
     ...totalsQueryOptions({ ...range, group_by: CATEGORY_GROUPING }),
     enabled: byCategory,
   });
+  // The one place the grouping is consulted. enabled stops the request but evicts
+  // nothing, so a disabled query goes on serving whatever it last fetched and stays
+  // pending only until it has: an ungrouped render must have no path to that result
+  // rather than merely decline to use it.
+  const breakdown = byCategory ? breakdownQuery : undefined;
 
-  // A disabled query stays pending forever, so breakdown is only ever consulted when the
-  // grouping was actually asked for.
-  if (totals.isPending || (byCategory && breakdown.isPending)) {
+  if (totals.isPending || breakdown?.isPending) {
     // <output> rather than role="status" on a <p>: it carries that role implicitly (sonar
     // S6819). The error branch keeps its role - no element implies role="alert".
     return (
@@ -67,7 +70,7 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
     );
   }
 
-  if (totals.isError || (byCategory && breakdown.isError)) {
+  if (totals.isError || breakdown?.isError) {
     return (
       <div role="alert" className="alert alert-error">
         Could not load the totals.
@@ -75,7 +78,7 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
     );
   }
 
-  const categories = breakdown.isSuccess
+  const categories = breakdown?.isSuccess
     ? categoriesByPeriod(breakdown.data)
     : new Map<string, PeriodTotal[]>();
 

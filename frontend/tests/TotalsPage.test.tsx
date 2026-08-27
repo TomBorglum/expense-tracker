@@ -182,10 +182,16 @@ test("turning the grouping off drops the parameter from the URL", async () => {
   recordRequestedParams();
   const router = renderPageAt("/totals?group_by=category");
   await screen.findByRole("table", { name: "Totals" });
+  // Asserted before the click as well, so a view that never had the lines cannot pass
+  // the one after it. A disabled query keeps serving its cache, so the breakdown is
+  // still there to be read wrongly once the toggle goes off. Two of them: the fixture
+  // spends on that category in two of its three periods.
+  expect(screen.getAllByRole("rowheader", { name: "Stub category" })).toHaveLength(2);
   await user.click(categoryToggle());
   await waitFor(() => {
     expect(categoryToggle().checked).toBe(false);
   });
+  expect(screen.queryAllByRole("rowheader", { name: "Stub category" })).toHaveLength(0);
   // Undefined rather than an off-value: absent is what ungrouped means on the wire, so
   // it is what it means here too.
   expect(router.state.location.search).toEqual({
