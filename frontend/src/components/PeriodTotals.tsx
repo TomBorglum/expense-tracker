@@ -91,14 +91,16 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
     : new Map<string, PeriodTotal[]>();
 
   return (
-    <div className="overflow-x-auto">
+    // The scroll port, as on the expenses page. No table-pin-rows: there is no thead
+    // here to pin.
+    <div className="scrollbar-gutter-stable overflow-auto">
       {/* No table-zebra: the stripes run per row and would cut across the period groups
           rather than with them. */}
       <table className="table table-fixed min-w-md">
         {/* The columns are pinned so the category toggle only adds and removes rows:
             daisyUI leaves table-layout auto, where each view's own rows size the
             columns and the leftover is re-spread across them, so the amounts land at a
-            different x in each. min-w-md is what the wrapper's overflow-x-auto scrolls
+            different x in each. min-w-md is what the wrapper's overflow-auto scrolls
             once a fixed layout has no room left to take from the first column. */}
         <colgroup>
           <col />

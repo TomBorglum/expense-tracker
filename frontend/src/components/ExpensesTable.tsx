@@ -38,8 +38,12 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="table table-zebra">
+    // The scroll port the chain in __root.tsx bounds, so the rows move and table-pin-rows
+    // keeps the header row still. scrollbar-gutter-stable holds the columns still as a
+    // widening date range crosses the point where the rows start overflowing. It needs no
+    // min-h-0: a box whose overflow is not visible already has an automatic minimum of 0.
+    <div className="scrollbar-gutter-stable overflow-auto">
+      <table className="table table-pin-rows table-zebra">
         {/* The table's accessible name, which is how the tests reach it. Hidden from
             sight because the page already shows the same word as its heading. */}
         <caption className="sr-only">Expenses</caption>
