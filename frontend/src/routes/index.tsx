@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   createFileRoute,
+  retainSearchParams,
   type SearchSchemaInput,
   useNavigate,
 } from "@tanstack/react-router";
@@ -14,7 +15,7 @@ import { type ExpensesQuery } from "../api/expenses";
 import { CurrencySelect } from "../components/CurrencySelect";
 import { DateRangePicker } from "../components/DateRangePicker";
 import { ExpensesTable } from "../components/ExpensesTable";
-import { currentMonth } from "../dates";
+import { currentYear } from "../dates";
 
 // The currency the expenses are presented in and the days they are drawn from, carried
 // in the URL so a view is shareable and survives a reload. An alias rather than a second
@@ -24,6 +25,13 @@ export type ExpensesSearch = ExpensesQuery;
 
 export const Route = createFileRoute("/")({
   component: ExpensesPage,
+  // What crossing to /totals brings along, the links in __root.tsx carrying no search of
+  // their own. Retained rather than re-defaulted: without this the currency and the range
+  // are picked again on every switch between the two views. group_by is deliberately not
+  // here - it is declared on /totals alone, and this view means nothing by it.
+  search: {
+    middlewares: [retainSearchParams(["currency", "from_date", "to_date"])],
+  },
   // Supplies the default for an absent parameter and nothing else. A malformed code or
   // date is handed on to the backend, which refuses it with a 422; re-checking either
   // here would put the pattern in conversion.py or date_range.py in a second place to
@@ -31,11 +39,11 @@ export const Route = createFileRoute("/")({
   validateSearch: (
     search: Record<string, unknown> & SearchSchemaInput,
   ): ExpensesSearch => {
-    const month = currentMonth();
+    const year = currentYear();
     return {
       currency: typeof search.currency === "string" ? search.currency : BASE_CURRENCY,
-      from_date: typeof search.from_date === "string" ? search.from_date : month.from,
-      to_date: typeof search.to_date === "string" ? search.to_date : month.to,
+      from_date: typeof search.from_date === "string" ? search.from_date : year.from,
+      to_date: typeof search.to_date === "string" ? search.to_date : year.to,
     };
   },
 });

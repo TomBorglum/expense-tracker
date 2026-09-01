@@ -27,18 +27,11 @@ export function fromIsoDate(value: string): Date | undefined {
   return toIsoDate(date) === value ? date : undefined;
 }
 
-export function currentMonth(): { from: string; to: string } {
-  const today = new Date();
-  return {
-    from: toIsoDate(new Date(today.getFullYear(), today.getMonth(), 1)),
-    // Day zero of the next month is the last day of this one.
-    to: toIsoDate(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
-  };
-}
-
-// The whole calendar year the clock is in. What /totals defaults to, where a one-month
-// range would report a single period: twelve whole months, and no partial outer one for a
-// requested bound to narrow.
+// The whole calendar year the clock is in, and what both views default to: twelve whole
+// months, and no partial outer one for a requested bound to narrow. One shared default
+// rather than two, because the crossing between the views carries the range as it stands
+// and cannot tell a default from a pick - a narrower one here would arrive on /totals as
+// a single period.
 export function currentYear(): { from: string; to: string } {
   const year = new Date().getFullYear();
   return {

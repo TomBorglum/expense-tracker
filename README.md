@@ -452,14 +452,21 @@ stays the backend's** - it is a `WHERE` clause on `expense_date`, described unde
 and drops no row of its own.
 
 Both bounds live in the **URL** alongside the currency, so
-`/?currency=EUR&from_date=2026-01-01&to_date=2026-01-31` is a link worth sending.
-`validateSearch` in `frontend/src/router.ts` fills an absent bound with the first or last
-day of the current month, from one reading of the clock, and checks nothing else - a date
+`/?currency=EUR&from_date=2026-01-01&to_date=2026-01-31` is a link worth sending - and
+every URL is one, the router rewriting a bare path to the search it filled in.
+`validateSearch`, in the two route files under `frontend/src/routes/`, fills an absent
+bound with the first or last day of the current year, from one reading of the clock, the
+same default on both views so that switching between them changes nothing. It checks
+nothing else - a date
 the backend refuses is passed through and answered with a 422, which reaches the page as
 its ordinary "Could not load the expenses." Both parameters are always sent, and there is
 no clear button: an **empty** `?from_date=` is a malformed date to the backend rather than
 a request for everything, so the way to see more is to pick earlier or later days. A range
 holding no expenses is a 200 with `[]`, which the table shows as a row and not an alert.
+
+The currency and the range follow you between the two views: each route retains them
+through `retainSearchParams`, so a switch keeps what you were looking at. The **By
+category** toggle does not, being declared on `/totals` alone.
 
 The control is [DayPicker](https://daypicker.dev) in `mode="range"`, pinned as
 `@daypicker/react`. It was chosen over daisyUI's own calendar component because that one
