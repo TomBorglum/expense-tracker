@@ -14,52 +14,53 @@ construction.
   and prints a day early west of Greenwich. A period is headed by those bounds,
   `2026-12-01 to 2026-12-31`, never by its `YYYY-MM` label. Both guards reject a numeric
   amount. Pinned by "shows an alert when an amount arrives as a number", in each file.
-- **A `Date` is never built from a string and never named through UTC.** The picker deals
-  in `Date` objects and the API in bare `YYYY-MM-DD`, so `src/dates.ts` is the one crossing
+- **A `Date` is never built from a string and never named through UTC.** The picker deals in
+  `Date` objects and the API in bare `YYYY-MM-DD`, so `src/dates.ts` is the one crossing
   point, built from `getFullYear`/`getMonth`/`getDate`. **No code in `src/` calls
   `toISOString()` or parses a date string** - each is off by one for half the world.
   `date-fns` arrives transitively and is deliberately not imported: a second formatter is a
   second place to drift. Pinned by `dates.test.ts`, which needs the fixed
-  **`TZ: "Europe/Copenhagen"`** in `vite.config.ts`'s `test` block: on a UTC runner, which
-  is what CI is, local and UTC agree and the assertion passes on a broken implementation.
+  **`TZ: "Europe/Copenhagen"`** in `vite.config.ts`'s `test` block: on a UTC runner, which CI
+  is, local and UTC agree and the assertion passes on a broken implementation.
 - **The type scale is three sizes at two weights, and 0.875rem is the body of it.**
-  `text-xl` is the app title, `text-2xl` the page heading, nothing else has a size, and
-  there is no root `font-size`. **A daisyUI default is not a decision** - the calendar
-  and the nav tabs each arrived at 0.75rem that way and carry a `text-sm` undoing it,
-  and a table reaches 0.875rem the same way. Nothing checks this.
+  `text-xl` is the app title, `text-2xl` the page heading, nothing else has a size, and there
+  is no root `font-size`. **A daisyUI default is not a decision** - the calendar and the nav
+  tabs each arrived at 0.75rem that way and carry a `text-sm` undoing it, and a table reaches
+  0.875rem the same way. Nothing checks this.
 - **A period's subtotal is the ungrouped request, never its category rows added up.**
   `PeriodTotals` runs both and takes the total from the one without `group_by`; adding
-  amounts up here is what sending them as strings exists to prevent. Pinned by "takes
-  the subtotal from the ungrouped request rather than adding the lines up".
+  amounts up here is what sending them as strings exists to prevent. Pinned by "takes the
+  subtotal from the ungrouped request rather than adding the lines up".
 - **An empty list is a row, not an alert**, and so is a period with no `amount`.
-  `role="alert"` is reserved for a request that actually failed - this side of the
-  backend's "an empty table is 200, not 503".
+  `role="alert"` is reserved for a request that actually failed - this side of the backend's
+  "an empty table is 200, not 503". **The band row's `Category` cell is blank for the same
+  reason**: the period total covers every category, and "All categories" is a value no
+  payload carries. Pinned by "adds a line per category when the grouping was asked for".
 - **The theme follows the OS, and nothing can override it.** The single `@plugin "daisyui"`
   block in `src/styles/app.css` names `nord --default` and `dim --prefersdark`. There is no
   `data-theme`, no theme provider and no `dark:` variant in `src/`; a toggle would be a
   feature on top of the pair, not a config change. daisyUI paints `base-100` on `:root`, so
   the surface is `bg-base-200 text-base-content` on `<html>` in `index.html` - the root
-  element's background is the one that covers the whole canvas. **Every colour is
-  referenced by role**, never a hard-coded shade, which is wrong in one of the two themes
-  rather than merely awkward. Chromium's `prefers-color-scheme` emulation reaches the
-  theme your OS is not set to.
+  element's background is the one that covers the whole canvas. **Every colour is referenced
+  by role**, never a hard-coded shade, which is wrong in one of the two themes rather than
+  merely awkward. Chromium's `prefers-color-scheme` emulation reaches the theme your OS is
+  not set to.
 - **The calendar is themed by daisyUI, and `@daypicker/react/style.css` is deliberately not
   imported.** daisyUI ships a first-party theme keyed on the `react-day-picker` class,
-  written in role tokens. **Importing the package's own stylesheet would silently beat
-  it**: it is unlayered, everything `@import "tailwindcss"` emits sits inside `@layer`, and
+  written in role tokens. **Importing the package's own stylesheet would silently beat it**:
+  it is unlayered, everything `@import "tailwindcss"` emits sits inside `@layer`, and
   unlayered rules win regardless of source order. It also hardcodes `font-size: large` on
-  the caption and on selected days, reachable through no `--rdp-*` variable. **Nothing
-  local names a `--rdp-*` property.** Only `frontend-build` proves the theme is in the
-  bundle - `grep react-day-picker frontend/dist/assets/*.css` is that check.
+  the caption and on selected days, reachable through no `--rdp-*` variable. **Nothing local
+  names a `--rdp-*` property.** Only `frontend-build` proves the theme is in the bundle -
+  `grep react-day-picker frontend/dist/assets/*.css` is that check.
 - **`src/styles/app.css` holds exactly one local rule, and it is unlayered on purpose.** It
   deepens `--input-color` on hover for `.input` and `.select`, which daisyUI gives no hover
   state; unlayered is what reaches that variable past daisyUI's layer. **Reach for a
   utility class before a second rule here**: a daisyUI role token in an ordinary CSS
   property fails `css/no-invalid-properties`, and that rule must not be relaxed. This one
   passes only by assigning to a custom property.
-- **`dayPickerClassNames` carries three corrections over five names, handed to the panels
-  as utility classes** - a role token in an ordinary property fails
-  `css/no-invalid-properties`.
+- **`dayPickerClassNames` carries three corrections over five names, handed to the panels as
+  utility classes** - a role token in an ordinary property fails `css/no-invalid-properties`.
   - **No day is marked "today".** `today` is emptied and `getClassNamesForModifiers` keeps
     only truthy entries. Without it daisyUI fills the day with the primary colour through a
     four-class selector against `.rdp-selected`'s three, so the current day reads as picked
@@ -112,18 +113,17 @@ names `/new`, so `pnpm run build` cannot regenerate after adding one - use `pnpm
   There is no `getRouteApi` and no `src/pages/` - both existed to break a cycle this shape
   does not have. Everything under `src/components/` takes props and knows no router, which
   keeps them mountable without a `RouterProvider`.
-- **`validateSearch` fills in an absent parameter and validates nothing else.**
-  `?currency=` is handed to the backend as typed, so `/?currency=euro` gets the 422
-  `conversion.py` raises; re-checking `\A[A-Z]{3}\Z` here would put that pattern in a
-  second place to drift from. There is no "as recorded" mode - the parameter is always
-  sent, an **empty** `?currency=` being a malformed code rather than a request for no
-  conversion, and the two dates follow suit. The one thing it adds is the default: an
-  absent bound becomes the first or last day of the current *year*, **the same one on
-  both routes**, because a switch between them carries the range as it stands and cannot
-  tell a default from a pick - a month on `/` would arrive on `/totals` as a single
-  period. It reads the clock, which is why both page tests pin it. `group_by` alone has
-  **no default to fill in**: absent means ungrouped on the wire too, so anything but
-  `category` is the absence of it.
+- **`validateSearch` fills in an absent parameter and validates nothing else.** `?currency=`
+  is handed to the backend as typed, so `/?currency=euro` gets the 422 `conversion.py`
+  raises; re-checking `\A[A-Z]{3}\Z` here would put that pattern in a second place to drift
+  from. There is no "as recorded" mode - the parameter is always sent, an **empty**
+  `?currency=` being a malformed code rather than a request for no conversion, and the two
+  dates follow suit. The one thing it adds is the default: an absent bound becomes the first
+  or last day of the current *year*, **the same one on both routes**, because a switch
+  between them carries the range as it stands and cannot tell a default from a pick - a month
+  on `/` would arrive on `/totals` as a single period. It reads the clock, which is why both
+  page tests pin it. `group_by` alone has **no default to fill in**: absent means ungrouped
+  on the wire too, so anything but `category` is the absence of it.
 - **The currency options are what the rate table can reach, not a list of ISO codes.**
   `targetCurrencies` keeps only the `to_currency` of a pair whose `from_currency` is
   `BASE_CURRENCY`, a rate being never inverted and never composed; `BASE_CURRENCY` itself

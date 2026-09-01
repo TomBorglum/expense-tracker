@@ -35,8 +35,9 @@ function rowKey(total: PeriodTotal): string {
   return `${total.period} ${total.category ?? ""} ${total.currency ?? ""}`;
 }
 
-// The period's row is the group's heading and carries the period's own total. border-b-0
-// drops the border daisyUI puts between a band and the first category listed under it.
+// The period's cell spans the lines listed under it and carries the period's own total.
+// border-b-0 drops the border daisyUI puts between a band and the first category listed
+// under it.
 const PERIOD_BAND = "border-b-0 bg-base-200";
 // The gap above a band, which is what separates two periods: daisyUI leaves .table on
 // border-collapse: separate, so the border is the cell's own, and bg-clip-padding keeps
@@ -96,17 +97,24 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
     <div className="scrollbar-gutter-stable overflow-auto">
       {/* No table-zebra: the stripes run per row and would cut across the period groups
           rather than with them. */}
-      <table className="table table-pin-rows table-fixed min-w-md">
+      <table
+        className={`table table-pin-rows table-fixed ${
+          byCategory ? "min-w-3xl" : "min-w-md"
+        }`}
+      >
         {/* The table's accessible name, which is how the tests reach it. Hidden from sight
             because the page already shows the same word as its heading. */}
         <caption className="sr-only">Totals</caption>
-        {/* The columns are pinned so the category toggle only adds and removes rows:
-            daisyUI leaves table-layout auto, where each view's own rows size the
-            columns and the leftover is re-spread across them, so the amounts land at a
-            different x in each. min-w-md is what the wrapper's overflow-auto scrolls
-            once a fixed layout has no room left to take from the first column. */}
+        {/* Amount and Currency are pinned, so they hold their position as the grouping
+            adds and removes the Category column and only Period and Category absorb the
+            difference: daisyUI leaves table-layout auto, where each view's own rows size
+            the columns and the leftover is re-spread across them, so the amounts land at
+            a different x in each. Period is pinned too once grouped, wide enough for its
+            bounds, which leaves the slack to the category names. The min width is what
+            the wrapper's overflow-auto scrolls once a fixed layout has no room left. */}
         <colgroup>
-          <col />
+          {byCategory ? <col className="w-64" /> : <col />}
+          {byCategory ? <col /> : null}
           <col className="w-40" />
           <col className="w-24" />
         </colgroup>
@@ -117,6 +125,11 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
             <th scope="col" className="font-semibold">
               Period
             </th>
+            {byCategory ? (
+              <th scope="col" className="font-semibold">
+                Category
+              </th>
+            ) : null}
             <th scope="col" className="text-right font-semibold">
               Amount
             </th>
@@ -131,7 +144,7 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
               {/* An expense table nobody has run the loader against yet answers 200 with
                   [], and so does a range nothing falls inside. Both are a working server
                   rather than a fault, so this is a row and not the alert above. */}
-              <td colSpan={3} className="text-base-content/60">
+              <td colSpan={byCategory ? 4 : 3} className="text-base-content/60">
                 No expenses in this range.
               </td>
             </tr>
@@ -139,26 +152,33 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
         ) : (
           totals.data.map((total, index) => {
             const band = index === 0 ? PERIOD_BAND : `${PERIOD_BAND} ${PERIOD_GAP}`;
+            // Empty unless grouped, which is what leaves the span at 1 there.
+            const rows = categories.get(total.period) ?? [];
             return (
               <tbody key={rowKey(total)}>
                 <tr>
                   <th
                     scope="rowgroup"
-                    className={`${band} text-left font-semibold tabular-nums`}
+                    rowSpan={1 + rows.length}
+                    className={`${band} align-top text-left font-semibold tabular-nums`}
                   >
                     {total.from_date} to {total.to_date}
                   </th>
                   {total.amount === undefined ? (
                     // Absent, not "0.00": a month of refunds can genuinely net to zero,
-                    // and that is a different fact from having recorded nothing.
+                    // and that is a different fact from having recorded nothing. It
+                    // takes the category column with it, there being no lines to list.
                     <td
-                      colSpan={2}
+                      colSpan={byCategory ? 3 : 2}
                       className={`${band} text-right text-base-content/60`}
                     >
                       None recorded
                     </td>
                   ) : (
                     <>
+                      {/* The period total covers every category, so this cell holds
+                          nothing. */}
+                      {byCategory ? <td className={band} /> : null}
                       <td className={`${band} text-right font-semibold tabular-nums`}>
                         {total.amount}
                       </td>
@@ -166,9 +186,9 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
                     </>
                   )}
                 </tr>
-                {(categories.get(total.period) ?? []).map((row) => (
+                {rows.map((row) => (
                   <tr key={rowKey(row)}>
-                    <th scope="row" className="pl-8 font-normal">
+                    <th scope="row" className="font-normal">
                       {row.category}
                     </th>
                     <td className="text-right tabular-nums">{row.amount}</td>
