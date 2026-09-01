@@ -73,16 +73,17 @@ test("adds a line per category when the grouping was asked for", async () => {
   await screen.findByRole("table", { name: "Totals" });
   // The categories arrive in the order the backend sorted them and are not reordered
   // here, and each period is still opened by the band carrying its subtotal.
-  // The band opening each period spans the lines under it, so its own row is one cell
-  // short of theirs and the empty cell it does carry is the category it has none of.
+  // The band opening each period heads the category column as well as its own, so its row
+  // is one cell short of theirs; each line under it opens with the period cell it has
+  // nothing to put in, which is what keeps it rendering as an ordinary row.
   expect(rowTexts()).toEqual([
     GROUPED_HEADER,
-    ["2001-03-01 to 2001-03-31", "", "30.00", "EUR"],
-    ["Stub category", "12.50", "EUR"],
-    ["Other stub category", "17.50", "EUR"],
+    ["2001-03-01 to 2001-03-31", "30.00", "EUR"],
+    ["", "Stub category", "12.50", "EUR"],
+    ["", "Other stub category", "17.50", "EUR"],
     ["2001-02-01 to 2001-02-28", "None recorded"],
-    ["2001-01-01 to 2001-01-31", "", "11.00", "EUR"],
-    ["Stub category", "11.00", "EUR"],
+    ["2001-01-01 to 2001-01-31", "11.00", "EUR"],
+    ["", "Stub category", "11.00", "EUR"],
   ]);
 });
 
@@ -113,17 +114,6 @@ test("names the category column only while the grouping is on", async () => {
   await screen.findByRole("columnheader", { name: "Category" });
 });
 
-test("spans the period cell over the lines listed under it", async () => {
-  // The cell texts alone cannot tell a spanned cell from an unspanned one - both leave
-  // the category rows three cells wide - so the span itself is what this reads.
-  renderPeriodTotals(GROUPED);
-  const table = await screen.findByRole<HTMLTableElement>("table", { name: "Totals" });
-  // Row 0 is the header, row 1 opens a period holding two categories, row 4 one holding
-  // none, which has nothing to span.
-  expect(table.rows[1].cells[0].rowSpan).toBe(3);
-  expect(table.rows[4].cells[0].rowSpan).toBe(1);
-});
-
 test("takes the subtotal from the ungrouped request rather than adding the lines up", async () => {
   // A total the category rows do not add up to, which no arithmetic here could produce.
   // Summing amounts this side of the wire is the thing sending them as strings exists to
@@ -141,9 +131,9 @@ test("takes the subtotal from the ungrouped request rather than adding the lines
   await screen.findByRole("table", { name: "Totals" });
   expect(rowTexts()).toEqual([
     GROUPED_HEADER,
-    ["2001-03-01 to 2001-03-31", "", "999.99", "EUR"],
-    ["Stub category", "12.50", "EUR"],
-    ["Other stub category", "17.50", "EUR"],
+    ["2001-03-01 to 2001-03-31", "999.99", "EUR"],
+    ["", "Stub category", "12.50", "EUR"],
+    ["", "Other stub category", "17.50", "EUR"],
   ]);
 });
 

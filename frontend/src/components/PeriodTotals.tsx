@@ -35,9 +35,8 @@ function rowKey(total: PeriodTotal): string {
   return `${total.period} ${total.category ?? ""} ${total.currency ?? ""}`;
 }
 
-// The period's cell spans the lines listed under it and carries the period's own total.
-// border-b-0 drops the border daisyUI puts between a band and the first category listed
-// under it.
+// The period's row is the group's heading and carries the period's own total. border-b-0
+// drops the border daisyUI puts between a band and the first category listed under it.
 const PERIOD_BAND = "border-b-0 bg-base-200";
 // The gap above a band, which is what separates two periods: daisyUI leaves .table on
 // border-collapse: separate, so the border is the cell's own, and bg-clip-padding keeps
@@ -152,33 +151,29 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
         ) : (
           totals.data.map((total, index) => {
             const band = index === 0 ? PERIOD_BAND : `${PERIOD_BAND} ${PERIOD_GAP}`;
-            // Empty unless grouped, which is what leaves the span at 1 there.
-            const rows = categories.get(total.period) ?? [];
             return (
               <tbody key={rowKey(total)}>
                 <tr>
+                  {/* Across the category column too: the period total covers every
+                      category, so there is none to name beside it. */}
                   <th
                     scope="rowgroup"
-                    rowSpan={1 + rows.length}
-                    className={`${band} align-top text-left font-semibold tabular-nums`}
+                    colSpan={byCategory ? 2 : 1}
+                    className={`${band} text-left font-semibold tabular-nums`}
                   >
                     {total.from_date} to {total.to_date}
                   </th>
                   {total.amount === undefined ? (
                     // Absent, not "0.00": a month of refunds can genuinely net to zero,
-                    // and that is a different fact from having recorded nothing. It
-                    // takes the category column with it, there being no lines to list.
+                    // and that is a different fact from having recorded nothing.
                     <td
-                      colSpan={byCategory ? 3 : 2}
+                      colSpan={2}
                       className={`${band} text-right text-base-content/60`}
                     >
                       None recorded
                     </td>
                   ) : (
                     <>
-                      {/* The period total covers every category, so this cell holds
-                          nothing. */}
-                      {byCategory ? <td className={band} /> : null}
                       <td className={`${band} text-right font-semibold tabular-nums`}>
                         {total.amount}
                       </td>
@@ -186,8 +181,12 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
                     </>
                   )}
                 </tr>
-                {rows.map((row) => (
+                {(categories.get(total.period) ?? []).map((row) => (
                   <tr key={rowKey(row)}>
+                    {/* A cell of its own rather than a span from the row above: a blank
+                        cell carries the row's background and border, a missing one
+                        leaves the row starting at the category column. */}
+                    <td />
                     <th scope="row" className="font-normal">
                       {row.category}
                     </th>

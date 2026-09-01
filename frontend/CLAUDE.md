@@ -33,9 +33,9 @@ construction.
   subtotal from the ungrouped request rather than adding the lines up".
 - **An empty list is a row, not an alert**, and so is a period with no `amount`.
   `role="alert"` is reserved for a request that actually failed - this side of the backend's
-  "an empty table is 200, not 503". **The band row's `Category` cell is blank for the same
-  reason**: the period total covers every category, and "All categories" is a value no
-  payload carries. Pinned by "adds a line per category when the grouping was asked for".
+  "an empty table is 200, not 503". **The period's own row names no category**: its heading
+  spans that column rather than invent "All categories", a value no payload carries. Pinned
+  by "adds a line per category when the grouping was asked for".
 - **The theme follows the OS, and nothing can override it.** The single `@plugin "daisyui"`
   block in `src/styles/app.css` names `nord --default` and `dim --prefersdark`. There is no
   `data-theme`, no theme provider and no `dark:` variant in `src/`; a toggle would be a
