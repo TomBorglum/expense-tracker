@@ -1,22 +1,19 @@
 <!doctype html>
 <!-- The theme surface sits on <html>: the root element's background paints the whole
-     canvas whatever its own box height is, so a page taller than the viewport carries it
-     past the fold. daisyUI paints base-100 on :root, which a utility on the same element
-     overrides from the utilities layer.
+     canvas whatever its own box height is.
 
-     The gutter is reserved whether or not a page scrolls: the shell centres its content,
-     so a view that fits when a sibling view scrolls would re-centre into a viewport
-     narrower by the scrollbar and shift the table sideways under the category toggle. -->
-<html lang="en" class="h-full scrollbar-gutter-stable bg-base-200 text-base-content">
+     h-dvh is the one definite height in the app, and body, #root and the shell in
+     __root.tsx carry it down by percentage - a chain that resolves only because every
+     link in it is present. Nothing below scrolls the window: each page bounds its own
+     table instead, which is what keeps a table's header row in view. -->
+<html lang="en" class="h-dvh bg-base-200 text-base-content">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Expense Tracker</title>
   </head>
-  <!-- h-full keeps body's height definite, which is what lets min-h-full on the shell in
-       __root.tsx resolve. -->
   <body class="h-full">
-    <div id="root"></div>
+    <div id="root" class="h-full"></div>
     <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>

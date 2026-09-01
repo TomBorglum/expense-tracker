@@ -17,7 +17,7 @@ function RootLayout() {
   const activeOptions = { exact: true, includeSearch: false };
 
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex h-full flex-col">
       <header className="navbar bg-base-100 px-6 shadow-sm">
         <span className="text-xl font-semibold tracking-tight">Expense Tracker</span>
         <nav className="ml-auto flex items-center gap-1">
@@ -40,8 +40,15 @@ function RootLayout() {
         </nav>
       </header>
       {/* Top-anchored rather than centred both ways: a long table centred vertically
-          starts off the top of the screen. */}
-      <main className="flex flex-1 flex-col items-center px-6 py-12">
+          starts off the top of the screen.
+
+          min-h-0 heads the chain that bounds each page's table, and is needed despite
+          flex-1: a flex item's automatic minimum size floors its used height at its
+          content height even when it is growing from a zero basis. Every flex column
+          from here down to a table's overflow-auto wrapper carries one, and none carries
+          flex-1; miss one and the window scrolls again, add a flex-1 and a two-row table
+          fills the screen. */}
+      <main className="flex min-h-0 flex-1 flex-col items-center px-6 py-12">
         <Outlet />
       </main>
     </div>

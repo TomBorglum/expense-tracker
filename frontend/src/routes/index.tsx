@@ -52,7 +52,9 @@ function ExpensesPage() {
   const options = rates.isSuccess ? targetCurrencies(rates.data) : [BASE_CURRENCY];
 
   return (
-    <div className="w-full max-w-4xl">
+    // A link in the chain __root.tsx heads: a flex column rather than a block, block
+    // layout having no shrink step to pass the bound on with.
+    <div className="flex min-h-0 w-full max-w-4xl flex-col">
       <div className="flex flex-wrap items-center justify-between gap-4 pb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Expenses</h1>
         <div className="flex flex-wrap items-center gap-6">
@@ -78,8 +80,8 @@ function ExpensesPage() {
           />
         </div>
       </div>
-      <section className="card bg-base-100 shadow-sm">
-        <div className="card-body">
+      <section className="card min-h-0 bg-base-100 shadow-sm">
+        <div className="card-body min-h-0">
           <ExpensesTable query={search} />
         </div>
       </section>
