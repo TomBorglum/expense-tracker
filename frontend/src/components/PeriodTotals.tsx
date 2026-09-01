@@ -35,12 +35,13 @@ function rowKey(total: PeriodTotal): string {
   return `${total.period} ${total.category ?? ""} ${total.currency ?? ""}`;
 }
 
-// The period's row is the group's heading and carries the period's own total. The rule
-// between two periods is drawn above a band rather than under it: daisyUI puts its border
-// under every row but a tbody's last, and ungrouped the band is that last row, so nothing
-// would separate one band from the next. border-b-0 drops the one border daisyUI does
-// reach, between a band and the first category listed under it.
+// The period's row is the group's heading and carries the period's own total. border-b-0
+// drops the border daisyUI puts between a band and the first category listed under it.
 const PERIOD_BAND = "border-b-0 bg-base-200";
+// The gap above a band, which is what separates two periods: daisyUI leaves .table on
+// border-collapse: separate, so the border is the cell's own, and bg-clip-padding keeps
+// bg-base-200 out of it, leaving the card to show through. All three are one mechanism.
+const PERIOD_GAP = "bg-clip-padding border-t-8 border-t-transparent";
 
 // The expenses of /api/expenses summed by month, newest first, restated in the currency
 // asked for and narrowed to the days asked for. Amounts and the bounds each period was
@@ -124,8 +125,7 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
           </tbody>
         ) : (
           totals.data.map((total, index) => {
-            const band =
-              index === 0 ? PERIOD_BAND : `${PERIOD_BAND} border-t border-t-base-300`;
+            const band = index === 0 ? PERIOD_BAND : `${PERIOD_BAND} ${PERIOD_GAP}`;
             return (
               <tbody key={rowKey(total)}>
                 <tr>
