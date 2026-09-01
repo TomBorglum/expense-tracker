@@ -8,11 +8,12 @@ construction.
 
 ## Rendering
 
-- **The expenses table renders `amount` and `date` verbatim.** No `Intl.NumberFormat`, no
+- **Both tables render every amount and date verbatim.** No `Intl.NumberFormat`, no
   `new Date()`. The backend sends `amount` as `str(Decimal)` so no float round trip can
-  drift a total by a cent, and `date` as a bare `YYYY-MM-DD`, which `new Date()` reads as
-  UTC and prints a day early west of Greenwich. The guard in `src/api/expenses.ts` rejects
-  a numeric amount. Pinned by "shows an alert when an amount arrives as a number".
+  drift a total by a cent, its dates as bare `YYYY-MM-DD`, which `new Date()` reads as UTC
+  and prints a day early west of Greenwich. A period is headed by those bounds,
+  `2026-12-01 to 2026-12-31`, never by its `YYYY-MM` label. Both guards reject a numeric
+  amount. Pinned by "shows an alert when an amount arrives as a number", in each file.
 - **A `Date` is never built from a string and never named through UTC.** The picker deals
   in `Date` objects and the API in bare `YYYY-MM-DD`, so `src/dates.ts` is the one crossing
   point, built from `getFullYear`/`getMonth`/`getDate`. **No code in `src/` calls
@@ -23,22 +24,25 @@ construction.
   is what CI is, local and UTC agree and the assertion passes on a broken implementation.
 - **The type scale is three sizes at two weights, and 0.875rem is the body of it.**
   `text-xl` is the app title, `text-2xl` the page heading, nothing else has a size, and
-  there is no root `font-size`. Only `FilterField.tsx`, `ExpensesTable.tsx` and
-  `DateRangePicker.tsx` set it locally; the table and alert reach 0.875rem through
-  daisyUI's default. **A daisyUI default is not a decision** - the calendar arrived at
-  0.75rem that way. Nothing checks this.
-- **An empty list is a row, not an alert.** `ExpensesTable` renders `[]` as a row and
-  reserves `role="alert"` for a request that actually failed - this side of the backend's
-  "an empty table is 200, not 503".
+  there is no root `font-size`. **A daisyUI default is not a decision** - the calendar
+  and the nav tabs each arrived at 0.75rem that way and carry a `text-sm` undoing it,
+  and a table reaches 0.875rem the same way. Nothing checks this.
+- **A period's subtotal is the ungrouped request, never its category rows added up.**
+  `PeriodTotals` runs both and takes the total from the one without `group_by`; adding
+  amounts up here is what sending them as strings exists to prevent. Pinned by "takes
+  the subtotal from the ungrouped request rather than adding the lines up".
+- **An empty list is a row, not an alert**, and so is a period with no `amount`.
+  `role="alert"` is reserved for a request that actually failed - this side of the
+  backend's "an empty table is 200, not 503".
 - **The theme follows the OS, and nothing can override it.** The single `@plugin "daisyui"`
   block in `src/styles/app.css` names `nord --default` and `dim --prefersdark`. There is no
   `data-theme`, no theme provider and no `dark:` variant in `src/`; a toggle would be a
-  feature on top of the pair, not a config change. A theme paints nothing itself, so the
-  surface is `bg-base-200 text-base-content` on `<body>` in `index.html` - a body
-  background is what propagates beyond the app shell. **Every colour is referenced by
-  role**, never a hard-coded shade, which is wrong in one of the two themes rather than
-  merely awkward. Chromium's `prefers-color-scheme` emulation reaches the theme your OS is
-  not set to.
+  feature on top of the pair, not a config change. daisyUI paints `base-100` on `:root`, so
+  the surface is `bg-base-200 text-base-content` on `<html>` in `index.html` - the root
+  element's background is the one that covers the whole canvas. **Every colour is
+  referenced by role**, never a hard-coded shade, which is wrong in one of the two themes
+  rather than merely awkward. Chromium's `prefers-color-scheme` emulation reaches the
+  theme your OS is not set to.
 - **The calendar is themed by daisyUI, and `@daypicker/react/style.css` is deliberately not
   imported.** daisyUI ships a first-party theme keyed on the `react-day-picker` class,
   written in role tokens. **Importing the package's own stylesheet would silently beat
@@ -71,13 +75,12 @@ construction.
     `font-size: .75rem` of its own, so a picked day would shrink as it was picked. No
     `!important` is needed: Tailwind's utilities are unlayered *within* `utilities`,
     daisyUI's theme is a nested sublayer.
-- **Both filters are one control wearing two faces, and `FilterField` is what keeps them
-  that way.** The trigger is a daisyUI `input` and the currency picker a `select`: same
-  height, border, fill, radius and focus treatment, and neither is a `btn`. Its props are a
-  union rather than two optionals **because the two cannot be named the same way** - a
-  `<select>` takes a real `<label htmlFor>` and a `<button>` cannot, so the trigger gets
-  `labelId` and a `<span id>`. That is also why `containerRef` sits on its own positioning
-  `div`: a click on the caption is outside the control.
+- **The filters are one control wearing several faces, and `FilterField` is what keeps
+  them that way**: same height, border, fill, radius and focus, and none of them a `btn`.
+  Its props are a union rather than two optionals **because they cannot all be named the
+  same way** - a `<select>` and a checkbox take a real `<label htmlFor>`, a `<button>`
+  cannot, so the range trigger gets `labelId` and a `<span id>`. `containerRef` sits on its
+  own positioning `div` for the same reason: a click on the caption is outside it.
 
 ## Routing and layering
 
@@ -91,18 +94,18 @@ construction.
   a build artifact: every gate except `frontend-build` reads it and none can produce it.
   **Two independent checks keep it in step.** Adding a route file is caught by
   `frontend-typecheck`, since `createFileRoute("/new")` is not assignable until the tree
-  names `/new` - which also means `pnpm run build` cannot regenerate after adding one, so
-  use `pnpm exec vite build`. A rename or deletion typechecks fine against a stale tree and
-  is caught instead by the `git diff --exit-code` step in `ci.yml`, after `frontend-build`
-  because that is the only gate that runs vite.
+names `/new`, so `pnpm run build` cannot regenerate after adding one - use `pnpm exec
+  vite build`. A rename or deletion typechecks fine against a stale tree, and is caught
+  instead by `ci.yml`'s `git diff --exit-code` step, placed after `frontend-build` as
+  the only gate that runs vite.
 - **The generated tree is excluded from prettier, coverage and Sonar, and `globalIgnores`
   must not make eslint a fourth.** The three exclusions are in the root
-  [`CLAUDE.md`](../CLAUDE.md) table. The file's own blanket `/* eslint-disable */` is
-  enough, and an ignore *pattern* additionally makes eslint answer "File ignored because of
-  a matching ignore pattern" whenever an editor hands it the file; `--no-warn-ignored`
-  cannot reach that. **The prettier exclusion is not a preference**: `router-generator`
-  calls `prettier.format` with explicit options and never resolves `.prettierrc.json`, so
-  the file lands at `printWidth` 80 against this repo's 88.
+[`CLAUDE.md`](../CLAUDE.md) table. Its own blanket `/* eslint-disable */` is enough, and
+  an ignore *pattern* additionally makes eslint answer "File ignored because of a
+  matching ignore pattern" whenever an editor hands it the file, which
+  `--no-warn-ignored` cannot reach. **The prettier exclusion is not a preference**:
+  `router-generator` calls `prettier.format` with explicit options and never resolves
+  `.prettierrc.json`, so the file lands at `printWidth` 80 against this repo's 88.
 - **`react-refresh/only-export-components` is off for `src/routes/**`, and that is not a
   demotion.** A route file exports `Route` beside a component it does not export, which is
   the shape the rule rejects - but `autoCodeSplitting` moves the component into a
@@ -121,21 +124,23 @@ construction.
   second place to drift from. There is no "as recorded" mode - the parameter is always
   sent, an **empty** `?currency=` being a malformed code rather than a request for no
   conversion, and the two dates follow suit. The one thing it adds is the default: an
-  absent bound becomes the first or last day of the current month, which is why
-  `ExpensesPage.test.tsx` pins the clock.
+absent bound becomes the first or last day of the current month, or of the current
+  *year* on `/totals`, which is why both page tests pin the clock. `group_by` alone has
+  **no default to fill in**: absent means ungrouped on the wire too, so anything but
+  `category` is the absence of it.
 - **The currency options are what the rate table can reach, not a list of ISO codes.**
   `targetCurrencies` keeps only the `to_currency` of a pair whose `from_currency` is
   `BASE_CURRENCY`, a rate being never inverted and never composed; `BASE_CURRENCY` itself
   is always offered and needs no rate. A rate list that is pending, 503s, empty or
-  malformed leaves the select disabled there and **does not disturb the expenses table**:
-  they are two requests.
+malformed leaves the select disabled and **does not disturb the table below it**: they
+  are two requests.
 - **The date range is always bounded, and every `navigate` carries the whole search.**
-  There is no clear button and no unbounded mode. `DateRangePicker` holds a half-picked
-  range in local state and reports nothing until both ends are set, an empty bound being
-  malformed to the backend. Because `validateSearch` re-defaults an **absent** parameter, a
-  `navigate` omitting `from_date` would silently reset the range, so both handlers spread
-  the whole search and override one part. Pinned by "picking a currency keeps the range and
-  asks again" and its twin.
+  No clear button and no unbounded mode: `DateRangePicker` holds a half-picked range in
+  local state and reports nothing until both ends are set, an empty bound being
+  malformed to the backend. Because `validateSearch` re-defaults an **absent**
+  parameter, a `navigate` omitting `from_date` would silently reset the range, so every
+  handler spreads the whole search and overrides one part. Pinned by "picking a currency
+  keeps the range and asks again" and its twins.
 - **Two `DayPicker` instances, not one with `numberOfMonths={2}`.** That prop keeps the
   pair consecutive and moves them as a unit, so the left could not sit on 2025 while the
   right showed 2026. Each holds its own `month` and `onMonthChange` while sharing
@@ -145,10 +150,10 @@ construction.
   daisyUI's `popover` or `<details>` dropdown. jsdom implements no Popover API and
   `@testing-library/dom` gives `<summary>` no role, so both recipes are unreachable by
   `getByRole`, and a conditional render makes `queryByRole("grid")` genuinely `null` when
-  closed. It closes on an outside click and on Escape, both from `document` listeners, a
-  `keydown` on a non-interactive `<div>` being sonar S6847; either dismissal **discards a
-  half-picked range**. The trigger is named by `aria-labelledby` over the caption **and its
-  own id**, `<label htmlFor>` not naming a `<button>`.
+closed. It closes on an outside click and on Escape, both from `document` listeners - a
+  `keydown` on a non-interactive `<div>` is sonar S6847 - and either **discards a
+  half-picked range**. The trigger is named by `aria-labelledby` over the caption **and
+  its own id**, `<label htmlFor>` not naming a `<button>`.
 
 ## Environment and tooling
 
@@ -168,20 +173,20 @@ construction.
 - **`pnpm-workspace.yaml` states `minimumReleaseAge` and must never gain a
   `minimumReleaseAgeExclude`.** The value mirrors `cooldown.default-days` in
   [`.github/dependabot.yml`](../.github/dependabot.yml) and has to keep mirroring it:
-  Dependabot enforces the higher of the two across its whole resolution, so a gap either
-  way fails the weekly update job rather than skipping an update. Stating it matters
-  because Dependabot resolves this lockfile with pnpm 10, where the default is 0. An
-  exclusion disables the guard for the least-vetted release there is.
+Dependabot enforces the higher of the two across its whole resolution, so a gap either
+  way fails the weekly update job. It must be stated because Dependabot resolves this
+  lockfile with pnpm 10, where the default is 0. An exclusion disables the guard for the
+  least-vetted release there is.
 
 ## Quality gates
 
 - **`eslint-config-prettier` is applied last, so the linter owns correctness and prettier
   owns formatting.** Never add a formatting rule to the eslint config.
 - **There is no warn tier.** The `lint` script passes `--max-warnings 0`; a warning fails
-  the build like an error. Without it dozens of rules would be advisory - the XSS,
+the build like an error. Without it dozens would be advisory - the XSS,
   `target="_blank"` and leaked-timer rules, `exhaustive-deps`,
-  `reportUnusedDisableDirectives`. Demote a rule deliberately in its config if you disagree
-  with it; do not let the flag go.
+  `reportUnusedDisableDirectives`. Demote a rule in its config if you disagree with it;
+  do not let the flag go.
 - **CSS is linted by eslint too, not by a second tool.** `@eslint/css` adds a `**/*.css`
   block to the same config and rides `frontend-lint`, so there is no stylelint and no new
   pixi task. Tailwind's syntax comes from `tailwind-csstree`'s `tailwind4` rather than

@@ -26,3 +26,29 @@ test("serves the expenses table at the root path", async () => {
   const table = await screen.findByRole("table", { name: "Expenses" });
   expect(table.tagName).toBe("TABLE");
 });
+
+test("serves the period totals at /totals", async () => {
+  renderAppAt("/totals");
+  const table = await screen.findByRole("table", { name: "Totals" });
+  expect(table.tagName).toBe("TABLE");
+});
+
+test("names both routes in the navigation", async () => {
+  renderAppAt("/");
+  // The header is a nav now that there are two routes, and the links are what make the
+  // second reachable without typing its path. Awaited for the reason above: the shell
+  // renders with the first match and not before it.
+  const links = await screen.findAllByRole("link");
+  expect(links.map((link) => link.textContent)).toEqual(["Expenses", "Totals"]);
+});
+
+test("marks the current route in the navigation, filters and all", async () => {
+  // With a search in the URL, which is the case that silently does not mark: activeOptions
+  // includes the search by default, and a link carrying none then matches nothing.
+  renderAppAt("/totals?currency=EUR&group_by=category");
+  const links = await screen.findAllByRole("link");
+  expect(links.map((link) => link.className.includes("btn-active"))).toEqual([
+    false,
+    true,
+  ]);
+});

@@ -1,6 +1,12 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { calendarBounds, currentMonth, fromIsoDate, toIsoDate } from "@/dates";
+import {
+  calendarBounds,
+  currentMonth,
+  currentYear,
+  fromIsoDate,
+  toIsoDate,
+} from "@/dates";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -76,4 +82,18 @@ test("carries the upper bound forward with the year", () => {
   // The floor is fixed and the ceiling moves, so the dropdown grows by an entry a year.
   expect(toIsoDate(bounds.start)).toBe("2025-01-01");
   expect(toIsoDate(bounds.end)).toBe("2031-12-31");
+});
+
+test("spans the whole calendar year the clock is in", () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 6, 4, 12, 0));
+  expect(currentYear()).toEqual({ from: "2026-01-01", to: "2026-12-31" });
+});
+
+test("names the year from the local clock and not through UTC", () => {
+  // A minute past midnight on New Year's Day in Europe/Copenhagen is still the previous
+  // year in UTC, so a currentYear built through toISOString would name 2025 here.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 0, 1, 0, 1));
+  expect(currentYear().from).toBe("2026-01-01");
 });

@@ -1,5 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  type SearchSchemaInput,
+  useNavigate,
+} from "@tanstack/react-router";
 
 import {
   BASE_CURRENCY,
@@ -24,7 +28,9 @@ export const Route = createFileRoute("/")({
   // date is handed on to the backend, which refuses it with a 422; re-checking either
   // here would put the pattern in conversion.py or date_range.py in a second place to
   // drift from. The date defaults read the clock, which is why the page tests pin it.
-  validateSearch: (search: Record<string, unknown>): ExpensesSearch => {
+  validateSearch: (
+    search: Record<string, unknown> & SearchSchemaInput,
+  ): ExpensesSearch => {
     const month = currentMonth();
     return {
       currency: typeof search.currency === "string" ? search.currency : BASE_CURRENCY,
