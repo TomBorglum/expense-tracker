@@ -96,17 +96,24 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
     <div className="scrollbar-gutter-stable overflow-auto">
       {/* No table-zebra: the stripes run per row and would cut across the period groups
           rather than with them. */}
-      <table className="table table-pin-rows table-fixed min-w-md">
+      <table
+        className={`table table-pin-rows table-fixed ${
+          byCategory ? "min-w-3xl" : "min-w-md"
+        }`}
+      >
         {/* The table's accessible name, which is how the tests reach it. Hidden from sight
             because the page already shows the same word as its heading. */}
         <caption className="sr-only">Totals</caption>
-        {/* The columns are pinned so the category toggle only adds and removes rows:
-            daisyUI leaves table-layout auto, where each view's own rows size the
-            columns and the leftover is re-spread across them, so the amounts land at a
-            different x in each. min-w-md is what the wrapper's overflow-auto scrolls
-            once a fixed layout has no room left to take from the first column. */}
+        {/* Amount and Currency are pinned, so they hold their position as the grouping
+            adds and removes the Category column and only Period and Category absorb the
+            difference: daisyUI leaves table-layout auto, where each view's own rows size
+            the columns and the leftover is re-spread across them, so the amounts land at
+            a different x in each. Period is pinned too once grouped, wide enough for its
+            bounds, which leaves the slack to the category names. The min width is what
+            the wrapper's overflow-auto scrolls once a fixed layout has no room left. */}
         <colgroup>
-          <col />
+          {byCategory ? <col className="w-64" /> : <col />}
+          {byCategory ? <col /> : null}
           <col className="w-40" />
           <col className="w-24" />
         </colgroup>
@@ -117,6 +124,11 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
             <th scope="col" className="font-semibold">
               Period
             </th>
+            {byCategory ? (
+              <th scope="col" className="font-semibold">
+                Category
+              </th>
+            ) : null}
             <th scope="col" className="text-right font-semibold">
               Amount
             </th>
@@ -131,7 +143,7 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
               {/* An expense table nobody has run the loader against yet answers 200 with
                   [], and so does a range nothing falls inside. Both are a working server
                   rather than a fault, so this is a row and not the alert above. */}
-              <td colSpan={3} className="text-base-content/60">
+              <td colSpan={byCategory ? 4 : 3} className="text-base-content/60">
                 No expenses in this range.
               </td>
             </tr>
@@ -142,8 +154,11 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
             return (
               <tbody key={rowKey(total)}>
                 <tr>
+                  {/* Across the category column too: the period total covers every
+                      category, so there is none to name beside it. */}
                   <th
                     scope="rowgroup"
+                    colSpan={byCategory ? 2 : 1}
                     className={`${band} text-left font-semibold tabular-nums`}
                   >
                     {total.from_date} to {total.to_date}
@@ -168,7 +183,11 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
                 </tr>
                 {(categories.get(total.period) ?? []).map((row) => (
                   <tr key={rowKey(row)}>
-                    <th scope="row" className="pl-8 font-normal">
+                    {/* A cell of its own rather than a span from the row above: a blank
+                        cell carries the row's background and border, a missing one
+                        leaves the row starting at the category column. */}
+                    <td />
+                    <th scope="row" className="font-normal">
                       {row.category}
                     </th>
                     <td className="text-right tabular-nums">{row.amount}</td>

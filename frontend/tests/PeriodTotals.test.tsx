@@ -20,9 +20,10 @@ const QUERY: TotalsQuery = {
 
 const GROUPED: TotalsQuery = { ...QUERY, group_by: CATEGORY_GROUPING };
 
-// The header row rowTexts() picks up first. Named once and spread into each grid below, so
-// every one of them shows it staying put as the grouping is switched on and off.
+// The header row rowTexts() picks up first. The grouping changes it as well as the rows
+// below it, so each grid below names the one it expects.
 const HEADER = ["Period", "Amount", "Currency"];
+const GROUPED_HEADER = ["Period", "Category", "Amount", "Currency"];
 
 function renderPeriodTotals(query: TotalsQuery = QUERY) {
   // A fresh client per test, so nothing is served out of a cache another test filled,
@@ -72,14 +73,17 @@ test("adds a line per category when the grouping was asked for", async () => {
   await screen.findByRole("table", { name: "Totals" });
   // The categories arrive in the order the backend sorted them and are not reordered
   // here, and each period is still opened by the band carrying its subtotal.
+  // The band opening each period heads the category column as well as its own, so its row
+  // is one cell short of theirs; each line under it opens with the period cell it has
+  // nothing to put in, which is what keeps it rendering as an ordinary row.
   expect(rowTexts()).toEqual([
-    HEADER,
+    GROUPED_HEADER,
     ["2001-03-01 to 2001-03-31", "30.00", "EUR"],
-    ["Stub category", "12.50", "EUR"],
-    ["Other stub category", "17.50", "EUR"],
+    ["", "Stub category", "12.50", "EUR"],
+    ["", "Other stub category", "17.50", "EUR"],
     ["2001-02-01 to 2001-02-28", "None recorded"],
     ["2001-01-01 to 2001-01-31", "11.00", "EUR"],
-    ["Stub category", "11.00", "EUR"],
+    ["", "Stub category", "11.00", "EUR"],
   ]);
 });
 
@@ -100,6 +104,16 @@ test("drops the category lines when the grouping is switched off", async () => {
   ]);
 });
 
+test("names the category column only while the grouping is on", async () => {
+  // A column headed with no values under it is what the ungrouped view would show, and
+  // there is no value to put there: the period total covers every category.
+  const { rerenderWith } = renderPeriodTotals();
+  await screen.findByRole("table", { name: "Totals" });
+  expect(screen.queryByRole("columnheader", { name: "Category" })).toBeNull();
+  rerenderWith(GROUPED);
+  await screen.findByRole("columnheader", { name: "Category" });
+});
+
 test("takes the subtotal from the ungrouped request rather than adding the lines up", async () => {
   // A total the category rows do not add up to, which no arithmetic here could produce.
   // Summing amounts this side of the wire is the thing sending them as strings exists to
@@ -116,10 +130,10 @@ test("takes the subtotal from the ungrouped request rather than adding the lines
   renderPeriodTotals(GROUPED);
   await screen.findByRole("table", { name: "Totals" });
   expect(rowTexts()).toEqual([
-    HEADER,
+    GROUPED_HEADER,
     ["2001-03-01 to 2001-03-31", "999.99", "EUR"],
-    ["Stub category", "12.50", "EUR"],
-    ["Other stub category", "17.50", "EUR"],
+    ["", "Stub category", "12.50", "EUR"],
+    ["", "Other stub category", "17.50", "EUR"],
   ]);
 });
 
@@ -215,11 +229,17 @@ test("shows an alert when an absent amount arrives as null", async () => {
 
 test("shows a range that matches nothing as a row rather than an alert", async () => {
   // A valid range holding no expenses is a 200 with [], for the reason an empty table
-  // is: it is an answer and not a fault.
+  // is: it is an answer and not a fault. The row spans whatever width the grouping left
+  // the table, there being no period below it to line the columns up against.
   server.use(http.get(TOTALS_URL, () => HttpResponse.json([])));
-  renderPeriodTotals();
+  const { rerenderWith } = renderPeriodTotals();
   await screen.findByRole("table", { name: "Totals" });
-  expect(screen.getByRole("cell").textContent).toBe("No expenses in this range.");
+  const empty = () => screen.getByRole<HTMLTableCellElement>("cell");
+  expect(empty().textContent).toBe("No expenses in this range.");
+  expect(empty().colSpan).toBe(3);
+  rerenderWith(GROUPED);
+  await screen.findByRole("columnheader", { name: "Category" });
+  expect(empty().colSpan).toBe(4);
 });
 
 test("asks the API for the parameters it was given", async () => {
