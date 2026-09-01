@@ -25,8 +25,8 @@ construction.
 - **The type scale is three sizes at two weights, and 0.875rem is the body of it.**
   `text-xl` is the app title, `text-2xl` the page heading, nothing else has a size, and
   there is no root `font-size`. **A daisyUI default is not a decision** - the calendar
-  arrived at 0.75rem that way, and a table reaches 0.875rem the same way. Nothing checks
-  this.
+  and the nav tabs each arrived at 0.75rem that way and carry a `text-sm` undoing it,
+  and a table reaches 0.875rem the same way. Nothing checks this.
 - **A period's subtotal is the ungrouped request, never its category rows added up.**
   `PeriodTotals` runs both and takes the total from the one without `group_by`; adding
   amounts up here is what sending them as strings exists to prevent. Pinned by "takes

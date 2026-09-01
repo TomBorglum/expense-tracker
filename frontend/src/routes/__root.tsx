@@ -8,7 +8,9 @@ function RootLayout() {
   // and crossing between them resets the currency. That is also why includeSearch is off:
   // it defaults to on, and a link with no search matches no URL that carries filters, so
   // the current tab would never mark itself. The path is the whole question here.
-  const link = "btn btn-ghost btn-sm font-normal";
+  // btn-sm writes 0.75rem, one step below the page; text-sm brings the tabs back to
+  // the 0.875rem the captions, the controls and the table use.
+  const link = "btn btn-ghost btn-sm text-sm font-normal";
   // btn-active alone, and no second font weight: the type scale is two of them, and a
   // font-normal base against a font-semibold active would leave CSS order to decide.
   const active = { className: "btn-active" };
