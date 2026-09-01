@@ -91,12 +91,15 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
     : new Map<string, PeriodTotal[]>();
 
   return (
-    // The scroll port, as on the expenses page. No table-pin-rows: there is no thead
-    // here to pin.
+    // The scroll port the chain in __root.tsx bounds, so the rows move and table-pin-rows
+    // keeps the header row still, as on the expenses page.
     <div className="scrollbar-gutter-stable overflow-auto">
       {/* No table-zebra: the stripes run per row and would cut across the period groups
           rather than with them. */}
-      <table className="table table-fixed min-w-md">
+      <table className="table table-pin-rows table-fixed min-w-md">
+        {/* The table's accessible name, which is how the tests reach it. Hidden from sight
+            because the page already shows the same word as its heading. */}
+        <caption className="sr-only">Totals</caption>
         {/* The columns are pinned so the category toggle only adds and removes rows:
             daisyUI leaves table-layout auto, where each view's own rows size the
             columns and the leftover is re-spread across them, so the amounts land at a
@@ -107,13 +110,21 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
           <col className="w-40" />
           <col className="w-24" />
         </colgroup>
-        {/* The table's accessible name, which is how the tests reach it. Hidden from sight
-            because the page already shows the same word as its heading. */}
-        <caption className="sr-only">Totals</caption>
-        {/* No thead: the first column holds a period's bounds on the band rows and a
-            category on the lines under them, so no column header is true for every row.
-            The rowgroup and row headers below are what give each amount its
-            association. */}
+        <thead>
+          {/* font-semibold on every th, because daisyUI puts 600 on <thead> and the
+              browser's own `th { font-weight: bold }` beats an inherited value. */}
+          <tr>
+            <th scope="col" className="font-semibold">
+              Period
+            </th>
+            <th scope="col" className="text-right font-semibold">
+              Amount
+            </th>
+            <th scope="col" className="font-semibold">
+              Currency
+            </th>
+          </tr>
+        </thead>
         {totals.data.length === 0 ? (
           <tbody>
             <tr>
