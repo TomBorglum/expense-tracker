@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   createFileRoute,
+  retainSearchParams,
   type SearchSchemaInput,
   useNavigate,
 } from "@tanstack/react-router";
@@ -25,6 +26,12 @@ export type TotalsSearch = TotalsQuery;
 
 export const Route = createFileRoute("/totals")({
   component: TotalsPage,
+  // The same three keys the expenses route retains, and for the same reason. group_by is
+  // not among them: the expenses view declares no such parameter, so leaving here drops
+  // the grouping and coming back starts ungrouped.
+  search: {
+    middlewares: [retainSearchParams(["currency", "from_date", "to_date"])],
+  },
   // Supplies the default for an absent parameter and nothing else, like the expenses
   // route. A malformed code or date is handed on to the backend, which refuses it with a
   // 422. The date defaults read the clock, which is why the page tests pin it.

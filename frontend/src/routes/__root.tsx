@@ -4,10 +4,12 @@ export const Route = createRootRoute({ component: RootLayout });
 
 // The shell every route renders inside: the slot the matched page fills.
 function RootLayout() {
-  // Neither link carries a search, so each page's validateSearch fills its own defaults
-  // and crossing between them resets the currency. That is also why includeSearch is off:
-  // it defaults to on, and a link with no search matches no URL that carries filters, so
-  // the current tab would never mark itself. The path is the whole question here.
+  // Neither link carries a search of its own. What crosses is retained by the routes
+  // themselves, in the retainSearchParams middleware each one declares, so the currency
+  // and the range survive a switch while the grouping does not. That last part is why
+  // includeSearch stays off: it defaults to on, and the Totals link built from
+  // /totals?group_by=category carries no grouping, so a match that weighed the search
+  // would leave the current tab unmarked. The path is the whole question here.
   // btn-sm writes 0.75rem, one step below the page; text-sm brings the tabs back to
   // the 0.875rem the captions, the controls and the table use.
   const link = "btn btn-ghost btn-sm text-sm font-normal";

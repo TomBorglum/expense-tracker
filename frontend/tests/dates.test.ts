@@ -1,12 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import {
-  calendarBounds,
-  currentMonth,
-  currentYear,
-  fromIsoDate,
-  toIsoDate,
-} from "@/dates";
+import { calendarBounds, currentYear, fromIsoDate, toIsoDate } from "@/dates";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -48,24 +42,6 @@ test.each(["2026-02-30", "2026-13-01", "2026-01-02\n"])(
     expect(fromIsoDate(value)).toBeUndefined();
   },
 );
-
-test("spans the current month from its first day to its last", () => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date(2026, 7, 20, 13, 45));
-  expect(currentMonth()).toEqual({ from: "2026-08-01", to: "2026-08-31" });
-});
-
-test("ends a short month on the day it actually ends", () => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date(2026, 1, 14));
-  expect(currentMonth()).toEqual({ from: "2026-02-01", to: "2026-02-28" });
-});
-
-test("ends February on the 29th in a leap year", () => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date(2028, 1, 14));
-  expect(currentMonth()).toEqual({ from: "2028-02-01", to: "2028-02-29" });
-});
 
 test("bounds the calendar at the first selectable year and the end of this one", () => {
   vi.useFakeTimers({ toFake: ["Date"] });

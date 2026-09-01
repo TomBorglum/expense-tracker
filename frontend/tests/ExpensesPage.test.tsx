@@ -24,8 +24,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-// The whole search the page defaults to under the clock pinned above.
-const AUGUST = { currency: "DKK", from_date: "2026-08-01", to_date: "2026-08-31" };
+// The whole search the page defaults to under the clock pinned above. The same year
+// /totals defaults to, so switching between the two views changes nothing.
+const YEAR = { currency: "DKK", from_date: "2026-01-01", to_date: "2026-12-31" };
 
 // Mounted through the router rather than bare: the page reads its currency and its dates
 // from the URL, so the route is part of what is under test here.
@@ -102,23 +103,12 @@ test("defaults to the base currency when the URL names none", async () => {
   expect(currencySelect().value).toBe("DKK");
 });
 
-test("defaults to the current month when the URL names no range", async () => {
+test("defaults to the whole current year when the URL names no range", async () => {
   const requested = recordRequestedParams();
   renderPageAt("/");
   await screen.findByRole("table", { name: "Expenses" });
-  expect(requested).toEqual([AUGUST]);
-  expect(dateRangeTrigger().textContent).toBe("2026-08-01 to 2026-08-31");
-});
-
-test("ends the default range on the day the month actually ends", async () => {
-  // February, so a currentMonth that always reached the 31st would fail here.
-  vi.setSystemTime(new Date(2026, 1, 14, 12, 0));
-  const requested = recordRequestedParams();
-  renderPageAt("/");
-  await screen.findByRole("table", { name: "Expenses" });
-  expect(requested).toEqual([
-    { currency: "DKK", from_date: "2026-02-01", to_date: "2026-02-28" },
-  ]);
+  expect(requested).toEqual([YEAR]);
+  expect(dateRangeTrigger().textContent).toBe("2026-01-01 to 2026-12-31");
 });
 
 test("requests the range the URL names", async () => {
@@ -163,21 +153,23 @@ test("picking a range keeps the currency, puts it in the URL and asks again", as
   const router = renderPageAt("/?currency=EUR");
   await screen.findByRole("table", { name: "Expenses" });
 
+  // The panels open on the months the default range starts and ends in, which under the
+  // whole-year default is January on the left and December on the right.
   await userEvent.click(dateRangeTrigger());
-  await userEvent.click(screen.getByRole("button", { name: /August 3rd, 2026/ }));
-  await userEvent.click(screen.getByRole("button", { name: /August 10th, 2026/ }));
+  await userEvent.click(screen.getByRole("button", { name: /January 5th, 2026/ }));
+  await userEvent.click(screen.getByRole("button", { name: /December 20th, 2026/ }));
 
   await waitFor(() => {
     expect(router.state.location.search).toEqual({
       currency: "EUR",
-      from_date: "2026-08-03",
-      to_date: "2026-08-10",
+      from_date: "2026-01-05",
+      to_date: "2026-12-20",
     });
   });
   await waitFor(() => {
     expect(requested).toEqual([
-      { currency: "EUR", from_date: "2026-08-01", to_date: "2026-08-31" },
-      { currency: "EUR", from_date: "2026-08-03", to_date: "2026-08-10" },
+      { currency: "EUR", from_date: "2026-01-01", to_date: "2026-12-31" },
+      { currency: "EUR", from_date: "2026-01-05", to_date: "2026-12-20" },
     ]);
   });
 });
@@ -201,7 +193,7 @@ test("passes a date the URL invents through to the backend", async () => {
   expect(requested).toEqual(["yesterday"]);
   // The control still agrees with the request that failed, rather than showing a date it
   // guessed at.
-  expect(dateRangeTrigger().textContent).toBe("yesterday to 2026-08-31");
+  expect(dateRangeTrigger().textContent).toBe("yesterday to 2026-12-31");
 });
 
 test("passes a range that runs backwards through to the backend", async () => {

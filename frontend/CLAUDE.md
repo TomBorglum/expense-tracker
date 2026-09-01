@@ -106,12 +106,6 @@ names `/new`, so `pnpm run build` cannot regenerate after adding one - use `pnpm
   `--no-warn-ignored` cannot reach. **The prettier exclusion is not a preference**:
   `router-generator` calls `prettier.format` with explicit options and never resolves
   `.prettierrc.json`, so the file lands at `printWidth` 80 against this repo's 88.
-- **`react-refresh/only-export-components` is off for `src/routes/**`, and that is not a
-  demotion.** A route file exports `Route` beside a component it does not export, which is
-  the shape the rule rejects - but `autoCodeSplitting` moves the component into a
-  `?tsr-split` module, so the file eslint reads is not the module the browser gets.
-  Narrowing was tried: `allowExportNames: ["Route"]` makes the export *skipped*, so the
-  file is then reported for holding no exported component.
 - **`src/components/` is the router-free layer, not `src/routes/`.** Under file-based
   routing the route and its page are the same module: `routes/index.tsx` holds
   `validateSearch` and the component and reads the URL through **`Route.useSearch()`**.
@@ -124,8 +118,10 @@ names `/new`, so `pnpm run build` cannot regenerate after adding one - use `pnpm
   second place to drift from. There is no "as recorded" mode - the parameter is always
   sent, an **empty** `?currency=` being a malformed code rather than a request for no
   conversion, and the two dates follow suit. The one thing it adds is the default: an
-absent bound becomes the first or last day of the current month, or of the current
-  *year* on `/totals`, which is why both page tests pin the clock. `group_by` alone has
+  absent bound becomes the first or last day of the current *year*, **the same one on
+  both routes**, because a switch between them carries the range as it stands and cannot
+  tell a default from a pick - a month on `/` would arrive on `/totals` as a single
+  period. It reads the clock, which is why both page tests pin it. `group_by` alone has
   **no default to fill in**: absent means ungrouped on the wire too, so anything but
   `category` is the absence of it.
 - **The currency options are what the rate table can reach, not a list of ISO codes.**
@@ -141,6 +137,11 @@ malformed leaves the select disabled and **does not disturb the table below it**
   parameter, a `navigate` omitting `from_date` would silently reset the range, so every
   handler spreads the whole search and overrides one part. Pinned by "picking a currency
   keeps the range and asks again" and its twins.
+- **A switch between the views keeps the currency and the range**, through
+  `retainSearchParams` in each route's `search.middlewares`; the nav links carry no search
+  of their own and `group_by` is deliberately not in the list. **A bare landing URL needs
+  no help to be self-contained** - the router rewrites it, with `replace`, to what
+  `validateSearch` filled in. Both pinned by `routing.test.tsx`.
 - **Two `DayPicker` instances, not one with `numberOfMonths={2}`.** That prop keeps the
   pair consecutive and moves them as a unit, so the left could not sit on 2025 while the
   right showed 2026. Each holds its own `month` and `onMonthChange` while sharing
@@ -190,13 +191,7 @@ the build like an error. Without it dozens would be advisory - the XSS,
 - **CSS is linted by eslint too, not by a second tool.** `@eslint/css` adds a `**/*.css`
   block to the same config and rides `frontend-lint`, so there is no stylelint and no new
   pixi task. Tailwind's syntax comes from `tailwind-csstree`'s `tailwind4` rather than
-  being hand-written, so a new at-rule needs no config change, and nothing is exempted. Two
-  things there are load-bearing:
-  - **The `@plugin` `descriptors` override is the one local addition.** daisyUI's `@plugin`
-    takes a block and core Tailwind's does not, so `tailwind4` gives it no descriptors and
-    css-tree rejects *every* declaration inside one. Drop it once
-    [tailwind-csstree#63](https://github.com/humanwhocodes/tailwind-csstree/issues/63)
-    lands.
+  being hand-written, so a new at-rule needs no config change, and nothing is exempted.
   - **`tolerant: true` stays**, for a subtler reason than an unparseable file. `tailwind4`
     reads `source(none)` by trying `<string>` and falling back to `<ident>`, and css-tree
     reports that recovered attempt through `onParseError` regardless; `@eslint/css`
