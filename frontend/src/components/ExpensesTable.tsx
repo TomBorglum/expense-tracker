@@ -43,25 +43,37 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
     // widening date range crosses the point where the rows start overflowing. It needs no
     // min-h-0: a box whose overflow is not visible already has an automatic minimum of 0.
     <div className="scrollbar-gutter-stable overflow-auto">
-      <table className="table table-pin-rows table-zebra">
+      <table className="table table-pin-rows table-zebra table-fixed min-w-3xl">
         {/* The table's accessible name, which is how the tests reach it. Hidden from
             sight because the page already shows the same word as its heading. */}
         <caption className="sr-only">Expenses</caption>
+        {/* Amount and Currency carry the widths the totals table gives them, so the two
+            views size those columns alike. Details is the one column left unsized and
+            takes everything the fixed layout has not spent - under table-fixed a second
+            unsized column would halve that. The min width is what the wrapper's
+            overflow-auto scrolls once there is no room left. */}
+        <colgroup>
+          <col className="w-32" />
+          <col className="w-40" />
+          <col className="w-40" />
+          <col className="w-24" />
+          <col />
+        </colgroup>
         <thead>
           {/* font-semibold on every th, because daisyUI puts 600 on <thead> and the
               browser's own `th { font-weight: bold }` beats an inherited value. */}
           <tr>
-            <th scope="col" className="text-right font-semibold">
-              Amount
-            </th>
-            <th scope="col" className="font-semibold">
-              Currency
-            </th>
             <th scope="col" className="font-semibold">
               Date
             </th>
             <th scope="col" className="font-semibold">
               Category
+            </th>
+            <th scope="col" className="text-right font-semibold">
+              Amount
+            </th>
+            <th scope="col" className="font-semibold">
+              Currency
             </th>
             <th scope="col" className="font-semibold">
               Details
@@ -86,10 +98,10 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
               // sorted or filtered here, which is what makes that identity stable.
               // eslint-disable-next-line @eslint-react/no-array-index-key -- see above
               <tr key={index}>
-                <td className="text-right tabular-nums">{expense.amount}</td>
-                <td>{expense.currency}</td>
                 <td className="tabular-nums">{expense.date}</td>
                 <td>{expense.category}</td>
+                <td className="text-right tabular-nums">{expense.amount}</td>
+                <td>{expense.currency}</td>
                 <td>{expense.details}</td>
               </tr>
             ))
