@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS loaded_expense_file (
     -- The bare name, never a path, so moving the directory does not orphan the ledger.
     filename  text        NOT NULL UNIQUE,
     -- Lowercase hex sha256 of the file's bytes, taken before parsing. Reproducible
-    -- with `sha256sum data/expenses/<filename>`.
+    -- with `sha256sum $EXPENSE_DATA_DIR/<filename>`.
     sha256    text        NOT NULL,
     loaded_at timestamptz NOT NULL DEFAULT now(),
     -- What the loader believed it inserted. Not derived from a COUNT, so a

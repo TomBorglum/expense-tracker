@@ -8,6 +8,12 @@
 # instead of being silently hidden.
 /backend/.pgdata/
 
+# Real expense data lives in a separate private repository, pointed at by
+# EXPENSE_DATA_DIR in backend/.env. Nothing is ever loaded from inside this checkout, so a
+# directory reappearing at the old path is an accident, not a source. The samples the
+# tests use live under backend/tests/data/expenses/ and are committed.
+/backend/data/expenses/
+
 # Python bytecode
 __pycache__/
 *.py[cod]

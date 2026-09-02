@@ -198,7 +198,7 @@ def main() -> int:
     if len(sys.argv) != 2:
         print(
             "usage: python -m expense_tracker.expense_loader <directory>\n"
-            + "`pixi run backend-load-expenses` passes data/expenses/ for you.",
+            + "`pixi run backend-load-expenses` passes $EXPENSE_DATA_DIR for you.",
             file=sys.stderr,
         )
         return 2

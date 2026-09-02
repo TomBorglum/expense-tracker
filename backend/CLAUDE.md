@@ -13,8 +13,8 @@ otherwise correct change, or nothing does; each bullet says which.
   stay `None`. Pinned by `test_root_is_not_served` and its three surface neighbours.
 - **All three endpoints are read-only over HTTP.** Rows arrive through
   `backend-load-expenses` and `backend-load-currencies` and nowhere else, so there is no
-  POST, PUT or DELETE. The database is a view of the `*.tsv` files under `data/`: named
-  columns checked strictly, dates `DD/MM/YYYY`. Nothing checks this.
+  POST, PUT or DELETE. The tables are a view of `*.tsv` files from `$EXPENSE_DATA_DIR` and
+  `data/currencies/`: columns checked strictly, dates `DD/MM/YYYY`. Nothing checks this.
 - **CORS is wildcard with `allow_credentials=False`.** The spec forbids the pair, so the
   day the API grows cookies or an `Authorization` header the wildcard has to become a real
   origin list. It is registered outermost, after the security-headers middleware, so it

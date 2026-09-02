@@ -22,10 +22,11 @@ expense-tracker/
   backend/
     pyproject.toml              # hatchling, ruff, pytest, basedpyright, poe tasks
     schema.sql                  # the whole schema: two tables and an index
-    data/expenses/              # the committed expense files, loaded into the database
+    data/currencies/            # the committed exchange rates, loaded into the database
     src/expense_tracker/        # __init__ (the API), deps, config, db,
                                 #   expense_repository, expense_loader
     tests/
+      data/expenses/            # sample-*.tsv, the suite's fixtures - not a data source
     .pgdata/                    # the local PostgreSQL cluster, gitignored
   frontend/
     package.json, pnpm-lock.yaml, pnpm-workspace.yaml
@@ -211,7 +212,7 @@ than passing it to a router with no such route.
 ## Database
 
 PostgreSQL, holding three tables: `loaded_expense_file` and `expense`, which together are
-a view of the files in `backend/data/expenses/`, and `currency_rate`, which is a view of
+a view of the files in `$EXPENSE_DATA_DIR`, and `currency_rate`, which is a view of
 `backend/data/currencies/`. See [Loading expenses](#loading-expenses) and
 [Loading exchange rates](#loading-exchange-rates).
 
@@ -256,7 +257,7 @@ a server: the `postgres`-marked tests need it, and the two loaders do too.
 ### Schema and access
 
 `backend/schema.sql` is the entire schema and the only DDL. There is no Alembic - two
-append-only tables rebuildable from `backend/data/expenses/` do not earn a migration
+append-only tables rebuildable from the expense files do not earn a migration
 tool - and the app issues no DDL of its own, so nothing but `db-init` ever runs it.
 Every statement in it is idempotent, because `db-init` re-runs against live clusters.
 Generated keys use `GENERATED ALWAYS AS IDENTITY` rather than `bigserial`, which
@@ -304,9 +305,37 @@ answers, so a developer who has not run `db-init` does not face a red suite, and
 
 ### Loading expenses
 
+**The expense files are not in this repository.** Real spending is confidential and this
+repository is public, so the files live in a separate private one, and `EXPENSE_DATA_DIR`
+in `backend/.env` is the absolute path to your clone of it. Nothing here fetches, updates
+or tracks that clone - keeping it current is entirely your job.
+
 ```sh
-pixi run backend-load-expenses      # reads backend/data/expenses/*.tsv into the database
+pixi run backend-load-expenses      # reads $EXPENSE_DATA_DIR/*.tsv into the database
 ```
+
+**A missing directory loads nothing and succeeds.** A machine without the data repository
+is an ordinary state, not a failure, so the task says so and stops. An *unset*
+`EXPENSE_DATA_DIR` is the other thing entirely - a shell that never ran `direnv allow` -
+and aborts on the same `${VAR:?}` guard the `db-*` tasks use. The loader itself is
+unchanged and still refuses a directory handed to it directly that does not exist, which
+is what keeps a typed path from failing silently:
+
+```sh
+cd backend && python -m expense_tracker.expense_loader ~/expnses   # error: not a directory
+```
+
+The twelve `sample-*.tsv` files under `backend/tests/data/expenses/` are the test suite's
+fixtures and no task points at them. To fill a database from them anyway:
+
+```sh
+cd backend && EXPENSE_DATA_DIR=tests/data/expenses poe load-expenses
+```
+
+They carry the `sample-` prefix for a reason. `loaded_expense_file.filename` is unique on
+the bare name, so a fixture called `2026-01.tsv` and a real file of the same name would
+collide in the ledger and the second one loaded would be refused as an edit of the first.
+The prefix makes that impossible rather than merely unlikely.
 
 Files are `*.tsv`: **tab-separated**, UTF-8, one header line naming exactly these five
 columns in this order, then one line per expense.
@@ -708,7 +737,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run backend-test` | `poe test` | Run the test suite with coverage |
 | `pixi run backend-lint` | `poe lint` | Lint with ruff, then check the import graph with import-linter |
 | `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues (ruff only) |
-| `pixi run backend-load-expenses` | `poe load-expenses` | Read `backend/data/expenses/*.tsv` into the database |
+| `pixi run backend-load-expenses` | `poe load-expenses` | Read `$EXPENSE_DATA_DIR/*.tsv` into the database, or nothing if that directory is absent |
 | `pixi run backend-load-currencies` | `poe load-currencies` | Replace the exchange rates with `backend/data/currencies/*.tsv` |
 | `pixi run backend-format` | `poe format` | Format with ruff |
 | `pixi run backend-format-check` | `poe format-check` | Check formatting without writing changes |
@@ -817,7 +846,8 @@ Nothing in CI builds `prod` yet; it is verified by hand until there is an image 
 ## Configuration
 
 Where this checkout's backend listens is written down once, in **`backend/.env`**: the
-four facts `psql` and `createdb` already read, and the port `uvicorn` already reads.
+four facts `psql` and `createdb` already read, the port `uvicorn` already reads, and where
+the expense files are.
 
 ```
 PGHOST=127.0.0.1
@@ -825,7 +855,15 @@ PGPORT=5433
 PGUSER=expense_tracker
 PGDATABASE=expense_tracker
 UVICORN_PORT=8000
+EXPENSE_DATA_DIR=/home/tombo/projects/expense-data
 ```
+
+`EXPENSE_DATA_DIR` is the odd one out, and knowingly so: it is the only value here that is
+a fact about a *machine* rather than about the project, because it points outside the
+checkout at a clone of the private data repository. A checkout elsewhere edits it. Unset
+and set-but-absent are deliberately different - unset aborts on the guard, set-but-absent
+loads nothing and succeeds - so a machine without the data repository is never mistaken
+for one whose shell was never blessed. See [Loading expenses](#loading-expenses).
 
 Every one of them is a name the tool itself looks for, which is why no task passes
 `--host`, `--port` or `--username`. `UVICORN_PORT` is the API's half of that: uvicorn's
@@ -861,7 +899,7 @@ One loader covers everything, including what no task wraps:
 ```sh
 psql                                              # the local cluster, no flags
 pytest tests/test_expense_postgres.py -k truncate --pdb
-python -m expense_tracker.expense_loader ~/exports # a directory other than data/expenses
+python -m expense_tracker.expense_loader ~/exports # a directory other than the configured one
 ```
 
 `PGHOST`, `PGPORT`, `PGUSER` and `PGDATABASE` are the variables libpq itself reads, so
