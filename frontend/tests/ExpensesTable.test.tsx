@@ -100,7 +100,7 @@ test("shows an empty ledger as a row rather than an alert", async () => {
   server.use(http.get(EXPENSES_URL, () => HttpResponse.json([])));
   renderExpensesTable();
   await screen.findByRole("table", { name: "Expenses" });
-  expect(screen.getByRole("cell").textContent).toBe("No expenses loaded.");
+  expect(screen.getByRole("cell").textContent).toBe("No expenses in this range.");
 });
 
 test("asks the API for the parameters it was given", async () => {
@@ -136,5 +136,5 @@ test("shows a range that matches nothing as a row rather than an alert", async (
   server.use(http.get(EXPENSES_URL, () => HttpResponse.json([])));
   renderExpensesTable({ ...QUERY, from_date: "2026-06-01", to_date: "2026-06-30" });
   await screen.findByRole("table", { name: "Expenses" });
-  expect(screen.getByRole("cell").textContent).toBe("No expenses loaded.");
+  expect(screen.getByRole("cell").textContent).toBe("No expenses in this range.");
 });

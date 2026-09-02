@@ -82,12 +82,12 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
         </thead>
         <tbody>
           {expenses.data.length === 0 ? (
-            // A database nobody has run the loader against yet answers 200 with [], which
-            // is a working server rather than a fault, so it gets a row and not the alert
-            // above.
+            // A database nobody has run the loader against yet answers 200 with [], and
+            // so does a range nothing falls inside. Both are a working server rather than
+            // a fault, so this is a row and not the alert above.
             <tr>
               <td colSpan={5} className="text-base-content/60">
-                No expenses loaded.
+                No expenses in this range.
               </td>
             </tr>
           ) : (

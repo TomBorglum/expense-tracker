@@ -92,7 +92,7 @@ Visit http://localhost:5173 and you should see the **Expenses** table, fetched f
 `http://localhost:8000/api/expenses` - a genuine cross-origin request, which works only
 because the API allows it (see [CORS](#cors)) - and read in turn out of the `expense`
 table (see [Database](#database)). Until you run the loader it says
-`No expenses loaded.`, which is the empty state and not an error.
+`No expenses in this range.`, which is the empty state and not an error.
 
 The API alone is enough for backend work. The SPA alone runs too; it just renders its
 error state until something answers on 8000.
