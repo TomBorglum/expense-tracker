@@ -855,13 +855,16 @@ PGPORT=5433
 PGUSER=expense_tracker
 PGDATABASE=expense_tracker
 UVICORN_PORT=8000
-EXPENSE_DATA_DIR=/home/tombo/projects/expense-data
+EXPENSE_DATA_DIR=$HOME/projects/expense-data
 ```
 
 `EXPENSE_DATA_DIR` is the odd one out, and knowingly so: it is the only value here that is
 a fact about a *machine* rather than about the project, because it points outside the
-checkout at a clone of the private data repository. A checkout elsewhere edits it. Unset
-and set-but-absent are deliberately different - unset aborts on the guard, set-but-absent
+checkout at a clone of the private data repository. direnv expands `$HOME` as it loads
+the file, so the committed default is a real path wherever the clone sits beside this
+one; anywhere else, set it in **`backend/.env.local`** - `.envrc` loads that after
+`backend/.env`, and it is gitignored, so no tracked file carries one machine's layout.
+Unset and set-but-absent are deliberately different - unset aborts on the guard, set-but-absent
 loads nothing and succeeds - so a machine without the data repository is never mistaken
 for one whose shell was never blessed. See [Loading expenses](#loading-expenses).
 
@@ -954,4 +957,9 @@ The frontend has exactly one variable of its own, `VITE_API_BASE_URL` - see
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for branch naming, Conventional Commit, and
-squash-merge rules.
+squash-merge rules. To report a security issue, see
+[`SECURITY.md`](SECURITY.md) - please do not open a public issue for one.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).

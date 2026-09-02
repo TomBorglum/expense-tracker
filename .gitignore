@@ -34,6 +34,11 @@ frontend/dist/
 !backend/.env
 !frontend/.env
 
+# Claude Code's per-developer permission decisions. Ignored here rather than only in a
+# personal ~/.config/git/ignore, because a fresh clone has no such file and would offer
+# to commit one developer's answers as everyone's.
+.claude/settings.local.json
+
 # Test/coverage artifacts
 .pytest_cache/
 .coverage
