@@ -51,16 +51,16 @@ one.
 
 ## Branch, merge and release rules
 
-The rationale, and the one merge-commit exception, are in
-[`CONTRIBUTING.md`](CONTRIBUTING.md). This repo is on the GitHub free plan, so none of it
-is enforced by GitHub - follow it as if it were.
+The rationale is in [`CONTRIBUTING.md`](CONTRIBUTING.md), which maps each rule to the
+ruleset rule that pins it. The `main-protection` ruleset enforces every one of them and
+nobody can bypass it, so a non-compliant merge is refused rather than merely discouraged.
 
 - **Never push directly to `main`.** Every change goes on a branch, through a PR.
 - **The PR title must be a valid Conventional Commit.** It becomes the squashed commit
   subject that release-please parses.
 - **Squash-merge only**, keeping `main` linear.
-- **Before merging:** the `SonarCloud Code Analysis` check passes and every review thread
-  is resolved.
+- **Before merging:** the `Checks` and `SonarCloud Code Analysis` checks pass and every
+  review thread is resolved. Both are required by the ruleset, by those exact names.
 - **Merge with `gh pr merge --squash --delete-branch`.**
 - **Branch naming:** `<type>/<short-kebab-description>`, e.g. `feat/monthly-report`.
 - **Releases are automated** by release-please
@@ -69,6 +69,10 @@ is enforced by GitHub - follow it as if it were.
 
 ## Source conventions
 
+- **This repository is public.** Nothing confidential is ever committed - real spending
+  lives in the private repository `EXPENSE_DATA_DIR` points at, and the files under
+  `backend/tests/data/expenses/` are synthetic fixtures, not a copy of it. Secret scanning
+  with push protection is on, which catches credentials and nothing else.
 - **ASCII-only** committed source: no em-dashes, smart quotes, arrows, ellipses,
   including the sample data under `backend/tests/data/expenses/`. The loader decodes
   `utf-8-sig`, so a developer's own uncommitted exports carry Danish text and byte-order

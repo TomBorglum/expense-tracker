@@ -10,23 +10,27 @@ For that to work, commits must follow
 [Conventional Commits](https://www.conventionalcommits.org/). This document is the
 guard rail for naming commits and branches so the automation does the right thing.
 
-## Soft branch protection
+## Branch protection
 
-This repo is on the GitHub **free plan**, so branch protection rules and required
-status checks **cannot be enforced** on a private repository. The rules below are
-therefore **soft rules**: followed by discipline, not by GitHub blocking a
-non-compliant merge. Treat them as if they were enforced. The sibling repo
-`wsl-cloud-init` enforces the same rules with a repository ruleset; we keep parity
-here manually.
+These rules are **enforced** by the `main-protection` repository ruleset. Rulesets
+are available on the GitHub free plan for public repositories, which is what this
+one is; the sibling repo `wsl-cloud-init` carries the same ruleset. Nobody can
+bypass it - `bypass_actors` is empty, the owner included.
+
+Each rule below names the ruleset rule that blocks it:
 
 - **Never push directly to `main`.** Every change lands through a pull request.
-- **Squash-merge** (or rebase); **never a merge commit** (see the exception below).
-- **The PR title must be a valid Conventional Commit** (it becomes the commit
-  subject on `main`).
-- **Keep `main` linear** (no force-pushes, no merge commits).
-- **Let the SonarCloud check pass before merging.**
+  (`pull_request`; `deletion` and `non_fast_forward` also block deleting or
+  force-pushing the branch.)
+- **Squash-merge or rebase; never a merge commit.**
+  (`required_linear_history`, and `allowed_merge_methods: [squash, rebase]`.)
+- **The PR title must be a valid Conventional Commit** - it becomes the commit
+  subject on `main`, because `squash_merge_commit_title` is `PR_TITLE`.
+- **Let the SonarCloud check pass before merging.** (`required_status_checks`,
+  which also requires the `Checks` job in `ci.yml`.)
 - **Resolve all review threads before merging.**
-- **Delete the branch after merge.**
+  (`required_review_thread_resolution`.)
+- **Delete the branch after merge.** (`delete_branch_on_merge` on the repository.)
 
 A compliant merge from the CLI:
 
@@ -100,20 +104,23 @@ BREAKING CHANGE: pre-1.0 CSV imports are no longer accepted.
 ## Squash merges
 
 Pull requests are **squash-merged**: the branch collapses into one commit on `main`
-whose subject is the **PR title**, and the branch's own commit messages are
-discarded. So the PR title must be a valid Conventional Commit - a PR titled
+whose subject is the **PR title** and whose body is the branch's own commit
+messages. So the PR title must be a valid Conventional Commit - a PR titled
 `Update budget code` is invisible to release-please and will neither appear in the
-changelog nor bump the version.
+changelog nor bump the version. That holds however many commits the branch has,
+because `squash_merge_commit_title` is `PR_TITLE`; under GitHub's default a
+one-commit branch would be titled from that commit instead.
 
 The one thing release-please still reads from a squash commit's body is a
-`BREAKING CHANGE:` footer, so put that in the PR description when it applies.
-
-### Multiple changelog entries from one branch
+`BREAKING CHANGE:` footer. The body comes from the branch's own commit messages
+(`squash_merge_commit_message` is `COMMIT_MESSAGES`), **not** from the PR
+description, so put the footer in a commit on the branch. A footer written only in
+the PR description never reaches `main` and is never parsed.
 
 A squash-merged PR yields exactly one changelog entry, so prefer **focused PRs**:
-one logical change, one type. If a single branch genuinely has to produce several
-entries, merge it with a **merge commit** so each Conventional Commit on the branch
-is parsed individually. This is the only case where a merge commit is acceptable.
+one logical change, one type. A branch that would produce several entries is two
+PRs - `required_linear_history` blocks the merge commit that would have parsed each
+of its commits individually.
 
 ## Version selection
 

@@ -21,6 +21,10 @@ concurrency:
 
 jobs:
   checks:
+    # Named explicitly because the main-protection ruleset requires this check by
+    # name. Without it the context would be the job id, and renaming that key would
+    # silently stop the gate matching instead of failing loudly.
+    name: Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

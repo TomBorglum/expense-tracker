@@ -2,12 +2,15 @@ name: OIDC Smoke Test
 
 # Proves the GitHub Actions -> AWS OIDC path end to end, and nothing else depends on
 # it: mint an OIDC token, exchange it for temporary credentials on
-# gha-expense-tracker-ci, read the Docker Hub PAT from SSM Parameter Store and print
-# it. The stored value is a dummy placeholder, which is the only reason the last step
-# is acceptable - see the comment on it.
+# gha-expense-tracker-ci, read the Docker Hub PAT from SSM Parameter Store and confirm
+# it came back. The stored value is a dummy placeholder, and it is masked either way.
 #
 # Manual only. Re-run it after any change to that role's trust policy or permissions;
 # it is the cheapest way to find out whether the change was right.
+#
+# This repository is public, so every run's log is world-readable. Nothing this workflow
+# prints may identify the account: both the parameter value and the account id are masked
+# below, and anything added here must be too.
 
 on:
   workflow_dispatch:
@@ -57,8 +60,14 @@ jobs:
       # sts:GetCallerIdentity needs no IAM permission, so this works on a role whose
       # only grants are the SSM read and the KMS decrypt. Prints the assumed-role ARN
       # and session name, which is how you tell the credentials are the federated ones.
+      # The account id is masked first, so the ARN reaches the public log with *** in
+      # place of the twelve digits and still shows the role and session name.
       - name: Confirm the assumed identity
-        run: aws sts get-caller-identity
+        run: |
+          set -euo pipefail
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          echo "::add-mask::$account"
+          aws sts get-caller-identity
 
       # Exercises both halves of the inline policy at once: ssm:GetParameter on the
       # parameter, and kms:Decrypt on the aws/ssm key via --with-decryption. Dropping
@@ -72,8 +81,8 @@ jobs:
             --with-decryption \
             --query Parameter.Value \
             --output text)"
-          # Printed unmasked on purpose: the stored value is a dummy and seeing it is
-          # the entire result of this workflow. The day this parameter holds a real
-          # PAT, the first thing in this block becomes echo "::add-mask::$value" and
-          # this line goes away.
+          # Masked before it is echoed, so the log proves the read and the KMS decrypt
+          # both worked without publishing what came back. The stored value is a dummy
+          # today; the mask is what makes that stop mattering.
+          echo "::add-mask::$value"
           echo "Parameter value: $value"
