@@ -114,9 +114,20 @@ lint-fix = "ruff check --fix"
 # Read data/currencies/*.tsv into the database, replacing every rate already there, so the
 # table ends up matching the files whatever it held before.
 load-currencies = "python -m expense_tracker.currency_loader data/currencies"
-# Read data/expenses/*.tsv into the database. Idempotent because the loaded_expense_file
-# ledger remembers which files are already in.
-load-expenses = "python -m expense_tracker.expense_loader data/expenses"
+# Read $EXPENSE_DATA_DIR/*.tsv into the database. That directory is a separate private
+# repository this one neither fetches nor tracks, so an absent one is a normal state that
+# loads nothing; an unset variable is an unblessed shell and fails, as in db-create. The
+# directory is echoed because there is now more than one it could be. Idempotent because
+# the loaded_expense_file ledger remembers which files are already in.
+load-expenses.shell = """
+: "${EXPENSE_DATA_DIR:?unset - run 'direnv allow'}"
+test -d "$EXPENSE_DATA_DIR" || {
+  echo "no expense data at $EXPENSE_DATA_DIR - nothing loaded"
+  exit 0
+}
+echo "loading from $EXPENSE_DATA_DIR"
+python -m expense_tracker.expense_loader "$EXPENSE_DATA_DIR"
+"""
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 test = "pytest"
 typecheck = "basedpyright"

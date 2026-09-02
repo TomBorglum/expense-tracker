@@ -70,7 +70,7 @@ is enforced by GitHub - follow it as if it were.
 ## Source conventions
 
 - **ASCII-only** committed source: no em-dashes, smart quotes, arrows, ellipses,
-  including the sample data under `backend/data/expenses/`. The loader decodes
+  including the sample data under `backend/tests/data/expenses/`. The loader decodes
   `utf-8-sig`, so a developer's own uncommitted exports carry Danish text and byte-order
   marks fine. Nothing checks this - ruff's `RUF001`-`003` reach confusable characters in
   Python source and nowhere else.

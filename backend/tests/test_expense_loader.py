@@ -16,8 +16,9 @@ from sqlalchemy import make_url
 from expense_tracker.expense_loader import ExpenseFileError, load_directory, main
 from expense_tracker.expense_loader import parse_expense_rows as parse
 
-# The committed backend/data/expenses/, from backend/tests/ up one level.
-_DATA = Path(__file__).resolve().parents[1] / "data" / "expenses"
+# The committed backend/tests/data/expenses/, beside this file. The currency tests
+# still reach up one level: their files are the app's, these are the suite's own.
+_DATA = Path(__file__).resolve().parent / "data" / "expenses"
 
 _HEADER = b"Amount\tCurrency\tDate\tCategory\tDetails\n"
 
@@ -130,8 +131,8 @@ def test_invalid_utf8_is_refused() -> None:
 
 
 def test_the_committed_sample_files_parse() -> None:
-    """Reads backend/data/expenses/ itself, so adding a file there puts it through the
-    parser on the next `pixi run backend-test`."""
+    """Reads backend/tests/data/expenses/ itself, so adding a file there puts it through
+    the parser on the next `pixi run backend-test`."""
     paths = sorted(_DATA.glob("*.tsv"))
     assert paths, f"no sample files under {_DATA}"
     for path in paths:

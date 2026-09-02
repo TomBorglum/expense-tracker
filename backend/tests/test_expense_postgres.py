@@ -28,7 +28,7 @@ from expense_tracker.expense_repository import Expense, LoadedExpenseFile
 # Registered in pyproject.toml, which --strict-markers requires.
 pytestmark = pytest.mark.postgres
 
-_DATA = Path(__file__).resolve().parents[1] / "data" / "expenses"
+_DATA = Path(__file__).resolve().parent / "data" / "expenses"
 
 _HEADER = "Amount\tCurrency\tDate\tCategory\tDetails\n"
 
@@ -206,7 +206,7 @@ def test_a_file_that_fails_midway_leaves_earlier_files_committed(
 
 
 def test_the_committed_sample_files_load(tmp_path: Path) -> None:
-    """Puts backend/data/expenses/ through the real database path inside
+    """Puts backend/tests/data/expenses/ through the real database path inside
     `backend-test`. tmp_path is unused but keeps the signature uniform."""
     assert tmp_path.is_dir()
     summary = asyncio.run(load_directory(_DATA, database_url()))
