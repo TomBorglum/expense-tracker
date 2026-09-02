@@ -41,10 +41,10 @@ test("renders every expense the API serves, in the order it sends them", async (
   const cells = screen.getAllByRole("cell");
   expect(cells.map((cell) => cell.textContent)).toEqual(
     MOCK_EXPENSES.flatMap((expense) => [
-      expense.amount,
-      expense.currency,
       expense.date,
       expense.category,
+      expense.amount,
+      expense.currency,
       expense.details,
     ]),
   );
