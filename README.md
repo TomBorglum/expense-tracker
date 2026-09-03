@@ -108,7 +108,7 @@ error state until something answers on 8000.
 
 Both send `Cache-Control: no-store`.
 
-Expenses come back **newest first**, and `amount` is a **string**, not a number: the
+Expenses come back **oldest first**, and `amount` is a **string**, not a number: the
 column is `numeric(12, 2)`, JSON has no decimal type, and a decimal has no exact binary
 form, so a float round trip is how a total drifts by a cent. That shape is declared once,
 as the `ExpensePayload` pydantic model in `backend/src/expense_tracker/__init__.py`;
@@ -163,7 +163,7 @@ runs from the oldest. Give neither and the request is the one that was there bef
 parameters existed.
 
 The filtering is a `WHERE` clause on `expense_date`, not a pass over the rows in Python,
-and the `expense_newest_first_idx` index already serves it - so `schema.sql` gained
+and the `expense_oldest_first_idx` index already serves it - so `schema.sql` gained
 nothing for this. **A range holding no expenses is `200 []`**, for the reason an empty
 table is: it is an answer, not a fault. The two parameters compose with `?currency=`, and
 the range is applied first, so an expense outside it needs no exchange rate.
@@ -444,7 +444,7 @@ numeric amount rather than letting a float round trip through the page. Both
 values are rendered exactly as they arrive: formatting the amount client-side would put
 back the round trip `str(Decimal)` exists to prevent, and `new Date()` on a bare
 `YYYY-MM-DD` reads it as UTC and prints a day early west of Greenwich. The rows keep the
-order the API sends them in (newest first) and are never re-sorted, and an empty ledger
+order the API sends them in (oldest first) and are never re-sorted, and an empty ledger
 arrives as a 200 with `[]`, so the table says so in a row instead of raising an alert.
 
 ### Choosing a currency

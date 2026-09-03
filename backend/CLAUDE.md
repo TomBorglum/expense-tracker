@@ -103,8 +103,8 @@ otherwise correct change, or nothing does; each bullet says which.
   fields. `?group_by=category` is what puts `category` in the key, and takes one value.
   Pinned by `test_totals_drop_the_category_key_when_it_was_not_grouped_by` and its
   neighbours, read as plain dicts because parsing proves nothing about a key's presence.
-- **The response is a dense calendar: one row per period from the newest matching expense
-  to the oldest**, spent in or not, and **absent is not `0.00`** - a month of refunds can
+- **The response is a dense calendar: one row per period from the oldest matching expense
+  to the newest**, spent in or not, and **absent is not `0.00`** - a month of refunds can
   net to zero. The extent is `min`/`max` over the records returned, so it relies on no
   ordering of the repository's. **Dense in periods only**: a date range has a defined
   universe of periods and categories do not. Pinned by

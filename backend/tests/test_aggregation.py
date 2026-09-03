@@ -67,7 +67,7 @@ def test_a_month_boundary_splits_a_total() -> None:
         Period.MONTH,
         None,
     )
-    assert [total.period for total in totals] == ["2026-03", "2026-02"]
+    assert [total.period for total in totals] == ["2026-02", "2026-03"]
 
 
 def test_a_single_digit_month_is_zero_padded() -> None:
@@ -146,7 +146,7 @@ def test_cents_are_exact_over_many_rows() -> None:
     assert totals[0].amount == Decimal("1.00")
 
 
-def test_rows_come_back_newest_period_first_then_category_then_currency() -> None:
+def test_rows_come_back_oldest_period_first_then_category_then_currency() -> None:
     totals = aggregate(
         [
             _expense("1.00", datetime.date(2026, 2, 1), category="Food"),
@@ -158,10 +158,10 @@ def test_rows_come_back_newest_period_first_then_category_then_currency() -> Non
         Grouping.CATEGORY,
     )
     assert [(t.period, t.category, t.currency) for t in totals] == [
+        ("2026-02", "Food", "DKK"),
         ("2026-03", "Food", "DKK"),
         ("2026-03", "Housing", "DKK"),
         ("2026-03", "Housing", "EUR"),
-        ("2026-02", "Food", "DKK"),
     ]
 
 
@@ -238,12 +238,12 @@ def test_a_gap_of_several_months_is_filled_contiguously() -> None:
         None,
     )
     assert [total.period for total in totals] == [
-        "2026-05",
-        "2026-04",
-        "2026-03",
-        "2026-02",
-        "2026-01",
         "2025-12",
+        "2026-01",
+        "2026-02",
+        "2026-03",
+        "2026-04",
+        "2026-05",
     ]
 
 
@@ -269,9 +269,9 @@ def test_a_bound_outside_a_period_leaves_it_whole() -> None:
         DateRange(datetime.date(2026, 1, 12), datetime.date(2026, 3, 14)),
     )
     assert _spans(totals) == [
-        ("2026-03", "2026-03-01", "2026-03-14"),
-        ("2026-02", "2026-02-01", "2026-02-28"),
         ("2026-01", "2026-01-12", "2026-01-31"),
+        ("2026-02", "2026-02-01", "2026-02-28"),
+        ("2026-03", "2026-03-01", "2026-03-14"),
     ]
 
 

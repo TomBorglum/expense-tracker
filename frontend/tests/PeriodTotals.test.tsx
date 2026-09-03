@@ -57,14 +57,14 @@ function rowTexts() {
     .map((row) => [...row.cells].map((cell) => cell.textContent));
 }
 
-test("renders a section per period, newest first, each carrying its span", async () => {
+test("renders a section per period, oldest first, each carrying its span", async () => {
   renderPeriodTotals();
   await screen.findByRole("table", { name: "Totals" });
   expect(rowTexts()).toEqual([
     HEADER,
-    ["2001-03-01 to 2001-03-31", "30.00", "EUR"],
-    ["2001-02-01 to 2001-02-28", "None recorded"],
     ["2001-01-01 to 2001-01-31", "11.00", "EUR"],
+    ["2001-02-01 to 2001-02-28", "None recorded"],
+    ["2001-03-01 to 2001-03-31", "30.00", "EUR"],
   ]);
 });
 
@@ -78,12 +78,12 @@ test("adds a line per category when the grouping was asked for", async () => {
   // nothing to put in, which is what keeps it rendering as an ordinary row.
   expect(rowTexts()).toEqual([
     GROUPED_HEADER,
+    ["2001-01-01 to 2001-01-31", "11.00", "EUR"],
+    ["", "Stub category", "11.00", "EUR"],
+    ["2001-02-01 to 2001-02-28", "None recorded"],
     ["2001-03-01 to 2001-03-31", "30.00", "EUR"],
     ["", "Stub category", "12.50", "EUR"],
     ["", "Other stub category", "17.50", "EUR"],
-    ["2001-02-01 to 2001-02-28", "None recorded"],
-    ["2001-01-01 to 2001-01-31", "11.00", "EUR"],
-    ["", "Stub category", "11.00", "EUR"],
   ]);
 });
 
@@ -98,9 +98,9 @@ test("drops the category lines when the grouping is switched off", async () => {
   // on a range that did not change, so this render is a cache hit and is synchronous.
   expect(rowTexts()).toEqual([
     HEADER,
-    ["2001-03-01 to 2001-03-31", "30.00", "EUR"],
-    ["2001-02-01 to 2001-02-28", "None recorded"],
     ["2001-01-01 to 2001-01-31", "11.00", "EUR"],
+    ["2001-02-01 to 2001-02-28", "None recorded"],
+    ["2001-03-01 to 2001-03-31", "30.00", "EUR"],
   ]);
 });
 
@@ -122,8 +122,8 @@ test("takes the subtotal from the ungrouped request rather than adding the lines
     http.get(TOTALS_URL, ({ request }) =>
       HttpResponse.json(
         new URL(request.url).searchParams.get("group_by") === null
-          ? [{ ...MOCK_TOTALS[0], amount: "999.99" }]
-          : MOCK_CATEGORY_TOTALS.slice(0, 2),
+          ? [{ ...MOCK_TOTALS[2], amount: "999.99" }]
+          : MOCK_CATEGORY_TOTALS.slice(2, 4),
       ),
     ),
   );

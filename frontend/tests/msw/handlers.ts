@@ -4,24 +4,24 @@ import { CURRENCIES_URL, type CurrencyRate } from "@/api/currencies";
 import { type Expense, EXPENSES_URL } from "@/api/expenses";
 import { type PeriodTotal, TOTALS_URL } from "@/api/totals";
 
-// Newest first, the order the API sends. Deliberately not values the loader produces -
+// Oldest first, the order the API sends. Deliberately not values the loader produces -
 // another currency, dates from another decade - so a passing test proves they travelled
-// over the request. The second row is a negative amount with empty details, both of
+// over the request. The first row is a negative amount with empty details, both of
 // which the contract allows.
 export const MOCK_EXPENSES: Expense[] = [
-  {
-    amount: "13.37",
-    currency: "EUR",
-    date: "2001-02-03",
-    category: "Stub category",
-    details: "Stub details",
-  },
   {
     amount: "-4.20",
     currency: "GBP",
     date: "2000-01-02",
     category: "Other stub category",
     details: "",
+  },
+  {
+    amount: "13.37",
+    currency: "EUR",
+    date: "2001-02-03",
+    category: "Stub category",
+    details: "Stub details",
   },
 ];
 
@@ -35,23 +35,23 @@ export const MOCK_RATES: CurrencyRate[] = [
   { from_currency: "DKK", to_currency: "USD", exchange_rate: "0.123456" },
 ];
 
-// A dense calendar, newest first: three periods spanning a gap the middle one records
+// A dense calendar, oldest first: three periods spanning a gap the middle one records
 // nothing in. That row carries its span and no amount at all - the keys are absent, not
 // null, which is what the guard and the "None recorded" branch are written against.
 export const MOCK_TOTALS: PeriodTotal[] = [
-  {
-    period: "2001-03",
-    from_date: "2001-03-01",
-    to_date: "2001-03-31",
-    amount: "30.00",
-    currency: "EUR",
-  },
-  { period: "2001-02", from_date: "2001-02-01", to_date: "2001-02-28" },
   {
     period: "2001-01",
     from_date: "2001-01-01",
     to_date: "2001-01-31",
     amount: "11.00",
+    currency: "EUR",
+  },
+  { period: "2001-02", from_date: "2001-02-01", to_date: "2001-02-28" },
+  {
+    period: "2001-03",
+    from_date: "2001-03-01",
+    to_date: "2001-03-31",
+    amount: "30.00",
     currency: "EUR",
   },
 ];
@@ -60,6 +60,15 @@ export const MOCK_TOTALS: PeriodTotal[] = [
 // answers with. The amounts add up to the ungrouped ones above, because that is the
 // property the view relies on when it takes its subtotal from the other request.
 export const MOCK_CATEGORY_TOTALS: PeriodTotal[] = [
+  {
+    period: "2001-01",
+    from_date: "2001-01-01",
+    to_date: "2001-01-31",
+    amount: "11.00",
+    currency: "EUR",
+    category: "Stub category",
+  },
+  { period: "2001-02", from_date: "2001-02-01", to_date: "2001-02-28" },
   {
     period: "2001-03",
     from_date: "2001-03-01",
@@ -75,15 +84,6 @@ export const MOCK_CATEGORY_TOTALS: PeriodTotal[] = [
     amount: "17.50",
     currency: "EUR",
     category: "Other stub category",
-  },
-  { period: "2001-02", from_date: "2001-02-01", to_date: "2001-02-28" },
-  {
-    period: "2001-01",
-    from_date: "2001-01-01",
-    to_date: "2001-01-31",
-    amount: "11.00",
-    currency: "EUR",
-    category: "Stub category",
   },
 ];
 

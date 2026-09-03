@@ -6,7 +6,7 @@ interface ExpensesTableProps {
   readonly query: ExpensesQuery;
 }
 
-// The expenses are owned by the Python package and served from /api/expenses, newest
+// The expenses are owned by the Python package and served from /api/expenses, oldest
 // first, restated in the currency asked for and narrowed to the days asked for. Amounts
 // and dates are rendered exactly as they arrive: the backend sends amount as a string so
 // no float round trip can drift a total by a cent - conversion included, which is why it
