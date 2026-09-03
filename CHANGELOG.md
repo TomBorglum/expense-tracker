@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/TomBorglum/expense-tracker/compare/v1.0.0...v1.1.0) (2026-09-03)
+
+
+### Features
+
+* return expenses and totals oldest first ([#97](https://github.com/TomBorglum/expense-tracker/issues/97)) ([6233417](https://github.com/TomBorglum/expense-tracker/commit/6233417f95b0b63b27d673c3d12c45ca9aecf53a))
+
 ## 1.0.0 (2026-09-02)
 
 
