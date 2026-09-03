@@ -43,7 +43,7 @@ const PERIOD_BAND = "border-b-0 bg-base-200";
 // bg-base-200 out of it, leaving the card to show through. All three are one mechanism.
 const PERIOD_GAP = "bg-clip-padding border-t-8 border-t-transparent";
 
-// The expenses of /api/expenses summed by month, newest first, restated in the currency
+// The expenses of /api/expenses summed by month, oldest first, restated in the currency
 // asked for and narrowed to the days asked for. Amounts and the bounds each period was
 // summed over are rendered exactly as they arrive: the backend sends amount as a string so
 // no float round trip can drift a total by a cent, and the two dates are bare YYYY-MM-DD,

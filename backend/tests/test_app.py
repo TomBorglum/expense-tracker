@@ -103,18 +103,18 @@ def test_expenses_endpoint_returns_json(
     assert response.headers["Cache-Control"] == "no-store"
     assert _EXPENSES.validate_json(response.content) == [
         ExpensePayload(
-            amount="1250.00",
-            currency="DKK",
-            date="2026-02-02",
-            category="Housing",
-            details="Rent",
-        ),
-        ExpensePayload(
             amount="775.37",
             currency="DKK",
             date="2026-01-02",
             category="Insurance",
             details="Accident / Car",
+        ),
+        ExpensePayload(
+            amount="1250.00",
+            currency="DKK",
+            date="2026-02-02",
+            category="Housing",
+            details="Rent",
         ),
     ]
     # The fixture is the other half of that literal; if it changes, this should fail
@@ -129,14 +129,14 @@ def test_expense_amounts_are_strings_not_numbers(client: TestClient) -> None:
     parse here rather than passing with a drifted value.
     """
     body = _EXPENSES.validate_json(client.get("/api/expenses").content)
-    assert [row.amount for row in body] == ["1250.00", "775.37"]
+    assert [row.amount for row in body] == ["775.37", "1250.00"]
 
 
 def test_expenses_endpoint_preserves_the_repository_order(client: TestClient) -> None:
     """Ordering belongs to the repository, not the route. The fake hands back what it
     was given, so this fails if the route ever sorts on its own."""
     body = _EXPENSES.validate_json(client.get("/api/expenses").content)
-    assert [row.date for row in body] == ["2026-02-02", "2026-01-02"]
+    assert [row.date for row in body] == ["2026-01-02", "2026-02-02"]
 
 
 def test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded(
@@ -163,19 +163,19 @@ def test_expenses_can_be_requested_in_another_currency(
     assert response.headers["Cache-Control"] == "no-store"
     assert _EXPENSES.validate_json(response.content) == [
         ExpensePayload(
-            # 1250.00 * 0.134048, and 775.37 * 0.134048 rounded half up.
-            amount="167.56",
-            currency="EUR",
-            date="2026-02-02",
-            category="Housing",
-            details="Rent",
-        ),
-        ExpensePayload(
+            # 775.37 * 0.134048 rounded half up, and 1250.00 * 0.134048.
             amount="103.94",
             currency="EUR",
             date="2026-01-02",
             category="Insurance",
             details="Accident / Car",
+        ),
+        ExpensePayload(
+            amount="167.56",
+            currency="EUR",
+            date="2026-02-02",
+            category="Housing",
+            details="Rent",
         ),
     ]
     # The rate fixture is the other half of those two literals.
@@ -198,7 +198,7 @@ def test_a_converted_amount_is_a_string_not_a_number(client: TestClient) -> None
     body = _EXPENSES.validate_json(
         client.get("/api/expenses", params={"currency": "EUR"}).content
     )
-    assert [row.amount for row in body] == ["167.56", "103.94"]
+    assert [row.amount for row in body] == ["103.94", "167.56"]
 
 
 def test_a_currency_with_no_loaded_rate_is_refused(client: TestClient) -> None:
@@ -347,6 +347,14 @@ def test_totals_endpoint_returns_json(
     assert response.headers["content-type"].startswith("application/json")
     assert response.headers["Cache-Control"] == "no-store"
     assert _TOTALS.validate_json(response.content) == [
+        PeriodTotalPayload(
+            period="2026-02",
+            from_date="2026-02-01",
+            to_date="2026-02-28",
+            amount="7.25",
+            currency="DKK",
+            category="Food",
+        ),
         # 100.00 + 25.50, both DKK and both Housing, both in March.
         PeriodTotalPayload(
             period="2026-03",
@@ -364,14 +372,6 @@ def test_totals_endpoint_returns_json(
             currency="EUR",
             category="Housing",
         ),
-        PeriodTotalPayload(
-            period="2026-02",
-            from_date="2026-02-01",
-            to_date="2026-02-28",
-            amount="7.25",
-            currency="DKK",
-            category="Food",
-        ),
     ]
 
 
@@ -385,9 +385,9 @@ def test_every_total_carries_the_span_it_covers(
         ).content
     )
     assert [(row["period"], row["from_date"], row["to_date"]) for row in body] == [
-        ("2026-03", "2026-03-01", "2026-03-31"),
-        ("2026-03", "2026-03-01", "2026-03-31"),
         ("2026-02", "2026-02-01", "2026-02-28"),
+        ("2026-03", "2026-03-01", "2026-03-31"),
+        ("2026-03", "2026-03-01", "2026-03-31"),
     ]
 
 
@@ -407,9 +407,9 @@ def test_totals_drop_the_category_key_when_it_was_not_grouped_by(
     assert all("category" not in row for row in body)
     # The two Housing rows and the Food row now share a key.
     assert [(row["period"], row["amount"], row["currency"]) for row in body] == [
+        ("2026-02", "7.25", "DKK"),
         ("2026-03", "125.50", "DKK"),
         ("2026-03", "10.00", "EUR"),
-        ("2026-02", "7.25", "DKK"),
     ]
 
 
@@ -426,7 +426,7 @@ def test_a_period_with_no_expenses_carries_only_its_span(
     )
     assert response.status_code == 200
     body = _RAW_ROWS.validate_json(response.content)
-    assert [row["period"] for row in body] == ["2026-03", "2026-02", "2026-01"]
+    assert [row["period"] for row in body] == ["2026-01", "2026-02", "2026-03"]
     assert body[1] == {
         "period": "2026-02",
         "from_date": "2026-02-01",
@@ -449,9 +449,9 @@ def test_the_query_bounds_narrow_only_the_periods_they_fall_inside(
         ).content
     )
     assert [(row["from_date"], row["to_date"]) for row in body] == [
-        ("2026-03-01", "2026-03-14"),
-        ("2026-02-01", "2026-02-28"),
         ("2026-01-12", "2026-01-31"),
+        ("2026-02-01", "2026-02-28"),
+        ("2026-03-01", "2026-03-14"),
     ]
 
 
@@ -464,7 +464,7 @@ def test_total_amounts_are_strings_not_numbers(
             "/api/expenses/totals", params={"period": "month"}
         ).content
     )
-    assert [row.amount for row in body] == ["125.50", "10.00", "7.25"]
+    assert [row.amount for row in body] == ["7.25", "125.50", "10.00"]
 
 
 def test_totals_are_an_empty_list_when_nothing_is_loaded(
@@ -491,6 +491,14 @@ def test_totals_can_be_requested_in_another_currency(
     )
     assert response.status_code == 200
     assert _TOTALS.validate_json(response.content) == [
+        PeriodTotalPayload(
+            period="2026-02",
+            from_date="2026-02-01",
+            to_date="2026-02-28",
+            amount="0.97",
+            currency="EUR",
+            category="Food",
+        ),
         # 13.40 + 3.42 from the two DKK rows, plus the 10.00 that was already EUR.
         PeriodTotalPayload(
             period="2026-03",
@@ -499,14 +507,6 @@ def test_totals_can_be_requested_in_another_currency(
             amount="26.82",
             currency="EUR",
             category="Housing",
-        ),
-        PeriodTotalPayload(
-            period="2026-02",
-            from_date="2026-02-01",
-            to_date="2026-02-28",
-            amount="0.97",
-            currency="EUR",
-            category="Food",
         ),
     ]
 

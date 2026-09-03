@@ -84,7 +84,7 @@ class PostgresExpenseRepository(ExpenseRepository):
     async def list_expenses(
         self, dates: DateRange = UNBOUNDED
     ) -> Sequence[ExpenseRecord]:
-        """Every expense within the bounds given, newest first, or an empty sequence."""
+        """Every expense within the bounds given, oldest first, or an empty sequence."""
         statement = select(
             Expense.amount,
             Expense.currency,
@@ -100,7 +100,7 @@ class PostgresExpenseRepository(ExpenseRepository):
             statement = statement.where(Expense.expense_date <= dates.end)
         try:
             rows = await self._session.execute(
-                statement.order_by(Expense.expense_date.desc(), Expense.id.desc())
+                statement.order_by(Expense.expense_date, Expense.id)
             )
         except (SQLAlchemyError, OSError) as exc:
             # OSError as well: asyncpg lets asyncio's ConnectionRefusedError out

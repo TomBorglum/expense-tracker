@@ -56,8 +56,8 @@ CREATE TABLE IF NOT EXISTS expense (
 );
 
 -- Exactly the order GET /api/expenses asks for, tiebreak included.
-CREATE INDEX IF NOT EXISTS expense_newest_first_idx
-    ON expense (expense_date DESC, id DESC);
+CREATE INDEX IF NOT EXISTS expense_oldest_first_idx
+    ON expense (expense_date, id);
 
 -- One row per data line of data/currencies/*.tsv: what one currency is worth in another.
 --

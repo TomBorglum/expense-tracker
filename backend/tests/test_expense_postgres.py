@@ -216,12 +216,14 @@ def test_the_committed_sample_files_load(tmp_path: Path) -> None:
     assert summary.rows_inserted == len(asyncio.run(_expenses()))
 
 
-def test_the_endpoint_returns_the_rows_newest_first(tmp_path: Path) -> None:
+def test_the_endpoint_returns_the_rows_oldest_first(tmp_path: Path) -> None:
+    # Written newest first, so the expected order is the ORDER BY's doing and not the
+    # order the loader read the lines in.
     _ = _write(
         tmp_path,
         "01.tsv",
-        "775.37\tDKK\t02/01/2026\tInsurance\tCar",
         "1250.00\tDKK\t02/02/2026\tHousing\tRent",
+        "775.37\tDKK\t02/01/2026\tInsurance\tCar",
     )
     _ = asyncio.run(load_directory(tmp_path, database_url()))
 
@@ -231,9 +233,9 @@ def test_the_endpoint_returns_the_rows_newest_first(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     body = _EXPENSES.validate_json(response.content)
-    assert [row.date for row in body] == ["2026-02-02", "2026-01-02"]
+    assert [row.date for row in body] == ["2026-01-02", "2026-02-02"]
     # Decimal out of numeric, string into JSON, trailing zero intact.
-    assert [row.amount for row in body] == ["1250.00", "775.37"]
+    assert [row.amount for row in body] == ["775.37", "1250.00"]
 
 
 def test_the_endpoint_returns_an_empty_list_when_nothing_is_loaded() -> None:
@@ -270,8 +272,8 @@ def test_a_date_range_returns_only_the_expenses_inside_it(tmp_path: Path) -> Non
 
     assert response.status_code == 200
     body = _EXPENSES.validate_json(response.content)
-    # Newest first still, and the 01/01 and 01/02 rows left out on either side.
-    assert [row.date for row in body] == ["2026-01-31", "2026-01-15"]
+    # Oldest first still, and the 01/01 and 01/02 rows left out on either side.
+    assert [row.date for row in body] == ["2026-01-15", "2026-01-31"]
 
 
 def test_both_bounds_of_a_date_range_are_inclusive(tmp_path: Path) -> None:
@@ -285,9 +287,9 @@ def test_both_bounds_of_a_date_range_are_inclusive(tmp_path: Path) -> None:
         )
 
     assert [row.date for row in _EXPENSES.validate_json(response.content)] == [
-        "2026-01-31",
-        "2026-01-15",
         "2026-01-01",
+        "2026-01-15",
+        "2026-01-31",
     ]
 
 
@@ -299,8 +301,8 @@ def test_one_bound_alone_leaves_the_other_side_open(tmp_path: Path) -> None:
         to_only = client.get("/api/expenses", params={"to_date": "2026-01-01"})
 
     assert [row.date for row in _EXPENSES.validate_json(from_only.content)] == [
-        "2026-02-01",
         "2026-01-31",
+        "2026-02-01",
     ]
     assert [row.date for row in _EXPENSES.validate_json(to_only.content)] == [
         "2026-01-01"
@@ -336,20 +338,20 @@ def test_totals_group_the_loaded_expenses_by_month(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert _TOTALS.validate_json(response.content) == [
-        PeriodTotalPayload(
-            period="2026-02",
-            from_date="2026-02-01",
-            to_date="2026-02-28",
-            amount="400.00",
-            currency="DKK",
-            category="Car",
-        ),
         # 100.00 + 200.00 + 300.00, the three rows on either side of mid-January.
         PeriodTotalPayload(
             period="2026-01",
             from_date="2026-01-01",
             to_date="2026-01-31",
             amount="600.00",
+            currency="DKK",
+            category="Car",
+        ),
+        PeriodTotalPayload(
+            period="2026-02",
+            from_date="2026-02-01",
+            to_date="2026-02-28",
+            amount="400.00",
             currency="DKK",
             category="Car",
         ),

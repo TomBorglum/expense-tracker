@@ -67,7 +67,7 @@ def aggregate(
     grouping: Grouping | None,
     dates: DateRange = UNBOUNDED,
 ) -> list[TotalRecord]:
-    """Every period from the newest expense to the oldest, newest first."""
+    """Every period from the oldest expense to the newest, oldest first."""
     sums: defaultdict[tuple[str, str, str | None], Decimal] = defaultdict(
         lambda: Decimal("0")
     )
@@ -108,7 +108,7 @@ def _period_key(day: datetime.date, period: Period) -> str:
 
 
 def _period_keys(expenses: Sequence[ExpenseRecord], period: Period) -> list[str]:
-    """Every key from the newest expense's period to the oldest's, newest first."""
+    """Every key from the oldest expense's period to the newest's, oldest first."""
     # min and max rather than the ends of the sequence: the repository's order is not
     # this module's to rely on. No expenses is no extent to walk, which is the empty
     # response with no branch of its own.
@@ -121,7 +121,7 @@ def _period_keys(expenses: Sequence[ExpenseRecord], period: Period) -> list[str]
             newest = _month_index(max(days))
             return [
                 f"{index // 12:04d}-{index % 12 + 1:02d}"
-                for index in range(newest, oldest - 1, -1)
+                for index in range(oldest, newest + 1)
             ]
 
 

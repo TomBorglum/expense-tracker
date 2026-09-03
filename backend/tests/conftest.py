@@ -56,21 +56,21 @@ class _FakeCurrencyRepository(CurrencyRepository):
 
 @pytest.fixture
 def expense_records() -> list[ExpenseRecord]:
-    """Two expenses, already newest first.
+    """Two expenses, already oldest first.
 
     One amount has a trailing zero, so a route reaching for float() instead of str()
     shows up as 1250.0 rather than 1250.00.
     """
     return [
         ExpenseRecord(
-            Decimal("1250.00"), "DKK", datetime.date(2026, 2, 2), "Housing", "Rent"
-        ),
-        ExpenseRecord(
             Decimal("775.37"),
             "DKK",
             datetime.date(2026, 1, 2),
             "Insurance",
             "Accident / Car",
+        ),
+        ExpenseRecord(
+            Decimal("1250.00"), "DKK", datetime.date(2026, 2, 2), "Housing", "Rent"
         ),
     ]
 
@@ -149,6 +149,9 @@ def same_period_expenses_client(app: FastAPI) -> TestClient:
         _FakeExpenseRepository(
             [
                 ExpenseRecord(
+                    Decimal("7.25"), "DKK", datetime.date(2026, 2, 28), "Food", ""
+                ),
+                ExpenseRecord(
                     Decimal("100.00"), "DKK", datetime.date(2026, 3, 4), "Housing", ""
                 ),
                 ExpenseRecord(
@@ -156,9 +159,6 @@ def same_period_expenses_client(app: FastAPI) -> TestClient:
                 ),
                 ExpenseRecord(
                     Decimal("10.00"), "EUR", datetime.date(2026, 3, 9), "Housing", ""
-                ),
-                ExpenseRecord(
-                    Decimal("7.25"), "DKK", datetime.date(2026, 2, 28), "Food", ""
                 ),
             ],
             [],
@@ -178,10 +178,10 @@ def gapped_expenses_client(app: FastAPI) -> TestClient:
         _FakeExpenseRepository(
             [
                 ExpenseRecord(
-                    Decimal("300.00"), "DKK", datetime.date(2026, 3, 20), "Housing", ""
+                    Decimal("100.00"), "DKK", datetime.date(2026, 1, 5), "Housing", ""
                 ),
                 ExpenseRecord(
-                    Decimal("100.00"), "DKK", datetime.date(2026, 1, 5), "Housing", ""
+                    Decimal("300.00"), "DKK", datetime.date(2026, 3, 20), "Housing", ""
                 ),
             ],
             [],
