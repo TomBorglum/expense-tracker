@@ -42,7 +42,7 @@ jobs:
       # hung this job for up to 37 minutes on 2026-08-19 when azure.archive.ubuntu.com
       # degraded. It now fetches a version-pinned release binary and checks it against a
       # recorded sha256, so the job no longer depends on that mirror at all.
-      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@57a8f1298e33b3dd5c5c4b25df01f9144d9a2f48 # v1.4.4
+      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@b030da6a5fec19577ac767be37f9a017f3a5aec1 # v1.4.5
       # Every step below calls pixi, which forwards to the stack that owns the command
       # (poe in backend/pyproject.toml, pnpm scripts in frontend/package.json). CI knows
       # one entry point, not two.
