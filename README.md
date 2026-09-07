@@ -307,8 +307,10 @@ answers, so a developer who has not run `db-init` does not face a red suite, and
 
 **The expense files are not in this repository.** Real spending is confidential and this
 repository is public, so the files live in a separate private one, and `EXPENSE_DATA_DIR`
-in `backend/.env` is the absolute path to your clone of it. Nothing here fetches, updates
-or tracks that clone - keeping it current is entirely your job.
+in `backend/.env` is the absolute path to the `data/` directory in your clone of it - that
+repository keeps the validated files there, with its archived originals and its category
+vocabulary beside it rather than in it. Nothing here fetches, updates or tracks that
+clone - keeping it current is entirely your job.
 
 ```sh
 pixi run backend-load-expenses      # reads $EXPENSE_DATA_DIR/*.tsv into the database
@@ -855,14 +857,14 @@ PGPORT=5433
 PGUSER=expense_tracker
 PGDATABASE=expense_tracker
 UVICORN_PORT=8000
-EXPENSE_DATA_DIR=$HOME/projects/expense-data
+EXPENSE_DATA_DIR=$HOME/projects/expense-data/data
 ```
 
 `EXPENSE_DATA_DIR` is the odd one out, and knowingly so: it is the only value here that is
 a fact about a *machine* rather than about the project, because it points outside the
-checkout at a clone of the private data repository. direnv expands `$HOME` as it loads
-the file, so the committed default is a real path wherever the clone sits beside this
-one; anywhere else, set it in **`backend/.env.local`** - `.envrc` loads that after
+checkout at the `data/` directory inside a clone of the private data repository. direnv
+expands `$HOME` as it loads the file, so the committed default is a real path wherever the
+clone sits beside this one; anywhere else, set it in **`backend/.env.local`** - `.envrc` loads that after
 `backend/.env`, and it is gitignored, so no tracked file carries one machine's layout.
 Unset and set-but-absent are deliberately different - unset aborts on the guard, set-but-absent
 loads nothing and succeeds - so a machine without the data repository is never mistaken
