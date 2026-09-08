@@ -228,6 +228,66 @@ def test_a_month_nobody_spent_in_is_still_a_row() -> None:
     )
 
 
+def test_a_month_whose_refunds_cancel_its_spending_is_a_zero_and_not_a_gap() -> None:
+    """The other side of the rule above, and the case it was written for.
+
+    A refund is a negative expense, so a purchase and its full refund net to nothing.
+    That is a month somebody spent in, so the amount is 0.00 rather than the None the
+    gap above carries - which is the whole difference between "these cancelled out"
+    and "none recorded".
+    """
+    totals = aggregate(
+        [
+            _expense("430.00", datetime.date(2026, 12, 22), category="Transport"),
+            _expense("-430.00", datetime.date(2026, 12, 29), category="Transport"),
+        ],
+        Period.MONTH,
+        Grouping.CATEGORY,
+    )
+    assert totals == [
+        TotalRecord(
+            "2026-12",
+            datetime.date(2026, 12, 1),
+            datetime.date(2026, 12, 31),
+            Decimal("0.00"),
+            "DKK",
+            "Transport",
+        )
+    ]
+    assert totals[0].amount is not None
+
+
+def test_a_netted_month_is_positive_zero() -> None:
+    """str() of the amount is what reaches the wire, so -0.00 would be visible there.
+
+    Decimal addition returns +0 for x + (-x) whichever order they arrive in, so this
+    needs no normalisation of its own - unlike the quantize in conversion.py.
+    """
+    for rows in (["100.00", "-100.00"], ["-100.00", "100.00"]):
+        totals = aggregate(
+            [_expense(amount, datetime.date(2026, 3, 4)) for amount in rows],
+            Period.MONTH,
+            None,
+        )
+        assert str(totals[0].amount) == "0.00"
+
+
+def test_a_category_holding_only_a_refund_totals_negative() -> None:
+    """A refund for a purchase made in an earlier month, which is where most land."""
+    totals = aggregate(
+        [
+            _expense("1250.00", datetime.date(2026, 11, 3), category="Housing"),
+            _expense("-150.00", datetime.date(2026, 11, 30), category="Transport"),
+        ],
+        Period.MONTH,
+        Grouping.CATEGORY,
+    )
+    assert [(total.category, total.amount) for total in totals] == [
+        ("Housing", Decimal("1250.00")),
+        ("Transport", Decimal("-150.00")),
+    ]
+
+
 def test_a_gap_of_several_months_is_filled_contiguously() -> None:
     totals = aggregate(
         [

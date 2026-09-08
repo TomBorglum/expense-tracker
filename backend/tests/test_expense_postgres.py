@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from pydantic import TypeAdapter
-from sqlalchemy import select, text
+from sqlalchemy import insert, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from starlette.testclient import TestClient
@@ -79,6 +79,33 @@ async def _ledger() -> list[tuple[str, str, int]]:
                 select(LoadedExpenseFile).order_by(LoadedExpenseFile.filename)
             )
             return [(r.filename, r.sha256, r.row_count) for r in rows]
+    finally:
+        await engine.dispose()
+
+
+async def _insert_expense(amount: Decimal) -> None:
+    """One expense inserted past the loader, so a CHECK answers for itself."""
+    engine = create_async_engine(database_url())
+    try:
+        async with AsyncSession(engine) as session:
+            file_id = (
+                await session.execute(
+                    insert(LoadedExpenseFile)
+                    .values(filename="direct.tsv", sha256="0" * 64, row_count=1)
+                    .returning(LoadedExpenseFile.id)
+                )
+            ).scalar_one()
+            _ = await session.execute(
+                insert(Expense).values(
+                    loaded_expense_file_id=file_id,
+                    amount=amount,
+                    currency="DKK",
+                    expense_date=datetime.date(2026, 1, 2),
+                    category="Car",
+                    details="Nothing",
+                )
+            )
+            await session.commit()
     finally:
         await engine.dispose()
 
@@ -431,3 +458,81 @@ def test_main_reports_a_bad_file_without_a_traceback(
 
     assert main() == 1
     assert "DD/MM/YYYY" in capsys.readouterr().err
+
+
+def test_a_refund_nets_its_purchase_out_over_the_real_database(tmp_path: Path) -> None:
+    """A purchase and its full refund through the loader, the table and the route.
+
+    Transport nets to 0.00 and stays a row; Housing is untouched beside it. The
+    amount arrives as a string with its cents intact, out of numeric(12, 2).
+    """
+    _ = _write(
+        tmp_path,
+        "01.tsv",
+        "1250.00\tDKK\t01/12/2026\tHousing\tRent",
+        "430.00\tDKK\t22/12/2026\tTransport\tTrain ticket",
+        "-430.00\tDKK\t29/12/2026\tTransport\tRefund / Train ticket",
+    )
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses/totals",
+            params={"period": "month", "group_by": "category"},
+        )
+
+    assert response.status_code == 200
+    assert _TOTALS.validate_json(response.content) == [
+        PeriodTotalPayload(
+            period="2026-12",
+            from_date="2026-12-01",
+            to_date="2026-12-31",
+            amount="1250.00",
+            currency="DKK",
+            category="Housing",
+        ),
+        PeriodTotalPayload(
+            period="2026-12",
+            from_date="2026-12-01",
+            to_date="2026-12-31",
+            amount="0.00",
+            currency="DKK",
+            category="Transport",
+        ),
+    ]
+
+
+def test_a_negative_amount_survives_the_round_trip(tmp_path: Path) -> None:
+    """numeric(12, 2) keeps the sign, and the route sends it as it was stored."""
+    _ = _write(tmp_path, "01.tsv", "-450.00\tDKK\t28/01/2026\tInsurance\tRefund")
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+
+    assert [row[0] for row in asyncio.run(_expenses())] == [Decimal("-450.00")]
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses")
+
+    assert [row.amount for row in _EXPENSES.validate_json(response.content)] == [
+        "-450.00"
+    ]
+
+
+def test_the_database_refuses_a_zero_amount() -> None:
+    """expense_amount_not_zero, reached past the loader that refuses it first.
+
+    The loader is what a data file meets; this is the backstop schema.sql promises,
+    and the only thing that exercises it.
+    """
+    # Built outside the block, the way the two refusal tests above build theirs, so
+    # the only call that can raise inside it is the one being tested.
+    pending = _insert_expense(Decimal("0.00"))
+    with pytest.raises(SQLAlchemyError, match="expense_amount_not_zero"):
+        asyncio.run(pending)
+
+
+def test_a_nonzero_amount_passes_the_same_constraint() -> None:
+    """The negative control: the helper inserts fine, so the test above refuses for
+    the reason it names rather than because the insert was malformed."""
+    asyncio.run(_insert_expense(Decimal("-450.00")))
+
+    assert [row[0] for row in asyncio.run(_expenses())] == [Decimal("-450.00")]

@@ -434,6 +434,49 @@ def test_a_period_with_no_expenses_carries_only_its_span(
     }
 
 
+def test_a_period_whose_refunds_cancel_its_spending_sends_a_zero(
+    refunded_expenses_client: TestClient,
+) -> None:
+    """The other side of the rule above: present and 0.00, not absent.
+
+    Read as plain dicts for the reason the category test gives - amount is optional
+    on the payload model, so validating proves nothing about the key being there.
+    """
+    response = refunded_expenses_client.get(
+        "/api/expenses/totals", params={"period": "month", "group_by": "category"}
+    )
+    assert response.status_code == 200
+    body = _RAW_ROWS.validate_json(response.content)
+    december = [row for row in body if row["period"] == "2026-12"]
+    assert december == [
+        {
+            "period": "2026-12",
+            "from_date": "2026-12-01",
+            "to_date": "2026-12-31",
+            "amount": "0.00",
+            "currency": "DKK",
+            "category": "Transport",
+        }
+    ]
+
+
+def test_a_negative_total_keeps_its_sign_on_the_wire(
+    refunded_expenses_client: TestClient,
+) -> None:
+    """November's refund has no purchase behind it, so its category goes negative."""
+    body = _RAW_ROWS.validate_json(
+        refunded_expenses_client.get(
+            "/api/expenses/totals",
+            params={"period": "month", "group_by": "category"},
+        ).content
+    )
+    assert [(row["category"], row["amount"]) for row in body if "amount" in row] == [
+        ("Housing", "1250.00"),
+        ("Transport", "-150.00"),
+        ("Transport", "0.00"),
+    ]
+
+
 def test_the_query_bounds_narrow_only_the_periods_they_fall_inside(
     gapped_expenses_client: TestClient,
 ) -> None:

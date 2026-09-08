@@ -50,6 +50,24 @@ def test_a_negative_amount_keeps_its_sign() -> None:
     assert converted == [_expense("-13.40", "EUR")]
 
 
+def test_a_negative_half_cent_rounds_away_from_zero() -> None:
+    """The twin of the half-cent test above, and the same 2.03 with a minus.
+
+    ROUND_HALF_UP rounds away from zero rather than towards positive infinity, which
+    is what makes a purchase and its full refund cancel to exactly nothing.
+    """
+    half = CurrencyRateRecord("DKK", "EUR", Decimal("0.500000"))
+    assert convert_expenses([_expense("-4.05")], [half], "EUR") == [
+        _expense("-2.03", "EUR")
+    ]
+
+
+def test_a_refund_too_small_to_show_is_not_negative_zero() -> None:
+    """-0.01 * 0.134048 quantizes to -0.00, which str() would send as "-0.00"."""
+    (converted,) = convert_expenses([_expense("-0.01")], [_DKK_TO_EUR], "EUR")
+    assert str(converted.amount) == "0.00"
+
+
 def test_an_expense_already_in_the_target_currency_is_untouched() -> None:
     """The empty rate list is the assertion: no lookup happened, so the rates file
     needs no DKK -> DKK row."""

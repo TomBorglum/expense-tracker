@@ -103,6 +103,13 @@ def _parse_row(filename: str, line_number: int, row: list[str]) -> ExpenseRecord
     except InvalidOperation as exc:  # pragma: no cover  # unreachable past the regex
         raise refuse(f"amount {raw_amount!r} is not a decimal") from exc
 
+    # Decimal("-0.00") and Decimal("0") both compare equal to zero, so this one
+    # check covers every spelling the regex lets through.
+    if amount == 0:
+        raise refuse(
+            f"amount {raw_amount!r} is zero; an expense of nothing is not an entry"
+        )
+
     if not _CURRENCY.match(raw_currency):
         raise refuse(f"currency {raw_currency!r} is not a three-letter ISO 4217 code")
 
