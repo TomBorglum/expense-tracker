@@ -104,9 +104,10 @@ error state until something answers on 8000.
 | `GET /api/expenses` | `[{"amount", "currency", "date", "category", "details"}, ...]` - the `ExpensePayload` model |
 | `GET /api/expenses?currency=EUR` | The same, restated in one currency |
 | `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
+| `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date` and `to_date` too |
 | `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
-Both send `Cache-Control: no-store`.
+All three send `Cache-Control: no-store`.
 
 Expenses come back **oldest first**, and `amount` is a **string**, not a number: the
 column is `numeric(12, 2)`, JSON has no decimal type, and a decimal has no exact binary
@@ -185,12 +186,49 @@ to re-check and no caller to trust. Both live in
 `backend/src/expense_tracker/date_range.py`, which knows no HTTP and no database at all,
 and are tested in `backend/tests/test_date_range.py`.
 
-Both endpoints are read-only over HTTP. Rows arrive through
+### Asking for totals
+
+`GET /api/expenses/totals` sums the rows `/api/expenses` lists, over the period
+`?period=` names. It takes the same `?currency=`, `?from_date=` and `?to_date=` as the
+list does and means the same thing by each.
+
+**`?period=` is required and defaults to nothing**, because a grain nobody chose is an
+assumption hidden inside a sum; `month` is the only one, so the payload field is the
+grain-neutral `period`. Rows are keyed by `(period, currency)`, and `?group_by=category`
+adds a third part to that key. **`currency` stays in the key whatever was asked for** -
+DKK added to EUR is a number that means nothing.
+
+The response is a **dense calendar**: one row per period from the oldest matching expense
+to the newest, whether or not anything was spent in it. `period`, `from_date` and
+`to_date` are on every row; `amount`, `currency` and `category` are present with a value
+or **absent altogether**, never `null` and never `""`.
+
+That absence carries meaning, and refunds are why. A refund is a negative expense, so a
+period can hold rows that cancel each other out:
+
+| Period | Rows in it | What comes back |
+| --- | --- | --- |
+| Nothing recorded | none | no `amount` key at all |
+| `430.00` spent, `430.00` refunded | two | `"amount": "0.00"` |
+| `150.00` refunded, nothing bought | one | `"amount": "-150.00"` |
+
+An absent `amount` says "none recorded"; `"0.00"` says "these cancelled out". A client
+that read a missing key as zero would show a month of refunds as a quiet month.
+
+The conversion runs **before** the summing, and the order is the point: `?currency=`
+quantizes each amount to cents, so converting then adding differs by cents from adding
+then converting, and only the first makes a total equal what a reader adds up from
+`/api/expenses?currency=EUR`. That is why the summing lives in
+`backend/src/expense_tracker/aggregation.py` in Python rather than in a SQL `GROUP BY`,
+and why it needs no repository method of its own. A bad `period` or `group_by` is a `422`
+carrying the same plain-string `detail` as the refusals above.
+
+All three endpoints are read-only over HTTP. Rows arrive through
 `pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere else,
 so there is no POST, PUT or DELETE.
 
 That is the whole surface. There is no page route and no static mount - the frontend
-is a separate app - and no OpenAPI schema, `/docs` or `/redoc`: two hand-written routes
+is a separate app - and no OpenAPI schema, `/docs` or `/redoc`: three hand-written routes
 do not earn a generated document, and the schema would be public surface advertising
 it. `backend/tests/test_app.py` asserts that `/`, `/static/*`, any other `/api` path
 and the three docs routes all return 404, so none of it can come back by accident.
@@ -344,14 +382,16 @@ columns in this order, then one line per expense.
 
 | Column | Format | Notes |
 | --- | --- | --- |
-| `Amount` | decimal | At most two decimal places; may be negative |
+| `Amount` | decimal | At most two decimal places; may be negative; never zero |
 | `Currency` | ISO 4217 alpha-3 | Uppercase |
 | `Date` | `DD/MM/YYYY` | Day first |
 | `Category` | free text | Must not be blank |
 | `Details` | free text | May be empty |
 
 A third decimal place is refused rather than rounded away by `numeric(12, 2)` in
-silence. A negative amount is accepted, because a refund is a negative expense. The
+silence. A negative amount is accepted, because a refund is a negative expense; a zero
+one is refused, because an expense of nothing is not an entry, and
+`expense_amount_not_zero` backstops that in the database. The
 header is checked strictly, which doubles as a delimiter check: a comma-separated file
 fails on line 1 naming what it found instead of loading a column of nonsense. A
 byte-order mark is tolerated, and blank lines are skipped.

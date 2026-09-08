@@ -191,6 +191,52 @@ def gapped_expenses_client(app: FastAPI) -> TestClient:
 
 
 @pytest.fixture
+def refunded_expenses_client(app: FastAPI) -> TestClient:
+    """A month whose refund cancels its spending, beside one it does not.
+
+    December's Transport is bought and refunded in full, so it nets to 0.00 - the
+    case the absent-versus-zero rule exists for, which no other fixture holds.
+    November's refund has no purchase behind it, so that category goes negative.
+    """
+    app.dependency_overrides[provide_expense_repository] = lambda: (
+        _FakeExpenseRepository(
+            [
+                ExpenseRecord(
+                    Decimal("1250.00"),
+                    "DKK",
+                    datetime.date(2026, 11, 3),
+                    "Housing",
+                    "Rent",
+                ),
+                ExpenseRecord(
+                    Decimal("-150.00"),
+                    "DKK",
+                    datetime.date(2026, 11, 30),
+                    "Transport",
+                    "Refund / Train ticket",
+                ),
+                ExpenseRecord(
+                    Decimal("430.00"),
+                    "DKK",
+                    datetime.date(2026, 12, 22),
+                    "Transport",
+                    "Train ticket",
+                ),
+                ExpenseRecord(
+                    Decimal("-430.00"),
+                    "DKK",
+                    datetime.date(2026, 12, 29),
+                    "Transport",
+                    "Refund / Train ticket",
+                ),
+            ],
+            [],
+        )
+    )
+    return TestClient(app)
+
+
+@pytest.fixture
 def empty_currencies_client(app: FastAPI) -> TestClient:
     """The rates half of the same asymmetry: nothing loaded is still a 200."""
     app.dependency_overrides[provide_currency_repository] = lambda: (

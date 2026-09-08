@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS expense (
                                           REFERENCES loaded_expense_file (id),
     -- numeric, never float: this is money. (12,2) is ten integer digits and two
     -- decimal places; the loader rejects a third rather than letting PostgreSQL round
-    -- it away silently.
+    -- it away silently. The sign carries the meaning: a negative amount is a refund.
     amount                 numeric(12, 2) NOT NULL,
     -- ISO 4217 alpha-3. The loader checks the same shape, so this is the backstop.
     currency               text           NOT NULL,
@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS expense (
     category               text           NOT NULL,
     -- The free-text memo. NOT NULL but allowed to be empty.
     details                text           NOT NULL,
+    -- An expense of nothing is not an entry, and numeric has no signed zero, so
+    -- this refuses -0.00 as well.
+    CONSTRAINT expense_amount_not_zero      CHECK (amount <> 0),
     CONSTRAINT expense_currency_is_iso_4217 CHECK (currency ~ '^[A-Z]{3}$'),
     CONSTRAINT expense_category_not_blank   CHECK (category <> '')
 );
