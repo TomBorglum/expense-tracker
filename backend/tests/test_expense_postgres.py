@@ -523,8 +523,11 @@ def test_the_database_refuses_a_zero_amount() -> None:
     The loader is what a data file meets; this is the backstop schema.sql promises,
     and the only thing that exercises it.
     """
+    # Built outside the block, the way the two refusal tests above build theirs, so
+    # the only call that can raise inside it is the one being tested.
+    pending = _insert_expense(Decimal("0.00"))
     with pytest.raises(SQLAlchemyError, match="expense_amount_not_zero"):
-        asyncio.run(_insert_expense(Decimal("0.00")))
+        asyncio.run(pending)
 
 
 def test_a_nonzero_amount_passes_the_same_constraint() -> None:
