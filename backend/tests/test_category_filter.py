@@ -64,15 +64,20 @@ def test_no_values_at_all_is_refused() -> None:
 def test_the_type_refuses_a_blank_however_it_is_built() -> None:
     """The check lives in __post_init__ rather than in the parser, which is what lets
     list_expenses take the type and stop trusting whoever called it."""
+    # Built outside the blocks, so the only call that can raise inside each is the
+    # one being tested.
+    blank = frozenset({" "})
+    nothing: frozenset[str] = frozenset()
     with pytest.raises(CategoryFilterError, match="category must not be blank"):
-        _ = CategoryFilter(frozenset({" "}))
+        _ = CategoryFilter(blank)
     with pytest.raises(
         CategoryFilterError, match="category filter must name a category"
     ):
-        _ = CategoryFilter(frozenset())
+        _ = CategoryFilter(nothing)
 
 
 def test_a_filter_is_frozen() -> None:
     """Immutable, so the validated names cannot be edited past the check."""
+    categories = CategoryFilter(frozenset({"Food"}))
     with pytest.raises(AttributeError):
-        _FOOD.names = frozenset({""})  # pyright: ignore[reportAttributeAccessIssue]  # the point of the test
+        categories.names = frozenset({""})  # pyright: ignore[reportAttributeAccessIssue]  # the point of the test
