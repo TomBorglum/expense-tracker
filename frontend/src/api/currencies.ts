@@ -1,5 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { fetchList } from "./fetchList";
+
 // The wire contract, written out by hand, the same way expenses.ts writes out its own.
 // The backend builds the same payload as CurrencyPayload in
 // backend/src/expense_tracker/__init__.py; there is no schema to generate either side
@@ -43,19 +45,8 @@ function isCurrencyRateList(payload: unknown): payload is CurrencyRate[] {
   return Array.isArray(payload) && payload.every(isCurrencyRate);
 }
 
-export async function fetchCurrencies(signal?: AbortSignal): Promise<CurrencyRate[]> {
-  const response = await fetch(CURRENCIES_URL, {
-    headers: { Accept: "application/json" },
-    signal,
-  });
-  if (!response.ok) {
-    throw new Error(`GET ${CURRENCIES_PATH} responded ${String(response.status)}`);
-  }
-  const payload: unknown = await response.json();
-  if (!isCurrencyRateList(payload)) {
-    throw new Error(`GET ${CURRENCIES_PATH} returned an unexpected payload`);
-  }
-  return payload;
+export function fetchCurrencies(signal?: AbortSignal): Promise<CurrencyRate[]> {
+  return fetchList(CURRENCIES_PATH, CURRENCIES_URL, isCurrencyRateList, signal);
 }
 
 // The codes the ledger can be restated in. A rate is used only in the direction the rate

@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import {
   createFileRoute,
   retainSearchParams,
@@ -6,55 +5,32 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 
-import {
-  categoriesQueryOptions,
-  categoryFilter,
-  categoryNames,
-} from "../api/categories";
-import {
-  BASE_CURRENCY,
-  currenciesQueryOptions,
-  targetCurrencies,
-} from "../api/currencies";
 import { CATEGORY_GROUPING, type TotalsQuery } from "../api/totals";
-import { CategoryPicker } from "../components/CategoryPicker";
 import { CategoryToggle } from "../components/CategoryToggle";
-import { CurrencySelect } from "../components/CurrencySelect";
-import { DateRangePicker } from "../components/DateRangePicker";
+import { ExpenseFilters } from "../components/ExpenseFilters";
 import { PeriodTotals } from "../components/PeriodTotals";
-import { currentYear } from "../dates";
+import { SHARED_SEARCH_KEYS, sharedSearch } from "../search";
 
 // The currency the totals are presented in, the days they are drawn from, the categories
 // they are narrowed to, and whether each period is split by category - carried in the
-// URL so a view is shareable and survives a reload. An alias rather than a second declaration: the search is handed to
-// totalsQueryOptions as it stands, so the two cannot drift.
+// URL so a view is shareable and survives a reload. An alias rather than a second
+// declaration: the search is handed to totalsQueryOptions as it stands, so the two
+// cannot drift.
 export type TotalsSearch = TotalsQuery;
 
 export const Route = createFileRoute("/totals")({
   component: TotalsPage,
-  // The same four keys the expenses route retains, and for the same reason. group_by is
-  // not among them: the expenses view declares no such parameter, so leaving here drops
-  // the grouping and coming back starts ungrouped.
-  search: {
-    middlewares: [retainSearchParams(["currency", "from_date", "to_date", "category"])],
-  },
-  // Supplies the default for an absent parameter and nothing else, like the expenses
-  // route. A malformed code or date is handed on to the backend, which refuses it with a
-  // 422. The date defaults read the clock, which is why the page tests pin it.
+  // group_by is not retained: the expenses view declares no such parameter, so leaving
+  // here drops the grouping and coming back starts ungrouped.
+  search: { middlewares: [retainSearchParams(SHARED_SEARCH_KEYS)] },
   validateSearch: (
     search: Record<string, unknown> & SearchSchemaInput,
-  ): TotalsSearch => {
-    const year = currentYear();
-    return {
-      currency: typeof search.currency === "string" ? search.currency : BASE_CURRENCY,
-      from_date: typeof search.from_date === "string" ? search.from_date : year.from,
-      to_date: typeof search.to_date === "string" ? search.to_date : year.to,
-      category: categoryFilter(search.category),
-      // The one parameter with no default to fill in: absent means ungrouped here
-      // exactly as it does on the wire, so the off state needs no value to carry it.
-      group_by: search.group_by === CATEGORY_GROUPING ? CATEGORY_GROUPING : undefined,
-    };
-  },
+  ): TotalsSearch => ({
+    ...sharedSearch(search),
+    // The one parameter with no default to fill in: absent means ungrouped here exactly
+    // as it does on the wire, so the off state needs no value to carry it.
+    group_by: search.group_by === CATEGORY_GROUPING ? CATEGORY_GROUPING : undefined,
+  }),
 });
 
 function TotalsPage() {
@@ -62,15 +38,6 @@ function TotalsPage() {
   // the totals request, and each control navigates with the others left as they were.
   const search = Route.useSearch();
   const navigate = useNavigate();
-  // The rate table is what the selector can offer. Its failure is not the totals': an
-  // unreachable or empty one leaves the base currency, which needs no rate, and the
-  // periods below still load.
-  const rates = useQuery(currenciesQueryOptions);
-  const options = rates.isSuccess ? targetCurrencies(rates.data) : [BASE_CURRENCY];
-  // The category list is what the picker can offer, on the same terms as the rates: its
-  // failure disables the control and nothing else.
-  const categories = useQuery(categoriesQueryOptions);
-  const categoryOptions = categories.isSuccess ? categoryNames(categories.data) : [];
 
   return (
     // A link in the chain __root.tsx heads: a flex column rather than a block, block
@@ -78,40 +45,14 @@ function TotalsPage() {
     <div className="flex min-h-0 w-full max-w-4xl flex-col">
       <div className="flex flex-wrap items-center justify-between gap-4 pb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Totals</h1>
-        <div className="flex flex-wrap items-center gap-6">
-          <DateRangePicker
-            from={search.from_date}
-            to={search.to_date}
-            onChange={(from, to) => {
-              void navigate({
-                to: "/totals",
-                search: { ...search, from_date: from, to_date: to },
-              });
-            }}
-          />
-          <CurrencySelect
-            value={search.currency}
-            options={options}
-            disabled={!rates.isSuccess}
-            onChange={(next) => {
-              // Voided rather than awaited: navigate returns a promise nothing here
-              // needs, and an unhandled one fails the lint.
-              void navigate({ to: "/totals", search: { ...search, currency: next } });
-            }}
-          />
-          <CategoryPicker
-            selected={search.category ?? []}
-            options={categoryOptions}
-            disabled={categoryOptions.length === 0}
-            onChange={(next) => {
-              // Undefined rather than [], so an emptied selection leaves the URL and
-              // the request the way an absent parameter does.
-              void navigate({
-                to: "/totals",
-                search: { ...search, category: next.length === 0 ? undefined : next },
-              });
-            }}
-          />
+        <ExpenseFilters
+          search={search}
+          onChange={(next) => {
+            // Voided rather than awaited: navigate returns a promise nothing here
+            // needs, and an unhandled one fails the lint.
+            void navigate({ to: "/totals", search: { ...search, ...next } });
+          }}
+        >
           <CategoryToggle
             checked={search.group_by !== undefined}
             onChange={(byCategory) => {
@@ -124,7 +65,7 @@ function TotalsPage() {
               });
             }}
           />
-        </div>
+        </ExpenseFilters>
       </div>
       <section className="card min-h-0 bg-base-100 shadow-sm">
         <div className="card-body min-h-0">

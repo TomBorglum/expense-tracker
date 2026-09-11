@@ -112,21 +112,21 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   routing the route and its page are the same module: `routes/index.tsx` holds
   `validateSearch` and the component and reads the URL through **`Route.useSearch()`**.
   There is no `getRouteApi` and no `src/pages/` - both existed to break a cycle this shape
-  does not have. Everything under `src/components/` takes props and knows no router, so
-  it mounts without a `RouterProvider`.
-- **`validateSearch` fills in an absent parameter and validates nothing else.** `?currency=`
-  is handed to the backend as typed, so `/?currency=euro` gets the 422 `conversion.py`
-  raises; re-checking `\A[A-Z]{3}\Z` here would put that pattern in a second place to drift
-  from. There is no "as recorded" mode - the parameter is always sent, an **empty**
-  `?currency=` being a malformed code rather than a request for no conversion, and the two
-  dates follow suit. The one thing it adds is the default: an absent bound becomes the first
-  or last day of the current *year*, **the same one on both routes**, because a switch
-  between them carries the range as it stands and cannot tell a default from a pick - a month
-  on `/` would arrive on `/totals` as a single period. It reads the clock, which is why both
-  page tests pin it. `group_by` and `category` have **no default to fill in**: absent means
-  ungrouped, or unfiltered, on the wire too. `categoryFilter` folds one value or several
-  into a `string[]` and keeps `""` for the backend to refuse; an emptied selection
-  navigates with `undefined`, never `[]`.
+  does not have. Components take props and know no router, so they mount without one.
+- **`validateSearch` fills in an absent parameter and validates nothing else**, the shared
+  four through `sharedSearch` in `src/search.ts`. `?currency=` is handed to the backend as
+  typed, so `/?currency=euro` gets the 422 `conversion.py` raises; re-checking
+  `\A[A-Z]{3}\Z` here would put that pattern in a second place to drift from. There is
+  no "as recorded" mode - the parameter is always sent, an **empty** `?currency=` being a
+  malformed code rather than a request for no conversion, and the two dates follow suit.
+  The one thing it adds is the default: an absent bound becomes the first or last day of
+  the current *year*, **the same one on both routes**, because a switch between them
+  carries the range as it stands and cannot tell a default from a pick - a month on `/`
+  would arrive on `/totals` as a single period. It reads the clock, so both page tests pin
+  it. `group_by` and `category` have **no default to fill in**: absent means ungrouped, or
+  unfiltered, on the wire too. `categoryFilter` folds one value or several into a
+  `string[]` and keeps `""` for the backend to refuse; an emptied selection navigates with
+  `undefined`, never `[]`.
 - **The currency options are what the rate table can reach, not a list of ISO codes.**
   `targetCurrencies` keeps only the `to_currency` of a pair whose `from_currency` is
   `BASE_CURRENCY`, a rate being never inverted and never composed; `BASE_CURRENCY` itself

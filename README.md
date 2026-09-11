@@ -690,7 +690,7 @@ components; there is no nav, because one over a single route would be dead UI.
 The route owns its search schema, so its component is the one that reads it - and under
 file-based routing they are the same module, so `index.tsx` holds `validateSearch` and
 the page together and reads the URL through `Route.useSearch()`. **The router-free layer
-is `frontend/src/components/`**: `ExpensesTable` and `CurrencySelect` take props, know
+is `frontend/src/components/`**: `ExpensesTable` and `ExpenseFilters` take props, know
 nothing of the URL, and mount in a bare `QueryClientProvider`. `autoCodeSplitting` is on,
 so the route's component is emitted as its own chunk. A deployed SPA needs its server to
 fall back to `index.html` so a non-root path resolves on a cold load; vite's dev server

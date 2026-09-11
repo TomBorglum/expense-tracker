@@ -1,5 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { fetchList } from "./fetchList";
+
 // The wire contract, written out by hand, the same way expenses.ts writes out its own.
 // The backend builds the same payload as PeriodTotalPayload in
 // backend/src/expense_tracker/__init__.py; there is no schema to generate either side
@@ -84,18 +86,7 @@ export async function fetchTotals(
   for (const name of query.category ?? []) {
     url.searchParams.append("category", name);
   }
-  const response = await fetch(url, {
-    headers: { Accept: "application/json" },
-    signal,
-  });
-  if (!response.ok) {
-    throw new Error(`GET ${TOTALS_PATH} responded ${String(response.status)}`);
-  }
-  const payload: unknown = await response.json();
-  if (!isPeriodTotalList(payload)) {
-    throw new Error(`GET ${TOTALS_PATH} returned an unexpected payload`);
-  }
-  return payload;
+  return fetchList(TOTALS_PATH, url, isPeriodTotalList, signal);
 }
 
 // A factory for the reason expensesQueryOptions is one: each set of parameters is its own

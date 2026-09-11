@@ -1,5 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { fetchList } from "./fetchList";
+
 // The wire contract, written out by hand, the same way expenses.ts writes out its own.
 // The backend builds the same payload as CategoryPayload in
 // backend/src/expense_tracker/__init__.py; there is no schema to generate either side
@@ -30,19 +32,8 @@ function isCategoryList(payload: unknown): payload is Category[] {
   return Array.isArray(payload) && payload.every(isCategory);
 }
 
-export async function fetchCategories(signal?: AbortSignal): Promise<Category[]> {
-  const response = await fetch(CATEGORIES_URL, {
-    headers: { Accept: "application/json" },
-    signal,
-  });
-  if (!response.ok) {
-    throw new Error(`GET ${CATEGORIES_PATH} responded ${String(response.status)}`);
-  }
-  const payload: unknown = await response.json();
-  if (!isCategoryList(payload)) {
-    throw new Error(`GET ${CATEGORIES_PATH} returned an unexpected payload`);
-  }
-  return payload;
+export function fetchCategories(signal?: AbortSignal): Promise<Category[]> {
+  return fetchList(CATEGORIES_PATH, CATEGORIES_URL, isCategoryList, signal);
 }
 
 // The names as the backend sends them: once each and in name order already, so nothing

@@ -1,5 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { fetchList } from "./fetchList";
+
 // The wire contract, written out by hand. The backend builds the same payload by hand as
 // ExpensePayload in backend/src/expense_tracker/__init__.py; create_app() sets
 // openapi_url=None, so there is no schema to generate either side from and the two
@@ -76,20 +78,7 @@ export async function fetchExpenses(
   for (const name of query.category ?? []) {
     url.searchParams.append("category", name);
   }
-  const response = await fetch(url, {
-    headers: { Accept: "application/json" },
-    signal,
-  });
-  if (!response.ok) {
-    throw new Error(`GET ${EXPENSES_PATH} responded ${String(response.status)}`);
-  }
-  const payload: unknown = await response.json();
-  // Nothing validates the response for us, so the shape is checked before it reaches
-  // React. A numeric amount is a contract violation, not a value to coerce.
-  if (!isExpenseList(payload)) {
-    throw new Error(`GET ${EXPENSES_PATH} returned an unexpected payload`);
-  }
-  return payload;
+  return fetchList(EXPENSES_PATH, url, isExpenseList, signal);
 }
 
 // A factory rather than a constant, so each set of parameters is its own cache entry.
