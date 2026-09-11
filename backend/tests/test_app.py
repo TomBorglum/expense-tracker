@@ -13,6 +13,7 @@ from expense_tracker import (
     config,
     create_app,
 )
+from expense_tracker.category_filter import CategoryFilter
 from expense_tracker.currency_repository import CurrencyRateRecord
 from expense_tracker.date_range import UNBOUNDED, DateRange
 from expense_tracker.expense_repository import ExpenseRecord
@@ -32,8 +33,11 @@ _TOTALS = TypeAdapter(list[PeriodTotalPayload])
 _RAW_ROWS = TypeAdapter(list[dict[str, str]])
 
 # What the requested_ranges fixture collects: every DateRange the route handed the
-# expense repository.
+# expense repository, and the requested_categories fixture's counterpart.
 _Ranges = list[DateRange]
+_Categories = list[CategoryFilter | None]
+
+_FOOD = CategoryFilter(frozenset({"Food"}))
 
 
 def test_security_headers_present(client: TestClient) -> None:
@@ -332,6 +336,84 @@ def test_a_range_is_applied_before_the_amounts_are_converted(
     ]
 
 
+def test_a_category_is_handed_to_the_repository_as_a_filter(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """Filtering is the repository's job, done in SQL, so what the route owes it is a
+    CategoryFilter and nothing else."""
+    response = client.get("/api/expenses", params={"category": "Food"})
+    assert response.status_code == 200
+    assert requested_categories == [_FOOD]
+
+
+def test_a_repeated_category_key_hands_every_value(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """The key repeats once per value, which is how a list reaches a query string."""
+    response = client.get("/api/expenses", params={"category": ["Food", "Housing"]})
+    assert response.status_code == 200
+    assert requested_categories == [CategoryFilter(frozenset({"Food", "Housing"}))]
+
+
+def test_asking_for_no_category_is_the_request_that_was_there_before(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """An absent key reaches the repository as None, so a client that does not ask
+    sees exactly what it saw before."""
+    response = client.get("/api/expenses")
+    assert response.status_code == 200
+    assert requested_categories == [None]
+
+
+@pytest.mark.parametrize("value", ["", " "])
+def test_a_blank_category_is_refused(
+    client: TestClient, requested_categories: _Categories, value: str
+) -> None:
+    """The same plain-string detail as the date refusals, and refused before the
+    query: the repository was never reached."""
+    response = client.get("/api/expenses", params={"category": value})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "category must not be blank"}
+    # A registered handler runs inside the middleware, so a 422 is decorated too.
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert requested_categories == []
+
+
+def test_a_category_is_stripped_before_it_is_looked_for(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """The loader strips every field, so a stored category never carries the space
+    and the query value is met on the same terms."""
+    response = client.get("/api/expenses", params={"category": " Food"})
+    assert response.status_code == 200
+    assert requested_categories == [_FOOD]
+
+
+def test_a_category_composes_with_the_range_and_the_currency(
+    client: TestClient, requested_ranges: _Ranges, requested_categories: _Categories
+) -> None:
+    """All three parameters reach the repository together, and the conversion runs
+    over whatever they left."""
+    response = client.get(
+        "/api/expenses",
+        params={
+            "category": "Food",
+            "from_date": "2026-01-01",
+            "to_date": "2026-12-31",
+            "currency": "EUR",
+        },
+    )
+    assert response.status_code == 200
+    assert requested_ranges == [
+        DateRange(datetime.date(2026, 1, 1), datetime.date(2026, 12, 31))
+    ]
+    assert requested_categories == [_FOOD]
+    assert [item.currency for item in _EXPENSES.validate_json(response.content)] == [
+        "EUR",
+        "EUR",
+    ]
+
+
 def test_totals_endpoint_returns_json(
     same_period_expenses_client: TestClient,
 ) -> None:
@@ -608,6 +690,38 @@ def test_totals_without_a_range_ask_for_every_expense(
         == 200
     )
     assert requested_ranges == [UNBOUNDED]
+
+
+def test_totals_hand_a_category_to_the_repository(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """The same CategoryFilter the list endpoint sends, filtered in SQL not here."""
+    response = client.get(
+        "/api/expenses/totals", params={"period": "month", "category": "Food"}
+    )
+    assert response.status_code == 200
+    assert requested_categories == [_FOOD]
+
+
+def test_totals_without_a_category_ask_for_every_category(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    assert (
+        client.get("/api/expenses/totals", params={"period": "month"}).status_code
+        == 200
+    )
+    assert requested_categories == [None]
+
+
+def test_totals_refuse_a_blank_category(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    response = client.get(
+        "/api/expenses/totals", params={"period": "month", "category": ""}
+    )
+    assert response.status_code == 422
+    assert response.json() == {"detail": "category must not be blank"}
+    assert requested_categories == []
 
 
 def test_a_total_without_a_period_is_refused(client: TestClient) -> None:

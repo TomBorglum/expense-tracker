@@ -160,7 +160,7 @@ layers = [
   "deps | currency_loader | expense_loader",
   "conversion | aggregation",
   "currency_repository | expense_repository",
-  "db | config | date_range",
+  "db | config | date_range | category_filter",
 ]
 # A module added under src/expense_tracker/ that is not named above breaks this contract.
 # So the gate covers new code by default: an unnamed module fails it.
@@ -177,6 +177,7 @@ name = "only the HTTP layer knows about HTTP"
 type = "forbidden"
 source_modules = [
   "expense_tracker.aggregation",
+  "expense_tracker.category_filter",
   "expense_tracker.config",
   "expense_tracker.conversion",
   "expense_tracker.currency_loader",
@@ -198,6 +199,7 @@ name = "nothing imports back into create_app"
 type = "forbidden"
 source_modules = [
   "expense_tracker.aggregation",
+  "expense_tracker.category_filter",
   "expense_tracker.config",
   "expense_tracker.conversion",
   "expense_tracker.currency_loader",

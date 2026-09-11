@@ -48,14 +48,13 @@ otherwise correct change, or nothing does; each bullet says which.
   refuses answers with a list of errors instead. Only the 422 handlers read their
   exception, the message being about the client's own input.
 - **`db.py` holds `Base` and nothing else.** A shared `DeclarativeBase` in its own module
-  is what lets a second repository arrive without importing the first, which the `|`
-  between siblings forbids. A new model goes in the repository module that reads it. Pinned
-  by the layers contract.
+  lets a second repository arrive without importing the first, which the `|` between
+  siblings forbids. A new model goes in the repository that reads it. Layers contract.
 - **Every repository subclasses its ABC and carries `@override`**, the two fakes in
   `tests/conftest.py` included, because `dependency_overrides` is an untyped dict that
   would accept a look-alike matching the shape without inheriting. Keep `@abstractmethod`
-  and its same-line `...`: without it an empty subclass passes. Pinned by the `ABC`, and by
-  ruff's `B027` and `B024`.
+  and its same-line `...`: without it an empty subclass passes. Pinned by the `ABC`, and
+  by ruff's `B027` and `B024`.
 
 ## The loaders
 
@@ -88,7 +87,7 @@ otherwise correct change, or nothing does; each bullet says which.
 
 - **`GET /api/expenses/totals` sums the rows `/api/expenses` lists**, grouped by
   `(period, currency, category)` - `currency` stays in the key whatever was asked for,
-  because DKK added to EUR means nothing - and takes the same three query parameters. It
+  because DKK added to EUR means nothing - and takes the same four query parameters. It
   adds **no repository method** - `list_expenses` is what it reads, so the fakes are
   untouched and the grouping needs no database. Pinned by
   `test_two_currencies_in_one_month_stay_two_totals`.
@@ -102,42 +101,44 @@ otherwise correct change, or nothing does; each bullet says which.
   on the route dump is the whole rule, not `exclude_unset` - `_total_payload` sets all six
   fields. `?group_by=category` is what puts `category` in the key, and takes one value.
   Pinned by `test_totals_drop_the_category_key_when_it_was_not_grouped_by` and its
-  neighbours, read as plain dicts because parsing proves nothing about a key's presence.
+  neighbours, read as plain dicts: parsing proves nothing about a key's presence.
 - **The response is a dense calendar: one row per period from the oldest matching expense
   to the newest**, spent in or not, and **absent is not `0.00`** - a month of refunds can
   net to zero. The extent is `min`/`max` over the records returned, so it relies on no
   ordering of the repository's. **Dense in periods only**: a date range has a defined
-  universe of periods and categories do not. Pinned by
-  `test_a_month_nobody_spent_in_is_still_a_row`.
+  universe of periods and categories do not. `test_a_month_nobody_spent_in_is_still_a_row`.
 - **A requested bound narrows a period only when it falls inside it**, which keeps
   `?from_date=2026-01-01` honoured as the 1st even when nothing was spent until the 7th.
-  Load-bearing rather than an optimisation of an intersection: the fake filters nothing, so
-  it *can* hand a March period a January range, and a plain `max`/`min` would end the span
-  before it began. A period's `to_date` is inclusive, from `calendar.monthrange`. Pinned by
-  `test_a_range_that_cannot_touch_a_period_leaves_it_whole` and
-  `test_a_leap_february_ends_on_the_twenty_ninth`.
+  Load-bearing, not an optimisation of an intersection: the fake filters nothing, so it
+  *can* hand a March period a January range, and a plain `max`/`min` would end the span
+  before it began. A period's `to_date` is inclusive, from `calendar.monthrange`. Pinned
+  by `test_a_range_that_cannot_touch_a_period_leaves_it_whole` and its leap-February twin.
 - **`?period=` is required and refuses rather than defaulting**, because a grain nobody
   chose is an assumption inside a sum. `month` is the only grain, which is why the payload
-  field is the grain-neutral `period`. Pinned by `test_a_total_without_a_period_is_refused`
-  and its unknown-grain twin.
+  field is the grain-neutral `period`. `test_a_total_without_a_period_is_refused` and its
+  unknown-grain twin.
 
-## The date range
+## The date range and the category filter
 
-- **`?from_date=` and `?to_date=` filter in SQL, not in the route.** The `DateRange` goes
-  to `list_expenses`, which adds one `>=` and one `<=` clause and only for the bounds that
-  are set. Both ends are **inclusive** and each is open on its own; `None` adds no clause,
-  so an absent parameter and an empty one are not the same request. Pinned by the four
-  range tests in `test_expense_postgres.py`.
-- **`DateRange` validates in `__post_init__`, so the repository does not.** The frozen
-  dataclass refuses `start > end` at **every** construction, which lets `list_expenses`
-  take the type and stop trusting its caller; checking again there would give one rule two
-  homes. Pinned by `test_the_type_refuses_an_inverted_range_however_it_is_built`.
-- **`\A\d{4}-\d{2}-\d{2}\Z` is the accepted form, and the only one.** `date.fromisoformat`
-  also takes `20260102` and `2026-W01-1`, which this API never sends, so the regex refuses
-  them before parsing, as `validate_currency_code` refuses a lowercase code rather than
-  uppercasing it. Both bounds are read before either is compared, so an unreadable value is
-  refused as itself. Pinned by
-  `test_a_malformed_bound_is_refused_before_the_two_are_compared`.
+- **`?from_date=`, `?to_date=` and `?category=` filter in SQL, not in the route.** The
+  `DateRange` and `CategoryFilter` go to `list_expenses`, which adds one `>=`, one `<=`
+  and one `IN` clause, each only when its parameter is set. Both bounds are **inclusive**
+  and open on their own; `None` adds no clause, so an absent parameter and an empty one
+  are not the same request. Pinned by the range and category tests in the postgres suite.
+- **Both types validate in `__post_init__`, so the repository does not.** `DateRange`
+  refuses `start > end` and `CategoryFilter` a blank name at **every** construction,
+  which lets `list_expenses` take the types and stop trusting its caller; a second check
+  there gives one rule two homes. Pinned by
+  `test_the_type_refuses_an_inverted_range_however_it_is_built` and its category twin.
+- **`\A\d{4}-\d{2}-\d{2}\Z` is the accepted date form, and the only one.**
+  `date.fromisoformat` also takes `20260102` and `2026-W01-1`, which this API never sends,
+  so the regex refuses them first, as `validate_currency_code` refuses rather than
+  uppercases. Both bounds are read before either is compared, so an unreadable value is
+  refused as itself: `test_a_malformed_bound_is_refused_before_the_two_are_compared`.
+- **A category value is stripped, then refused if blank - the loader's two steps - and
+  never case-folded.** A stored category is what the loader kept after `strip()`, so the
+  filter meets it on those terms; folding case would match rows the file does not hold.
+  Pinned by `test_a_value_is_stripped_the_way_the_loader_strips_a_field` and its case twin.
 
 ## Database and configuration
 
@@ -168,7 +169,7 @@ otherwise correct change, or nothing does; each bullet says which.
   twice and escapes parts containing `@`, `:` or `/`. `DATABASE_URL` overrides the four
   wholesale. Do not reintroduce a literal DSN, or f-string interpolation.
 - **`database_url()` returns a `URL`, not a `str`.** `str()` and `repr()` of it redact the
-  password as `***`, which stops a deployment credential reaching a log or a traceback; a
+  password as `***`, which keeps a deployment credential out of logs and tracebacks; a
   `str` return would silently give that up. Nothing checks this.
 - **The dev server's port is `UVICORN_PORT` in `.env`, and `dev` passes no `--port`.**
   uvicorn's CLI carries `auto_envvar_prefix="UVICORN"`, so uvicorn resolves the flag
@@ -178,20 +179,20 @@ otherwise correct change, or nothing does; each bullet says which.
 - **Nothing here falls back to port 5432.** `config.py` refuses to start without its
   settings (`_needs_a_source`), and `db-create` and `db-init` open with a
   `: "${PGPORT:?...}"` guard: initdb, psql and createdb each default to 5432 and the OS
-  username, so a task that lost those names would reach whatever cluster answers there and
-  report success. Any new task reaching a server without an explicit `--port` takes the
-  guard too; the `pg_ctl` tasks read the port from `.pgdata/postgresql.conf`.
+  username, so a task that lost those names would reach whatever answers there and report
+  success. Any new task reaching a server without an explicit `--port` takes the guard
+  too; the `pg_ctl` tasks read the port from `.pgdata/postgresql.conf`.
 - **`feature.prod` installs the app as a wheel; only `feature.dev` installs it editable.**
   An editable install ships the source tree, `tests/` and `data/`, and pins a container to
   a directory layout rather than an artifact. **No correctness property rests on this** -
-  the app reads the environment either way. Pinned by no test; `pixi run -e prod` is the
-  check, described in [`README.md`](../README.md#environments).
+  the app reads the environment either way. Pinned by no test; the check is
+  `pixi run -e prod`, described in [`README.md`](../README.md#environments).
 
 ## Quality gates
 
 - **basedpyright's `recommended` mode sets `failOnWarnings`**, which is what makes a
-  warning fail the build like an error. It and ruff are configured in `pyproject.toml` and
-  nowhere else.
+  warning fail the build like an error. It and ruff are configured in `pyproject.toml`
+  and nowhere else.
 - **Module layering is import-linter**, run by `backend-lint` as the second half of that
   task; `lint-fix` is ruff alone, because where a new module belongs in the layer order is
   a design decision, not a mechanical edit. In a layer list `|` joins siblings that may

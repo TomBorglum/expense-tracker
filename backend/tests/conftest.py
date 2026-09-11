@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from expense_tracker import create_app
+from expense_tracker.category_filter import CategoryFilter
 from expense_tracker.currency_repository import CurrencyRateRecord, CurrencyRepository
 from expense_tracker.date_range import UNBOUNDED, DateRange
 from expense_tracker.deps import provide_currency_repository, provide_expense_repository
@@ -20,22 +21,28 @@ class _FakeExpenseRepository(ExpenseRepository):
     # Annotated at class level for reportUnannotatedClassAttribute.
     _records: Sequence[ExpenseRecord]
     _ranges: list[DateRange]
+    _categories: list[CategoryFilter | None]
 
     def __init__(
-        self, records: Sequence[ExpenseRecord], ranges: list[DateRange]
+        self,
+        records: Sequence[ExpenseRecord],
+        ranges: list[DateRange],
+        categories: list[CategoryFilter | None],
     ) -> None:
         self._records = records
         self._ranges = ranges
+        self._categories = categories
 
     @override
     async def list_expenses(
-        self, dates: DateRange = UNBOUNDED
+        self, dates: DateRange = UNBOUNDED, categories: CategoryFilter | None = None
     ) -> Sequence[ExpenseRecord]:
-        # The range is recorded rather than applied, and the records are handed back
-        # in the order they were given. Filtering and ordering are both the
-        # repository's job, so a fake that did either would hide a route that did it
-        # again.
+        # The range and the filter are recorded rather than applied, and the records
+        # are handed back in the order they were given. Filtering and ordering are
+        # both the repository's job, so a fake that did either would hide a route
+        # that did it again.
         self._ranges.append(dates)
+        self._categories.append(categories)
         return self._records
 
 
@@ -99,10 +106,18 @@ def requested_ranges() -> list[DateRange]:
 
 
 @pytest.fixture
+def requested_categories() -> list[CategoryFilter | None]:
+    """Every CategoryFilter the route hands the expense repository, in order, with
+    None for a request that named no category."""
+    return []
+
+
+@pytest.fixture
 def app(
     expense_records: list[ExpenseRecord],
     currency_records: list[CurrencyRateRecord],
     requested_ranges: list[DateRange],
+    requested_categories: list[CategoryFilter | None],
 ) -> FastAPI:
     """An app whose data comes from memory instead of PostgreSQL.
 
@@ -111,7 +126,7 @@ def app(
     """
     application = create_app()
     application.dependency_overrides[provide_expense_repository] = lambda: (
-        _FakeExpenseRepository(expense_records, requested_ranges)
+        _FakeExpenseRepository(expense_records, requested_ranges, requested_categories)
     )
     application.dependency_overrides[provide_currency_repository] = lambda: (
         _FakeCurrencyRepository(currency_records)
@@ -132,7 +147,7 @@ def empty_expenses_client(app: FastAPI) -> TestClient:
     # Re-overriding on the app fixture rather than parametrising it indirectly:
     # request.param is an Any expression, which reportAny rejects.
     app.dependency_overrides[provide_expense_repository] = lambda: (
-        _FakeExpenseRepository([], [])
+        _FakeExpenseRepository([], [], [])
     )
     return TestClient(app)
 
@@ -162,6 +177,7 @@ def same_period_expenses_client(app: FastAPI) -> TestClient:
                 ),
             ],
             [],
+            [],
         )
     )
     return TestClient(app)
@@ -184,6 +200,7 @@ def gapped_expenses_client(app: FastAPI) -> TestClient:
                     Decimal("300.00"), "DKK", datetime.date(2026, 3, 20), "Housing", ""
                 ),
             ],
+            [],
             [],
         )
     )
@@ -230,6 +247,7 @@ def refunded_expenses_client(app: FastAPI) -> TestClient:
                     "Refund / Train ticket",
                 ),
             ],
+            [],
             [],
         )
     )
