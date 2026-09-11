@@ -62,6 +62,12 @@ class CurrencyPayload(BaseModel):
     exchange_rate: str
 
 
+class CategoryPayload(BaseModel):
+    """One category as GET /api/expenses/categories sends it."""
+
+    category: str
+
+
 class PeriodTotalPayload(BaseModel):
     """One period as GET /api/expenses/totals sends it.
 
@@ -209,6 +215,22 @@ def create_app() -> FastAPI:
             # exclude_none, not exclude_unset: _total_payload sets all six fields, so
             # exclude_unset would drop nothing and say nothing about it.
             [item.model_dump(exclude_none=True) for item in payload],
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # The categories the rows /api/expenses lists fall in, once each. Read-only for the
+    # same reason.
+    @app.get("/api/expenses/categories")
+    async def categories(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        expenses: Annotated[ExpenseRepository, Depends(provide_expense_repository)],
+    ) -> JSONResponse:
+        payload = [
+            CategoryPayload(category=name)
+            # The repository's order, reproduced untouched.
+            for name in await expenses.list_categories()
+        ]
+        return JSONResponse(
+            [item.model_dump() for item in payload],
             headers={"Cache-Control": "no-store"},
         )
 

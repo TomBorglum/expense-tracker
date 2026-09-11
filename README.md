@@ -105,10 +105,11 @@ error state until something answers on 8000.
 | `GET /api/expenses?currency=EUR` | The same, restated in one currency |
 | `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
 | `GET /api/expenses?category=Food&category=Housing` | Only the expenses in either category |
+| `GET /api/expenses/categories` | `[{"category"}, ...]` - the `CategoryPayload` model, every category with an expense in it, once each, in name order |
 | `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and `category` too |
 | `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
-All three send `Cache-Control: no-store`.
+All four send `Cache-Control: no-store`.
 
 Expenses come back **oldest first**, and `amount` is a **string**, not a number: the
 column is `numeric(12, 2)`, JSON has no decimal type, and a decimal has no exact binary
@@ -206,9 +207,19 @@ rows in Python, and it composes with `?currency=`, `?from_date=` and `?to_date=`
 those compose with each other: all three narrow the query, and the conversion runs over
 whatever they left. `schema.sql` gained no index for it - the table is small and
 `expense_oldest_first_idx` already orders the scan. **A category nobody has spent in is
-`200 []`**, for the reason an empty table is: it is an answer, not a fault. The backend
-keeps no list of categories to refuse it against - a category is whatever a file said -
-so there is nothing to check a name against short of a second query.
+`200 []`**, for the reason an empty table is: it is an answer, not a fault. The filter is
+not checked against the list below first - a category is whatever a file said, and the
+check would be a second query on every request.
+
+`GET /api/expenses/categories` is that list: every category with an expense in it,
+**once each and in name order**, as `[{"category": "Car"}, {"category": "Housing"}]`.
+It takes no parameters. The `DISTINCT` and the `ORDER BY` are the repository's,
+`list_categories` in `backend/src/expense_tracker/expense_repository.py`, not a pass over
+the rows in Python: the route reproduces the order it is handed, as the other three do.
+The cluster is `initdb --locale=C`, so name order is byte order - `Zoo` before `apple` -
+which is the order Python's `sorted()` gives too. **An empty table is `200 []`** and an
+unreachable database `503 {"detail": "expenses unavailable"}`, the same table answering
+the same way.
 
 A blank value is a `422` carrying the same plain-string `detail`:
 
@@ -261,12 +272,12 @@ then converting, and only the first makes a total equal what a reader adds up fr
 and why it needs no repository method of its own. A bad `period` or `group_by` is a `422`
 carrying the same plain-string `detail` as the refusals above.
 
-All three endpoints are read-only over HTTP. Rows arrive through
+All four endpoints are read-only over HTTP. Rows arrive through
 `pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere else,
 so there is no POST, PUT or DELETE.
 
 That is the whole surface. There is no page route and no static mount - the frontend
-is a separate app - and no OpenAPI schema, `/docs` or `/redoc`: three hand-written routes
+is a separate app - and no OpenAPI schema, `/docs` or `/redoc`: four hand-written routes
 do not earn a generated document, and the schema would be public surface advertising
 it. `backend/tests/test_app.py` asserts that `/`, `/static/*`, any other `/api` path
 and the three docs routes all return 404, so none of it can come back by accident.

@@ -7,6 +7,7 @@ from sqlalchemy import make_url
 from starlette.testclient import TestClient
 
 from expense_tracker import (
+    CategoryPayload,
     CurrencyPayload,
     ExpensePayload,
     PeriodTotalPayload,
@@ -24,6 +25,7 @@ _ORIGIN = "http://localhost:5173"
 # Parses a response body into typed models instead of casting it to dicts. Reads
 # response.content, which is bytes, so Response.json()'s Any never enters the picture.
 _EXPENSES = TypeAdapter(list[ExpensePayload])
+_CATEGORIES = TypeAdapter(list[CategoryPayload])
 _CURRENCIES = TypeAdapter(list[CurrencyPayload])
 # Parses period, from_date and to_date, which every row carries. It says nothing
 # about the other three: they are optional here and pydantic ignores extra fields, so
@@ -87,7 +89,7 @@ def test_static_files_are_not_served(client: TestClient) -> None:
 
 
 def test_unknown_api_routes_404(client: TestClient) -> None:
-    # /api is the two routes below and nothing else, not a namespace to grow into by
+    # /api is the four routes below and nothing else, not a namespace to grow into by
     # accident.
     assert client.get("/api/hello").status_code == 404
 
@@ -766,6 +768,50 @@ def test_totals_refuse_a_from_date_that_is_not_a_date(client: TestClient) -> Non
     )
     assert response.status_code == 422
     assert response.json() == {"detail": "from_date must be a date in YYYY-MM-DD form"}
+
+
+def test_categories_endpoint_returns_json(
+    client: TestClient, category_names: list[str]
+) -> None:
+    response = client.get("/api/expenses/categories")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert _CATEGORIES.validate_json(response.content) == [
+        CategoryPayload(category="Insurance"),
+        CategoryPayload(category="Housing"),
+    ]
+    # The fixture is the other half of that literal; if it changes, this should fail
+    # rather than quietly assert against itself.
+    assert len(category_names) == 2
+
+
+def test_categories_endpoint_preserves_the_repository_order(client: TestClient) -> None:
+    """Deduplicating and ordering belong to the repository, so this fails if the route
+    sorts: the fixture is deliberately not alphabetical."""
+    body = _CATEGORIES.validate_json(client.get("/api/expenses/categories").content)
+    assert [row.category for row in body] == ["Insurance", "Housing"]
+
+
+def test_categories_endpoint_returns_an_empty_list_when_nothing_is_loaded(
+    empty_expenses_client: TestClient,
+) -> None:
+    """200 and [], for the reason the expenses twin above gives."""
+    response = empty_expenses_client.get("/api/expenses/categories")
+    assert response.status_code == 200
+    assert _CATEGORIES.validate_json(response.content) == []
+
+
+def test_categories_are_unavailable_when_the_database_is_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The real dependency, against a port that refuses instantly.
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://nobody@127.0.0.1:1/none")
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/categories")
+    assert response.status_code == 503
+    # The expenses detail: the categories are read from the same table.
+    assert response.json() == {"detail": "expenses unavailable"}
 
 
 def test_currencies_endpoint_returns_json(

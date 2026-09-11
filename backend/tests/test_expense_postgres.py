@@ -20,7 +20,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from starlette.testclient import TestClient
 
-from expense_tracker import ExpensePayload, PeriodTotalPayload, create_app
+from expense_tracker import (
+    CategoryPayload,
+    ExpensePayload,
+    PeriodTotalPayload,
+    create_app,
+)
 from expense_tracker.config import database_url
 from expense_tracker.expense_loader import ExpenseFileError, load_directory, main
 from expense_tracker.expense_repository import Expense, LoadedExpenseFile
@@ -33,6 +38,7 @@ _DATA = Path(__file__).resolve().parent / "data" / "expenses"
 _HEADER = "Amount\tCurrency\tDate\tCategory\tDetails\n"
 
 _EXPENSES = TypeAdapter(list[ExpensePayload])
+_CATEGORIES = TypeAdapter(list[CategoryPayload])
 _TOTALS = TypeAdapter(list[PeriodTotalPayload])
 
 
@@ -274,6 +280,37 @@ def test_the_endpoint_returns_an_empty_list_when_nothing_is_loaded() -> None:
     assert _EXPENSES.validate_json(response.content) == []
 
 
+def test_the_categories_endpoint_lists_each_category_once_in_name_order(
+    tmp_path: Path,
+) -> None:
+    # One category repeats and none is written in name order, so both the DISTINCT
+    # and the ORDER BY are the query's doing and not the file's.
+    _ = _write(
+        tmp_path,
+        "01.tsv",
+        "1250.00\tDKK\t02/01/2026\tHousing\tRent",
+        "775.37\tDKK\t03/01/2026\tInsurance\tCar",
+        "35.00\tDKK\t04/01/2026\tHousing\tLight bulbs",
+        "100.00\tDKK\t05/01/2026\tCar\tFuel",
+    )
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/categories")
+
+    assert response.status_code == 200
+    body = _CATEGORIES.validate_json(response.content)
+    assert [row.category for row in body] == ["Car", "Housing", "Insurance"]
+
+
+def test_the_categories_endpoint_returns_an_empty_list_when_nothing_is_loaded() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/categories")
+
+    assert response.status_code == 200
+    assert _CATEGORIES.validate_json(response.content) == []
+
+
 def _load_four_days(directory: Path) -> None:
     """One expense on each of four days, so a range can leave rows on either side."""
     _ = _write(
@@ -398,7 +435,7 @@ def test_two_categories_return_the_expenses_in_either(tmp_path: Path) -> None:
 
 def test_a_category_nobody_spent_in_is_still_an_empty_list(tmp_path: Path) -> None:
     """A category with no expenses is the empty table's case again: a state, not a
-    fault. The backend has no list of categories to refuse it against."""
+    fault. The filter is not checked against /api/expenses/categories first."""
     _load_three_categories(tmp_path)
 
     with TestClient(create_app()) as client:
