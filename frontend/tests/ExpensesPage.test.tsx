@@ -5,11 +5,12 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { CATEGORIES_URL } from "@/api/categories";
 import { CURRENCIES_URL } from "@/api/currencies";
 import { EXPENSES_URL } from "@/api/expenses";
 import { createAppRouter } from "@/router";
 
-import { MOCK_EXPENSES } from "./msw/handlers";
+import { MOCK_CATEGORIES, MOCK_EXPENSES } from "./msw/handlers";
 import { server } from "./msw/server";
 
 // The date defaults read the clock, and several assertions below name the month they
@@ -60,8 +61,31 @@ function recordRequestedParams() {
   return requested;
 }
 
+// Records the category list of every expenses request, as the repeated key the backend
+// reads, and answers each one normally.
+function recordRequestedCategories() {
+  const requested: string[][] = [];
+  server.use(
+    http.get(EXPENSES_URL, ({ request }) => {
+      requested.push(new URL(request.url).searchParams.getAll("category"));
+      return HttpResponse.json(MOCK_EXPENSES);
+    }),
+  );
+  return requested;
+}
+
 function dateRangeTrigger() {
   return screen.getByRole("button", { name: /^Dates / });
+}
+
+function categoryTrigger() {
+  return screen.getByRole("button", { name: /^Categories / });
+}
+
+async function categoryTriggerEnabled() {
+  await waitFor(() => {
+    expect(categoryTrigger().hasAttribute("disabled")).toBe(false);
+  });
 }
 
 function requestedCurrencies(requested: Record<string, string | null>[]) {
@@ -298,4 +322,141 @@ test("a rate payload of the wrong shape is refused, not read", async () => {
     expect(currencySelect().disabled).toBe(true);
   });
   expect(offeredCurrencies()).toEqual(["DKK"]);
+});
+
+test("offers the categories the backend lists, in its order", async () => {
+  renderPageAt("/");
+  await screen.findByRole("table", { name: "Expenses" });
+  await categoryTriggerEnabled();
+  await userEvent.click(categoryTrigger());
+  const names = screen
+    .getAllByRole("checkbox")
+    .map((box) => (box as HTMLInputElement).labels?.[0]?.textContent);
+  expect(names).toEqual(MOCK_CATEGORIES.map((item) => item.category));
+});
+
+test("sends no category when the URL names none", async () => {
+  const requested = recordRequestedCategories();
+  renderPageAt("/");
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(requested).toEqual([[]]);
+  expect(categoryTrigger().textContent).toBe("All categories");
+});
+
+test("requests the categories the URL names, once each", async () => {
+  // The repeated key both the app URL and the API spell.
+  const requested = recordRequestedCategories();
+  renderPageAt("/?category=Stub%20category&category=Other%20stub%20category");
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(requested).toEqual([["Stub category", "Other stub category"]]);
+  expect(categoryTrigger().textContent).toBe("Stub category, Other stub category");
+});
+
+test("reads a single category the URL names", async () => {
+  // One value arrives as a string rather than a one-element list, and is a filter all
+  // the same - which is what a hand-typed URL produces.
+  const requested = recordRequestedCategories();
+  renderPageAt("/?category=Stub%20category");
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(requested).toEqual([["Stub category"]]);
+  await categoryTriggerEnabled();
+  await userEvent.click(categoryTrigger());
+  expect(
+    screen.getByRole<HTMLInputElement>("checkbox", { name: "Stub category" }).checked,
+  ).toBe(true);
+});
+
+test("ticking a category keeps the currency and the range, and asks again", async () => {
+  const requested = recordRequestedCategories();
+  const router = renderPageAt("/?currency=EUR&from_date=2025-01-01&to_date=2025-12-31");
+  await screen.findByRole("table", { name: "Expenses" });
+  await categoryTriggerEnabled();
+
+  await userEvent.click(categoryTrigger());
+  await userEvent.click(screen.getByRole("checkbox", { name: "Stub category" }));
+
+  // The URL as a string rather than as the parsed search: one value parses back to a
+  // bare string, and what matters here is that the other three survived the navigate.
+  await waitFor(() => {
+    expect(router.state.location.searchStr).toBe(
+      "?currency=EUR&from_date=2025-01-01&to_date=2025-12-31&category=Stub+category",
+    );
+  });
+  await waitFor(() => {
+    expect(requested).toEqual([[], ["Stub category"]]);
+  });
+});
+
+test("clearing the selection drops the parameter from the URL", async () => {
+  const requested = recordRequestedCategories();
+  const router = renderPageAt("/?category=Stub%20category");
+  await screen.findByRole("table", { name: "Expenses" });
+  await categoryTriggerEnabled();
+
+  await userEvent.click(categoryTrigger());
+  await userEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+
+  // Undefined rather than an empty list: absent is what unfiltered means on the wire.
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual(YEAR);
+  });
+  await waitFor(() => {
+    expect(requested).toEqual([["Stub category"], []]);
+  });
+});
+
+test("passes an empty category through as the malformed value it is", async () => {
+  // An empty ?category= is not a request for everything - the backend refuses it the
+  // way it refuses an empty ?currency=.
+  const requested: string[][] = [];
+  server.use(
+    http.get(EXPENSES_URL, ({ request }) => {
+      requested.push(new URL(request.url).searchParams.getAll("category"));
+      return HttpResponse.json(
+        { detail: "category must not be blank" },
+        { status: 422 },
+      );
+    }),
+  );
+  renderPageAt("/?category=");
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe("Could not load the expenses.");
+  expect(requested).toEqual([[""]]);
+});
+
+test("an unavailable category list leaves the expenses alone", async () => {
+  server.use(
+    http.get(CATEGORIES_URL, () =>
+      HttpResponse.json({ detail: "expenses unavailable" }, { status: 503 }),
+    ),
+  );
+  renderPageAt("/?category=Stub%20category");
+  // The expenses are a separate request and are not held hostage by the list.
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(screen.getAllByRole("row")).toHaveLength(MOCK_EXPENSES.length + 1);
+  await waitFor(() => {
+    expect(categoryTrigger().hasAttribute("disabled")).toBe(true);
+  });
+  // Still agreeing with the request in flight rather than reading as unfiltered.
+  expect(categoryTrigger().textContent).toBe("Stub category");
+});
+
+test("an empty category list leaves nothing to pick", async () => {
+  // 200 with [] is a ledger nobody has run the loader against yet: a working server, and
+  // a filter with nothing to offer.
+  server.use(http.get(CATEGORIES_URL, () => HttpResponse.json([])));
+  renderPageAt("/");
+  await screen.findByRole("table", { name: "Expenses" });
+  await waitFor(() => {
+    expect(categoryTrigger().hasAttribute("disabled")).toBe(true);
+  });
+});
+
+test("a category payload of the wrong shape is refused, not read", async () => {
+  server.use(http.get(CATEGORIES_URL, () => HttpResponse.json([{ category: 42 }])));
+  renderPageAt("/");
+  await screen.findByRole("table", { name: "Expenses" });
+  await waitFor(() => {
+    expect(categoryTrigger().hasAttribute("disabled")).toBe(true);
+  });
 });

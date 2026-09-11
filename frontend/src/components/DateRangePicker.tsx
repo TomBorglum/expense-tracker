@@ -1,5 +1,5 @@
 import { type DateRange, DayPicker, getDefaultClassNames } from "@daypicker/react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import {
   addMonths,
@@ -9,6 +9,7 @@ import {
   toIsoDate,
 } from "../dates";
 import { FilterField } from "./FilterField";
+import { useDismiss } from "./useDismiss";
 
 const defaultClassNames = getDefaultClassNames();
 
@@ -87,37 +88,15 @@ export function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
 
   // Dismissal drops a half-picked range rather than keeping it: the URL still holds the
   // range that was there, and a calendar disagreeing with the trigger is worse than
-  // losing one click. Listeners live on the document because the alternative is a
-  // keydown handler on a non-interactive div (sonar S6847).
-  useEffect(() => {
-    if (!open) {
-      return undefined;
+  // losing one click. The trigger is inside the container, so its own click only ever
+  // toggles below.
+  useDismiss(open, containerRef, (restoreFocus) => {
+    setOpen(false);
+    setPicked(null);
+    if (restoreFocus) {
+      triggerRef.current?.focus();
     }
-    function dismiss(restoreFocus: boolean) {
-      setOpen(false);
-      setPicked(null);
-      if (restoreFocus) {
-        triggerRef.current?.focus();
-      }
-    }
-    function handlePointerDown(event: PointerEvent) {
-      // The trigger is inside the container, so its own click only ever toggles below.
-      if (!containerRef.current?.contains(event.target as Node)) {
-        dismiss(false);
-      }
-    }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        dismiss(true);
-      }
-    }
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
+  });
 
   function handleSelect(next: DateRange | undefined) {
     if (next?.from && next.to) {

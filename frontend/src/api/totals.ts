@@ -1,5 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { fetchList } from "./fetchList";
+
 // The wire contract, written out by hand, the same way expenses.ts writes out its own.
 // The backend builds the same payload as PeriodTotalPayload in
 // backend/src/expense_tracker/__init__.py; there is no schema to generate either side
@@ -54,13 +56,15 @@ function isPeriodTotalList(payload: unknown): payload is PeriodTotal[] {
   return Array.isArray(payload) && payload.every(isPeriodTotal);
 }
 
-// The query half of the same contract. group_by is optional on both sides and means the
-// same thing by its absence: sum the categories together and leave the field off the row.
+// The query half of the same contract. group_by and category are optional on both sides
+// and mean the same thing by their absence: sum the categories together and leave the
+// field off the row, and draw from every category rather than the ones named.
 export interface TotalsQuery {
   currency: string;
   from_date: string;
   to_date: string;
   group_by?: typeof CATEGORY_GROUPING;
+  category?: string[];
 }
 
 export async function fetchTotals(
@@ -78,18 +82,11 @@ export async function fetchTotals(
     // ungrouped request is the one that omits the parameter altogether.
     url.searchParams.set("group_by", query.group_by);
   }
-  const response = await fetch(url, {
-    headers: { Accept: "application/json" },
-    signal,
-  });
-  if (!response.ok) {
-    throw new Error(`GET ${TOTALS_PATH} responded ${String(response.status)}`);
+  // Appended rather than set: the backend reads the key once per value.
+  for (const name of query.category ?? []) {
+    url.searchParams.append("category", name);
   }
-  const payload: unknown = await response.json();
-  if (!isPeriodTotalList(payload)) {
-    throw new Error(`GET ${TOTALS_PATH} returned an unexpected payload`);
-  }
-  return payload;
+  return fetchList(TOTALS_PATH, url, isPeriodTotalList, signal);
 }
 
 // A factory for the reason expensesQueryOptions is one: each set of parameters is its own

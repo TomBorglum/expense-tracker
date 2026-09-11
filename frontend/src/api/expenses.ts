@@ -1,5 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { fetchList } from "./fetchList";
+
 // The wire contract, written out by hand. The backend builds the same payload by hand as
 // ExpensePayload in backend/src/expense_tracker/__init__.py; create_app() sets
 // openapi_url=None, so there is no schema to generate either side from and the two
@@ -50,13 +52,16 @@ function isExpenseList(payload: unknown): payload is Expense[] {
   return Array.isArray(payload) && payload.every(isExpense);
 }
 
-// The query half of the same contract: three optional parameters on the backend, all
-// three always sent from here. An empty value is malformed to the backend rather than an
-// absent one, so there is no "everything" request to fall back to.
+// The query half of the same contract: four optional parameters on the backend, the
+// first three always sent from here. An empty value is malformed to the backend rather
+// than an absent one, so there is no "everything" request to fall back to. category is
+// the exception: absent means unfiltered on both sides, and it is never an empty list,
+// so the query key holds no dead entry.
 export interface ExpensesQuery {
   currency: string;
   from_date: string;
   to_date: string;
+  category?: string[];
 }
 
 export async function fetchExpenses(
@@ -69,20 +74,11 @@ export async function fetchExpenses(
   url.searchParams.set("currency", query.currency);
   url.searchParams.set("from_date", query.from_date);
   url.searchParams.set("to_date", query.to_date);
-  const response = await fetch(url, {
-    headers: { Accept: "application/json" },
-    signal,
-  });
-  if (!response.ok) {
-    throw new Error(`GET ${EXPENSES_PATH} responded ${String(response.status)}`);
+  // Appended rather than set: the backend reads the key once per value.
+  for (const name of query.category ?? []) {
+    url.searchParams.append("category", name);
   }
-  const payload: unknown = await response.json();
-  // Nothing validates the response for us, so the shape is checked before it reaches
-  // React. A numeric amount is a contract violation, not a value to coerce.
-  if (!isExpenseList(payload)) {
-    throw new Error(`GET ${EXPENSES_PATH} returned an unexpected payload`);
-  }
-  return payload;
+  return fetchList(EXPENSES_PATH, url, isExpenseList, signal);
 }
 
 // A factory rather than a constant, so each set of parameters is its own cache entry.

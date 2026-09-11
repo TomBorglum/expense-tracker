@@ -144,7 +144,7 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
                   [], and so does a range nothing falls inside. Both are a working server
                   rather than a fault, so this is a row and not the alert above. */}
               <td colSpan={byCategory ? 4 : 3} className="text-base-content/60">
-                No expenses in this range.
+                No expenses match the selected criteria.
               </td>
             </tr>
           </tbody>

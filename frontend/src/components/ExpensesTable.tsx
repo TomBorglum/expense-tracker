@@ -87,7 +87,7 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
             // a fault, so this is a row and not the alert above.
             <tr>
               <td colSpan={5} className="text-base-content/60">
-                No expenses in this range.
+                No expenses match the selected criteria.
               </td>
             </tr>
           ) : (

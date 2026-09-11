@@ -133,3 +133,48 @@ test("leaves the grouping behind, the expenses view declaring none", async () =>
   await screen.findByRole("table", { name: "Expenses" });
   expect(router.state.location.search).toEqual({ currency: "EUR", ...YEAR });
 });
+
+test("carries the categories between the views as well", async () => {
+  const user = userEvent.setup();
+  const router = renderAppAt(
+    "/?category=Stub%20category&category=Other%20stub%20category",
+  );
+  await screen.findByRole("table", { name: "Expenses" });
+
+  await user.click(navLink("Totals"));
+
+  await screen.findByRole("table", { name: "Totals" });
+  expect(router.state.location.search).toEqual({
+    currency: "DKK",
+    ...YEAR,
+    category: ["Stub category", "Other stub category"],
+  });
+
+  await user.click(navLink("Expenses"));
+
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(router.state.location.search.category).toEqual([
+    "Stub category",
+    "Other stub category",
+  ]);
+});
+
+test("spells a list as a key repeated once per value", async () => {
+  // The form an HTML form submits and the backend reads, rather than the JSON array the
+  // router would write on its own - so a URL can be typed by hand and pasted as it is.
+  const router = renderAppAt("/?category=A&category=B");
+  await screen.findByRole("table", { name: "Expenses" });
+  const searchStr = router.state.location.searchStr;
+  expect(searchStr).toContain("category=A&category=B");
+  expect(searchStr).not.toContain("%5B");
+  expect(new URLSearchParams(searchStr).getAll("category")).toEqual(["A", "B"]);
+});
+
+test("reads every parameter as the string it was typed", async () => {
+  // The router's own parser would make a number of this, which validateSearch would then
+  // replace with the default; passed through as typed it reaches the backend, whose 422
+  // is the one place the form is decided.
+  const router = renderAppAt("/?from_date=2026");
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(router.state.location.search.from_date).toBe("2026");
+});
