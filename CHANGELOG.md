@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.0](https://github.com/TomBorglum/expense-tracker/compare/v1.0.0...v1.1.0) (2026-09-11)
+
+
+### Features
+
+* filter expenses and totals by category ([#103](https://github.com/TomBorglum/expense-tracker/issues/103)) ([2245469](https://github.com/TomBorglum/expense-tracker/commit/2245469d9f80e2c0b2be147fe63557f5d0eaa30b))
+* filter expenses and totals by category in the frontend ([#106](https://github.com/TomBorglum/expense-tracker/issues/106)) ([acdc443](https://github.com/TomBorglum/expense-tracker/commit/acdc4431ede907a479b475916e4e105cefcab01b))
+* list the recorded expense categories ([#105](https://github.com/TomBorglum/expense-tracker/issues/105)) ([5017793](https://github.com/TomBorglum/expense-tracker/commit/5017793ac07f93f7763fd04c168bbc2c99b7e3b6))
+* pin the refund model and refuse a zero amount ([#102](https://github.com/TomBorglum/expense-tracker/issues/102)) ([c1dc394](https://github.com/TomBorglum/expense-tracker/commit/c1dc39481d1e4f453092a62335d72e393125069a))
+* return expenses and totals oldest first ([#97](https://github.com/TomBorglum/expense-tracker/issues/97)) ([6233417](https://github.com/TomBorglum/expense-tracker/commit/6233417f95b0b63b27d673c3d12c45ca9aecf53a))
+
+
+### Dependencies
+
+* bump the frontend group in /frontend with 8 updates ([#100](https://github.com/TomBorglum/expense-tracker/issues/100)) ([bd8d5f1](https://github.com/TomBorglum/expense-tracker/commit/bd8d5f159291f561a3e8f2468151ee53218006cf))
+
 ## 1.0.0 (2026-09-02)
 
 
