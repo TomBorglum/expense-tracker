@@ -22,16 +22,19 @@ class _FakeExpenseRepository(ExpenseRepository):
     _records: Sequence[ExpenseRecord]
     _ranges: list[DateRange]
     _categories: list[CategoryFilter | None]
+    _category_names: Sequence[str]
 
     def __init__(
         self,
         records: Sequence[ExpenseRecord],
         ranges: list[DateRange],
         categories: list[CategoryFilter | None],
+        category_names: Sequence[str] = (),
     ) -> None:
         self._records = records
         self._ranges = ranges
         self._categories = categories
+        self._category_names = category_names
 
     @override
     async def list_expenses(
@@ -44,6 +47,12 @@ class _FakeExpenseRepository(ExpenseRepository):
         self._ranges.append(dates)
         self._categories.append(categories)
         return self._records
+
+    @override
+    async def list_categories(self) -> Sequence[str]:
+        # Handed back as given, not derived from the records: deduplicating and
+        # ordering are the repository's job, for the reason above.
+        return self._category_names
 
 
 class _FakeCurrencyRepository(CurrencyRepository):
@@ -83,6 +92,16 @@ def expense_records() -> list[ExpenseRecord]:
 
 
 @pytest.fixture
+def category_names() -> list[str]:
+    """The expense_records categories in the order they first appear.
+
+    Deliberately not alphabetical, so a route that sorts on its own fails the order test
+    instead of agreeing with the repository by coincidence.
+    """
+    return ["Insurance", "Housing"]
+
+
+@pytest.fixture
 def currency_records() -> list[CurrencyRateRecord]:
     """Two rates, in the pair order the repository sorts by.
 
@@ -115,6 +134,7 @@ def requested_categories() -> list[CategoryFilter | None]:
 @pytest.fixture
 def app(
     expense_records: list[ExpenseRecord],
+    category_names: list[str],
     currency_records: list[CurrencyRateRecord],
     requested_ranges: list[DateRange],
     requested_categories: list[CategoryFilter | None],
@@ -126,7 +146,9 @@ def app(
     """
     application = create_app()
     application.dependency_overrides[provide_expense_repository] = lambda: (
-        _FakeExpenseRepository(expense_records, requested_ranges, requested_categories)
+        _FakeExpenseRepository(
+            expense_records, requested_ranges, requested_categories, category_names
+        )
     )
     application.dependency_overrides[provide_currency_repository] = lambda: (
         _FakeCurrencyRepository(currency_records)
@@ -147,7 +169,7 @@ def empty_expenses_client(app: FastAPI) -> TestClient:
     # Re-overriding on the app fixture rather than parametrising it indirectly:
     # request.param is an Any expression, which reportAny rejects.
     app.dependency_overrides[provide_expense_repository] = lambda: (
-        _FakeExpenseRepository([], [], [])
+        _FakeExpenseRepository([], [], [], [])
     )
     return TestClient(app)
 

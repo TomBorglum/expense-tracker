@@ -14,11 +14,20 @@ from expense_tracker.expense_repository import (
 _UNREACHABLE = "postgresql+asyncpg://nobody@127.0.0.1:1/none"
 
 
-async def _read_through_repository() -> object:
+async def _list_expenses_through_repository() -> object:
     engine = create_async_engine(_UNREACHABLE)
     try:
         async with AsyncSession(engine) as session:
             return await PostgresExpenseRepository(session).list_expenses()
+    finally:
+        await engine.dispose()
+
+
+async def _list_categories_through_repository() -> object:
+    engine = create_async_engine(_UNREACHABLE)
+    try:
+        async with AsyncSession(engine) as session:
+            return await PostgresExpenseRepository(session).list_categories()
     finally:
         await engine.dispose()
 
@@ -30,6 +39,13 @@ def test_query_failure_raises_the_domain_exception() -> None:
     #
     # Binding the coroutine executes none of it, and leaves asyncio.run as the only
     # call in the block below that can raise (sonar python:S5778).
-    pending_read = _read_through_repository()
+    pending_read = _list_expenses_through_repository()
+    with pytest.raises(ExpensesUnavailableError):
+        _ = asyncio.run(pending_read)
+
+
+def test_category_query_failure_raises_the_same_domain_exception() -> None:
+    """The categories read the same table, so a failure is the same error."""
+    pending_read = _list_categories_through_repository()
     with pytest.raises(ExpensesUnavailableError):
         _ = asyncio.run(pending_read)

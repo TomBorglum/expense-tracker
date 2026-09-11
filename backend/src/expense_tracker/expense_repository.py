@@ -72,6 +72,9 @@ class ExpenseRepository(ABC):
         self, dates: DateRange = UNBOUNDED, categories: CategoryFilter | None = None
     ) -> Sequence[ExpenseRecord]: ...
 
+    @abstractmethod
+    async def list_categories(self) -> Sequence[str]: ...
+
 
 class PostgresExpenseRepository(ExpenseRepository):
     """Reads expenses through a session it is given and does not own."""
@@ -113,3 +116,13 @@ class PostgresExpenseRepository(ExpenseRepository):
             raise ExpensesUnavailableError("expense query failed") from exc
         # The select names the columns in ExpenseRecord's field order.
         return [ExpenseRecord(*row) for row in rows.all()]
+
+    @override
+    async def list_categories(self) -> Sequence[str]:
+        """Every category with an expense in it, once each, in name order."""
+        statement = select(Expense.category).distinct().order_by(Expense.category)
+        try:
+            names = await self._session.scalars(statement)
+        except (SQLAlchemyError, OSError) as exc:
+            raise ExpensesUnavailableError("category query failed") from exc
+        return names.all()
