@@ -7,30 +7,36 @@ import {
 } from "@tanstack/react-router";
 
 import {
+  categoriesQueryOptions,
+  categoryFilter,
+  categoryNames,
+} from "../api/categories";
+import {
   BASE_CURRENCY,
   currenciesQueryOptions,
   targetCurrencies,
 } from "../api/currencies";
 import { CATEGORY_GROUPING, type TotalsQuery } from "../api/totals";
+import { CategoryPicker } from "../components/CategoryPicker";
 import { CategoryToggle } from "../components/CategoryToggle";
 import { CurrencySelect } from "../components/CurrencySelect";
 import { DateRangePicker } from "../components/DateRangePicker";
 import { PeriodTotals } from "../components/PeriodTotals";
 import { currentYear } from "../dates";
 
-// The currency the totals are presented in, the days they are drawn from, and whether
-// each period is split by category - carried in the URL so a view is shareable and
-// survives a reload. An alias rather than a second declaration: the search is handed to
+// The currency the totals are presented in, the days they are drawn from, the categories
+// they are narrowed to, and whether each period is split by category - carried in the
+// URL so a view is shareable and survives a reload. An alias rather than a second declaration: the search is handed to
 // totalsQueryOptions as it stands, so the two cannot drift.
 export type TotalsSearch = TotalsQuery;
 
 export const Route = createFileRoute("/totals")({
   component: TotalsPage,
-  // The same three keys the expenses route retains, and for the same reason. group_by is
+  // The same four keys the expenses route retains, and for the same reason. group_by is
   // not among them: the expenses view declares no such parameter, so leaving here drops
   // the grouping and coming back starts ungrouped.
   search: {
-    middlewares: [retainSearchParams(["currency", "from_date", "to_date"])],
+    middlewares: [retainSearchParams(["currency", "from_date", "to_date", "category"])],
   },
   // Supplies the default for an absent parameter and nothing else, like the expenses
   // route. A malformed code or date is handed on to the backend, which refuses it with a
@@ -43,6 +49,7 @@ export const Route = createFileRoute("/totals")({
       currency: typeof search.currency === "string" ? search.currency : BASE_CURRENCY,
       from_date: typeof search.from_date === "string" ? search.from_date : year.from,
       to_date: typeof search.to_date === "string" ? search.to_date : year.to,
+      category: categoryFilter(search.category),
       // The one parameter with no default to fill in: absent means ungrouped here
       // exactly as it does on the wire, so the off state needs no value to carry it.
       group_by: search.group_by === CATEGORY_GROUPING ? CATEGORY_GROUPING : undefined,
@@ -60,6 +67,10 @@ function TotalsPage() {
   // periods below still load.
   const rates = useQuery(currenciesQueryOptions);
   const options = rates.isSuccess ? targetCurrencies(rates.data) : [BASE_CURRENCY];
+  // The category list is what the picker can offer, on the same terms as the rates: its
+  // failure disables the control and nothing else.
+  const categories = useQuery(categoriesQueryOptions);
+  const categoryOptions = categories.isSuccess ? categoryNames(categories.data) : [];
 
   return (
     // A link in the chain __root.tsx heads: a flex column rather than a block, block
@@ -86,6 +97,19 @@ function TotalsPage() {
               // Voided rather than awaited: navigate returns a promise nothing here
               // needs, and an unhandled one fails the lint.
               void navigate({ to: "/totals", search: { ...search, currency: next } });
+            }}
+          />
+          <CategoryPicker
+            selected={search.category ?? []}
+            options={categoryOptions}
+            disabled={categoryOptions.length === 0}
+            onChange={(next) => {
+              // Undefined rather than [], so an emptied selection leaves the URL and
+              // the request the way an absent parameter does.
+              void navigate({
+                to: "/totals",
+                search: { ...search, category: next.length === 0 ? undefined : next },
+              });
             }}
           />
           <CategoryToggle

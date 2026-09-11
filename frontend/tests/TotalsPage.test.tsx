@@ -254,6 +254,85 @@ test("picking a range keeps the currency and the grouping, and asks again", asyn
   expect(grouped(requested).at(-1)?.from_date).toBe("2026-01-05");
 });
 
+test("narrows both payloads to the categories the URL names", async () => {
+  // The filter reaches the subtotal and the breakdown alike: the page hands the same
+  // search to both requests, so a period is summed over the same expenses it is split by.
+  const requested: string[][] = [];
+  server.use(
+    http.get(TOTALS_URL, ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      requested.push(params.getAll("category"));
+      return HttpResponse.json(
+        params.get("group_by") === null ? MOCK_TOTALS : MOCK_CATEGORY_TOTALS,
+      );
+    }),
+  );
+  renderPageAt(
+    "/totals?group_by=category&category=Stub%20category&category=Other%20stub%20category",
+  );
+  await screen.findByRole("table", { name: "Totals" });
+  await waitFor(() => {
+    expect(requested).toHaveLength(2);
+  });
+  expect(requested).toEqual([
+    ["Stub category", "Other stub category"],
+    ["Stub category", "Other stub category"],
+  ]);
+  expect(screen.getByRole("button", { name: /^Categories / }).textContent).toBe(
+    "Stub category, Other stub category",
+  );
+});
+
+test("ticking a category keeps the currency, the range and the grouping", async () => {
+  const user = userEvent.setup();
+  recordRequestedParams();
+  const router = renderPageAt("/totals?currency=EUR&group_by=category");
+  await screen.findByRole("table", { name: "Totals" });
+  const trigger = screen.getByRole("button", { name: /^Categories / });
+  await waitFor(() => {
+    expect(trigger.hasAttribute("disabled")).toBe(false);
+  });
+
+  await user.click(trigger);
+  await user.click(screen.getByRole("checkbox", { name: "Stub category" }));
+
+  // Read back off the URL string rather than the parsed search: one value parses to a
+  // bare string, and the key order is the one the URL arrived in.
+  await waitFor(() => {
+    const params = new URLSearchParams(router.state.location.searchStr);
+    expect([...params.entries()].sort()).toEqual([
+      ["category", "Stub category"],
+      ["currency", "EUR"],
+      ["from_date", "2026-01-01"],
+      ["group_by", CATEGORY_GROUPING],
+      ["to_date", "2026-12-31"],
+    ]);
+  });
+});
+
+test("clearing the selection drops the parameter from the URL", async () => {
+  const user = userEvent.setup();
+  recordRequestedParams();
+  const router = renderPageAt("/totals?category=Stub%20category");
+  await screen.findByRole("table", { name: "Totals" });
+  const trigger = screen.getByRole("button", { name: /^Categories / });
+  await waitFor(() => {
+    expect(trigger.hasAttribute("disabled")).toBe(false);
+  });
+
+  await user.click(trigger);
+  await user.click(screen.getByRole("button", { name: "Clear selection" }));
+
+  // Undefined rather than an empty list: absent is what unfiltered means on the wire.
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual({
+      currency: "DKK",
+      from_date: "2026-01-01",
+      to_date: "2026-12-31",
+    });
+  });
+});
+
 test("shows the totals rather than the expenses table", async () => {
   renderPageAt("/totals");
   const table = await screen.findByRole("table", { name: "Totals" });

@@ -50,13 +50,16 @@ function isExpenseList(payload: unknown): payload is Expense[] {
   return Array.isArray(payload) && payload.every(isExpense);
 }
 
-// The query half of the same contract: three optional parameters on the backend, all
-// three always sent from here. An empty value is malformed to the backend rather than an
-// absent one, so there is no "everything" request to fall back to.
+// The query half of the same contract: four optional parameters on the backend, the
+// first three always sent from here. An empty value is malformed to the backend rather
+// than an absent one, so there is no "everything" request to fall back to. category is
+// the exception: absent means unfiltered on both sides, and it is never an empty list,
+// so the query key holds no dead entry.
 export interface ExpensesQuery {
   currency: string;
   from_date: string;
   to_date: string;
+  category?: string[];
 }
 
 export async function fetchExpenses(
@@ -69,6 +72,10 @@ export async function fetchExpenses(
   url.searchParams.set("currency", query.currency);
   url.searchParams.set("from_date", query.from_date);
   url.searchParams.set("to_date", query.to_date);
+  // Appended rather than set: the backend reads the key once per value.
+  for (const name of query.category ?? []) {
+    url.searchParams.append("category", name);
+  }
   const response = await fetch(url, {
     headers: { Accept: "application/json" },
     signal,

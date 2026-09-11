@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 
+import { CATEGORIES_URL, type Category } from "@/api/categories";
 import { CURRENCIES_URL, type CurrencyRate } from "@/api/currencies";
 import { type Expense, EXPENSES_URL } from "@/api/expenses";
 import { type PeriodTotal, TOTALS_URL } from "@/api/totals";
@@ -87,6 +88,14 @@ export const MOCK_CATEGORY_TOTALS: PeriodTotal[] = [
   },
 ];
 
+// The two names the mock expenses carry and a third nothing is filed under, in the name
+// order the backend sends, so a test can tick one and tell it from the rest.
+export const MOCK_CATEGORIES: Category[] = [
+  { category: "Other stub category" },
+  { category: "Stub category" },
+  { category: "Third stub category" },
+];
+
 export const handlers = [
   // The absolute URLs, not the paths. The requests are cross-origin now, and a path-only
   // pattern would resolve against jsdom's origin and never match them.
@@ -94,6 +103,8 @@ export const handlers = [
   // Registered for every test, not only the ones about the selector: setup.ts errors on
   // an unstubbed request, and anything mounting the page asks for the rates.
   http.get(CURRENCIES_URL, () => HttpResponse.json(MOCK_RATES)),
+  // Registered for the same reason: both pages ask for the category list on mount.
+  http.get(CATEGORIES_URL, () => HttpResponse.json(MOCK_CATEGORIES)),
   // Matched ahead of nothing: msw compares whole paths, so /api/expenses does not catch
   // /api/expenses/totals despite being its prefix. The totals view makes both requests
   // whenever it is grouped, and they differ only by this parameter.

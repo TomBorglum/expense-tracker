@@ -54,13 +54,15 @@ function isPeriodTotalList(payload: unknown): payload is PeriodTotal[] {
   return Array.isArray(payload) && payload.every(isPeriodTotal);
 }
 
-// The query half of the same contract. group_by is optional on both sides and means the
-// same thing by its absence: sum the categories together and leave the field off the row.
+// The query half of the same contract. group_by and category are optional on both sides
+// and mean the same thing by their absence: sum the categories together and leave the
+// field off the row, and draw from every category rather than the ones named.
 export interface TotalsQuery {
   currency: string;
   from_date: string;
   to_date: string;
   group_by?: typeof CATEGORY_GROUPING;
+  category?: string[];
 }
 
 export async function fetchTotals(
@@ -77,6 +79,10 @@ export async function fetchTotals(
     // Set only when grouping. An empty group_by is malformed to the backend, so the
     // ungrouped request is the one that omits the parameter altogether.
     url.searchParams.set("group_by", query.group_by);
+  }
+  // Appended rather than set: the backend reads the key once per value.
+  for (const name of query.category ?? []) {
+    url.searchParams.append("category", name);
   }
   const response = await fetch(url, {
     headers: { Accept: "application/json" },

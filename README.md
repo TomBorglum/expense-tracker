@@ -92,7 +92,7 @@ Visit http://localhost:5173 and you should see the **Expenses** table, fetched f
 `http://localhost:8000/api/expenses` - a genuine cross-origin request, which works only
 because the API allows it (see [CORS](#cors)) - and read in turn out of the `expense`
 table (see [Database](#database)). Until you run the loader it says
-`No expenses in this range.`, which is the empty state and not an error.
+`No expenses match the selected criteria.`, which is the empty state and not an error.
 
 The API alone is enough for backend work. The SPA alone runs too; it just renders its
 error state until something answers on 8000.
@@ -584,9 +584,9 @@ no clear button: an **empty** `?from_date=` is a malformed date to the backend r
 a request for everything, so the way to see more is to pick earlier or later days. A range
 holding no expenses is a 200 with `[]`, which the table shows as a row and not an alert.
 
-The currency and the range follow you between the two views: each route retains them
-through `retainSearchParams`, so a switch keeps what you were looking at. The **By
-category** toggle does not, being declared on `/totals` alone.
+The currency, the range and the categories follow you between the two views: each route
+retains them through `retainSearchParams`, so a switch keeps what you were looking at. The
+**By category** toggle does not, being declared on `/totals` alone.
 
 The control is [DayPicker](https://daypicker.dev) in `mode="range"`, pinned as
 `@daypicker/react`. It was chosen over daisyUI's own calendar component because that one
@@ -618,6 +618,43 @@ way a half-picked range is discarded rather than left disagreeing with the URL.
 The calendar also cannot be made to select a range that ends before it begins: DayPicker
 orders the pair itself, so a click before the start becomes the new start. The backend
 still refuses an inverted range, because the URL can be typed by hand.
+
+### Choosing categories
+
+A **Categories** control beside the currency select narrows both views to one or more
+categories, and the choice is the `?category=` the table and the totals ask the API for -
+**the key repeats once per value**, as described under
+[Asking for one or more categories](#asking-for-one-or-more-categories). The filtering
+stays the backend's: the frontend sends names and drops no row of its own, and the totals
+view hands the same names to its subtotal and its breakdown, so a period is summed over
+the expenses it is split by.
+
+The names on offer come from `GET /api/expenses/categories`, read by
+`frontend/src/api/categories.ts` in the order the backend sends them - once each, by
+name. **A category is picked, never typed**: the control is a button that opens a list of
+checkboxes, each tick applies at once and the list stays open for the next, and a
+**Clear selection** button empties it in one click. Nothing ticked reads as
+**All categories** and sends no `category` at all, which is what the backend means by an
+absent one; there is no "All" checkbox because that is a value no request carries. The
+trigger names one or two picked categories and counts three or more, so a long selection
+cannot wrap the filter row.
+
+The selection lives in the **URL** alongside the rest, and is spelled the way the API
+reads it: `/?category=Car&category=Groceries` is a link worth sending and one you can type
+by hand. That is the router's own doing - `frontend/src/router.ts` replaces TanStack
+Router's default search serializer, which would write a JSON array and turn a
+hand-typed `?from_date=2026` into a number, with one that repeats a key per value and
+reads every parameter as the string it was typed. `validateSearch` folds one value or
+several into a list and checks nothing else: a name the ledger does not hold is passed
+through and answered with `[]`, an empty `?category=` with the 422 `category_filter.py`
+raises, and either is shown as it stands - a name the list does not offer still appears,
+ticked, at the top.
+
+A list that has not arrived, fails, or comes back empty leaves the control disabled and
+does not disturb the table below - they are two requests, like the rate table and the
+expenses. The panel closes on a click outside it, on Escape and on a second click of the
+trigger, sharing `useDismiss` with the calendar; focus stays on the trigger when it opens,
+and Tab reaches the boxes.
 
 ### Routing
 

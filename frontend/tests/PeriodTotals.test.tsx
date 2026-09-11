@@ -235,7 +235,7 @@ test("shows a range that matches nothing as a row rather than an alert", async (
   const { rerenderWith } = renderPeriodTotals();
   await screen.findByRole("table", { name: "Totals" });
   const empty = () => screen.getByRole<HTMLTableCellElement>("cell");
-  expect(empty().textContent).toBe("No expenses in this range.");
+  expect(empty().textContent).toBe("No expenses match the selected criteria.");
   expect(empty().colSpan).toBe(3);
   rerenderWith(GROUPED);
   await screen.findByRole("columnheader", { name: "Category" });
