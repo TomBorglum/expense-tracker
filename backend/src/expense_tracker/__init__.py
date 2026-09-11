@@ -1,6 +1,7 @@
+from collections.abc import Sequence
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -13,11 +14,16 @@ from .aggregation import (
     parse_grouping,
     parse_period,
 )
+from .category_filter import CategoryFilterError, parse_category_filter
 from .conversion import ConversionError, convert_expenses, validate_currency_code
 from .currency_repository import CurrenciesUnavailableError, CurrencyRepository
-from .date_range import DateRangeError, parse_date_range
+from .date_range import DateRange, DateRangeError, parse_date_range
 from .deps import lifespan, provide_currency_repository, provide_expense_repository
-from .expense_repository import ExpenseRepository, ExpensesUnavailableError
+from .expense_repository import (
+    ExpenseRecord,
+    ExpenseRepository,
+    ExpensesUnavailableError,
+)
 
 # Applied to every response. This app serves JSON and nothing else, so the policy
 # grants nothing at all.
@@ -88,6 +94,30 @@ def _total_payload(total: TotalRecord) -> PeriodTotalPayload:
     )
 
 
+async def _read_expenses(
+    expenses: ExpenseRepository,
+    currencies: CurrencyRepository,
+    currency: str | None,
+    from_date: str | None,
+    to_date: str | None,
+    category: list[str] | None,
+) -> tuple[DateRange, Sequence[ExpenseRecord]]:
+    """The rows both expense routes read, and the range they were read over."""
+    # Both read before the query, so a malformed value costs no round trip.
+    dates = parse_date_range(from_date, to_date)
+    categories = parse_category_filter(category)
+    # The repository's order, reproduced untouched. Sorting again here would hide a
+    # repository that stopped sorting, and convert_expenses preserves it.
+    records = await expenses.list_expenses(dates, categories)
+    if currency is not None:
+        # Whatever the range and filter left, and only that: an expense outside them
+        # has no rate to want. Validated before the rates are read, so a malformed
+        # code costs no query. Resolving the repository did not open one either.
+        target = validate_currency_code(currency)
+        records = convert_expenses(records, await currencies.list_currencies(), target)
+    return dates, records
+
+
 def create_app() -> FastAPI:
     # No OpenAPI schema and no docs routes: /docs, /redoc and /openapi.json would be
     # public surface for two hand-written routes.
@@ -123,20 +153,13 @@ def create_app() -> FastAPI:
         # every other refusal here sends. Each bound is optional on its own.
         from_date: str | None = None,
         to_date: str | None = None,
+        # Query() is what makes a list a query parameter rather than a body; the key
+        # repeats once per value. list[str] so that FastAPI refuses nothing itself.
+        category: Annotated[list[str] | None, Query()] = None,
     ) -> JSONResponse:
-        # Read before the query, so a malformed date costs no round trip.
-        dates = parse_date_range(from_date, to_date)
-        # The repository's order, reproduced untouched. Sorting again here would hide a
-        # repository that stopped sorting, and convert_expenses preserves it.
-        records = await expenses.list_expenses(dates)
-        if currency is not None:
-            # Whatever the range left, and only that: an expense outside it has no
-            # rate to want. Validated before the rates are read, so a malformed code
-            # costs no query. Resolving the repository above did not open one either.
-            target = validate_currency_code(currency)
-            records = convert_expenses(
-                records, await currencies.list_currencies(), target
-            )
+        _, records = await _read_expenses(
+            expenses, currencies, currency, from_date, to_date, category
+        )
         payload = [
             ExpensePayload(
                 # str(), never float(): the column is numeric(12, 2) and arrives as a
@@ -167,17 +190,15 @@ def create_app() -> FastAPI:
         currency: str | None = None,
         from_date: str | None = None,
         to_date: str | None = None,
+        category: Annotated[list[str] | None, Query()] = None,
     ) -> JSONResponse:
-        # All three read before the query, so a malformed parameter costs no round trip.
+        # Both read before the query, like the parameters _read_expenses parses, so a
+        # malformed one costs no round trip.
         grain = parse_period(period)
         grouping = parse_grouping(group_by)
-        dates = parse_date_range(from_date, to_date)
-        records = await expenses.list_expenses(dates)
-        if currency is not None:
-            target = validate_currency_code(currency)
-            records = convert_expenses(
-                records, await currencies.list_currencies(), target
-            )
+        dates, records = await _read_expenses(
+            expenses, currencies, currency, from_date, to_date, category
+        )
         # After the conversion, never before: converting each amount and then adding is
         # what makes a total equal the sum of the rows /api/expenses shows for it.
         payload = [
@@ -256,6 +277,13 @@ def create_app() -> FastAPI:
     ) -> JSONResponse:
         # Reads its exception, like the two above and for the same reason: the message
         # names the parameter the client sent and nothing of the database.
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    @app.exception_handler(CategoryFilterError)
+    async def handle_category_filter_error(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        _request: Request, exc: Exception
+    ) -> JSONResponse:
+        # The fourth of the kind, reading its exception for the same reason.
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
     # Added last, so it is the outermost middleware and can answer a preflight itself

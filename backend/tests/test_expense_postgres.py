@@ -350,6 +350,86 @@ def test_a_date_range_matching_nothing_is_still_an_empty_list(tmp_path: Path) ->
     assert _EXPENSES.validate_json(response.content) == []
 
 
+def _load_three_categories(directory: Path) -> None:
+    """Three categories over two months, so a filter can leave rows out on either
+    side of a month and the totals' extent can shrink with it."""
+    _ = _write(
+        directory,
+        "01.tsv",
+        "100.00\tDKK\t05/01/2026\tFood\tGroceries",
+        "1250.00\tDKK\t01/02/2026\tHousing\tRent",
+        "200.00\tDKK\t10/02/2026\tFood\tGroceries",
+        "611.23\tDKK\t14/02/2026\tCar\tFuel",
+    )
+    _ = asyncio.run(load_directory(directory, database_url()))
+
+
+def test_a_category_returns_only_the_expenses_in_it(tmp_path: Path) -> None:
+    """The IN clause itself, which the HTTP suite's fake cannot show: it records the
+    filter and filters nothing."""
+    _load_three_categories(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"category": "Food"})
+
+    assert response.status_code == 200
+    body = _EXPENSES.validate_json(response.content)
+    # Oldest first still, with the Housing and Car rows between them left out.
+    assert [(row.date, row.category) for row in body] == [
+        ("2026-01-05", "Food"),
+        ("2026-02-10", "Food"),
+    ]
+
+
+def test_two_categories_return_the_expenses_in_either(tmp_path: Path) -> None:
+    _load_three_categories(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"category": ["Food", "Car"]})
+
+    assert [
+        (row.date, row.category) for row in _EXPENSES.validate_json(response.content)
+    ] == [
+        ("2026-01-05", "Food"),
+        ("2026-02-10", "Food"),
+        ("2026-02-14", "Car"),
+    ]
+
+
+def test_a_category_nobody_spent_in_is_still_an_empty_list(tmp_path: Path) -> None:
+    """A category with no expenses is the empty table's case again: a state, not a
+    fault. The backend has no list of categories to refuse it against."""
+    _load_three_categories(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"category": "Travel"})
+
+    assert response.status_code == 200
+    assert _EXPENSES.validate_json(response.content) == []
+
+
+def test_a_category_narrows_what_the_totals_are_taken_over(tmp_path: Path) -> None:
+    """The filter is applied in SQL, so the other categories are not in the sum and
+    the calendar runs over the rows that were left, as it does for a date range."""
+    _load_three_categories(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses/totals", params={"period": "month", "category": "Car"}
+        )
+
+    # Only February holds a Car row, so January is not a period at all.
+    assert _TOTALS.validate_json(response.content) == [
+        PeriodTotalPayload(
+            period="2026-02",
+            from_date="2026-02-01",
+            to_date="2026-02-28",
+            amount="611.23",
+            currency="DKK",
+        )
+    ]
+
+
 def test_totals_group_the_loaded_expenses_by_month(tmp_path: Path) -> None:
     """The whole path against real rows: three January expenses become one total.
 

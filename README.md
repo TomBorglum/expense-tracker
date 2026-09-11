@@ -104,7 +104,8 @@ error state until something answers on 8000.
 | `GET /api/expenses` | `[{"amount", "currency", "date", "category", "details"}, ...]` - the `ExpensePayload` model |
 | `GET /api/expenses?currency=EUR` | The same, restated in one currency |
 | `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
-| `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date` and `to_date` too |
+| `GET /api/expenses?category=Food&category=Housing` | Only the expenses in either category |
+| `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and `category` too |
 | `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
 All three send `Cache-Control: no-store`.
@@ -186,11 +187,48 @@ to re-check and no caller to trust. Both live in
 `backend/src/expense_tracker/date_range.py`, which knows no HTTP and no database at all,
 and are tested in `backend/tests/test_date_range.py`.
 
+### Asking for one or more categories
+
+`?category=` narrows the list to the expenses in the category named. **The key repeats
+once per value**, so `?category=Food&category=Housing` is every expense in either, and a
+value given twice counts once. Give none and the request is the one that was there
+before the parameter existed.
+
+A value is matched the way the loader stored it: **stripped, then verbatim**, so
+`?category=%20Food` is `Food` and `?category=food` is another category altogether. That
+is the loader's own rule rather than a second one - it strips every field of a file and
+keeps the case it read - so the filter meets a stored value on the terms it was stored
+under, and the API never folds case on a client's behalf, as it never uppercases a
+currency code.
+
+The filtering is a `WHERE ... IN` clause beside the two date clauses, not a pass over the
+rows in Python, and it composes with `?currency=`, `?from_date=` and `?to_date=` the way
+those compose with each other: all three narrow the query, and the conversion runs over
+whatever they left. `schema.sql` gained no index for it - the table is small and
+`expense_oldest_first_idx` already orders the scan. **A category nobody has spent in is
+`200 []`**, for the reason an empty table is: it is an answer, not a fault. The backend
+keeps no list of categories to refuse it against - a category is whatever a file said -
+so there is nothing to check a name against short of a second query.
+
+A blank value is a `422` carrying the same plain-string `detail`:
+
+| Request | Body |
+| --- | --- |
+| `?category=` | `{"detail": "category must not be blank"}` |
+| `?category=%20` | `{"detail": "category must not be blank"}` |
+
+An empty value is malformed rather than absent, as an empty `?from_date=` is, and blank
+means blank after the strip, as it does to the loader. The refusal belongs to the
+`CategoryFilter` type rather than to the parsing, so it holds however the filter is
+built, and the repository takes that type instead of a loose set of strings. Both live
+in `backend/src/expense_tracker/category_filter.py`, which knows no HTTP and no database
+at all, and are tested in `backend/tests/test_category_filter.py`.
+
 ### Asking for totals
 
 `GET /api/expenses/totals` sums the rows `/api/expenses` lists, over the period
-`?period=` names. It takes the same `?currency=`, `?from_date=` and `?to_date=` as the
-list does and means the same thing by each.
+`?period=` names. It takes the same `?currency=`, `?from_date=`, `?to_date=` and
+`?category=` as the list does and means the same thing by each.
 
 **`?period=` is required and defaults to nothing**, because a grain nobody chose is an
 assumption hidden inside a sum; `month` is the only one, so the payload field is the

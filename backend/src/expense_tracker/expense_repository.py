@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+from .category_filter import CategoryFilter
 from .date_range import UNBOUNDED, DateRange
 from .db import Base
 
@@ -68,7 +69,7 @@ class ExpenseRepository(ABC):
 
     @abstractmethod
     async def list_expenses(
-        self, dates: DateRange = UNBOUNDED
+        self, dates: DateRange = UNBOUNDED, categories: CategoryFilter | None = None
     ) -> Sequence[ExpenseRecord]: ...
 
 
@@ -82,9 +83,9 @@ class PostgresExpenseRepository(ExpenseRepository):
 
     @override
     async def list_expenses(
-        self, dates: DateRange = UNBOUNDED
+        self, dates: DateRange = UNBOUNDED, categories: CategoryFilter | None = None
     ) -> Sequence[ExpenseRecord]:
-        """Every expense within the bounds given, oldest first, or an empty sequence."""
+        """Every expense within the bounds and categories given, oldest first."""
         statement = select(
             Expense.amount,
             Expense.currency,
@@ -98,6 +99,10 @@ class PostgresExpenseRepository(ExpenseRepository):
             statement = statement.where(Expense.expense_date >= dates.start)
         if dates.end is not None:
             statement = statement.where(Expense.expense_date <= dates.end)
+        # sorted() for a deterministic clause; that no name is blank is the type's
+        # guarantee, like the range's ordering above.
+        if categories is not None:
+            statement = statement.where(Expense.category.in_(sorted(categories.names)))
         try:
             rows = await self._session.execute(
                 statement.order_by(Expense.expense_date, Expense.id)
