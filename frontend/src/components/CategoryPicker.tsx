@@ -70,13 +70,16 @@ export function CategoryPicker({
           aria-expanded={open}
           aria-controls="categories-panel"
           aria-labelledby="categories-label categories-value"
-          className="input w-auto cursor-pointer"
+          // A fixed width rather than the text's own: the label changes with every tick,
+          // and a trigger that grew with it would slide the whole filter row along. A
+          // pair of long names is cut with an ellipsis; the panel lists them in full.
+          className="input w-44 cursor-pointer"
           disabled={disabled}
           onClick={() => {
             setOpen((current) => !current);
           }}
         >
-          <span>{summarize(selected)}</span>
+          <span className="min-w-0 truncate">{summarize(selected)}</span>
         </button>
         {open && (
           // text-sm because daisyUI's fieldset writes 0.75rem; the labels carry none of
