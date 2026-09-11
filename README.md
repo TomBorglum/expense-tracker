@@ -633,11 +633,12 @@ The names on offer come from `GET /api/expenses/categories`, read by
 `frontend/src/api/categories.ts` in the order the backend sends them - once each, by
 name. **A category is picked, never typed**: the control is a button that opens a list of
 checkboxes, each tick applies at once and the list stays open for the next, and a
-**Clear selection** button empties it in one click. Nothing ticked reads as
+**Clear selection** button empties it in one click - present but disabled while there is
+nothing to clear, so the panel is the same size whatever is ticked. Nothing ticked reads as
 **All categories** and sends no `category` at all, which is what the backend means by an
 absent one; there is no "All" checkbox because that is a value no request carries. The
-trigger names one or two picked categories and counts three or more, so a long selection
-cannot wrap the filter row.
+trigger names one or two picked categories and counts three or more, and is a fixed
+width either way, so the filter row never moves as the selection changes.
 
 The selection lives in the **URL** alongside the rest, and is spelled the way the API
 reads it: `/?category=Car&category=Groceries` is a link worth sending and one you can type

@@ -95,10 +95,14 @@ test("stays open after a tick, so several can be picked in a row", async () => {
   expect(screen.getByRole("group", { name: "Categories" })).toBeTruthy();
 });
 
-test("offers to clear the selection only while there is one", async () => {
+test("keeps the clear button in place, disabled, while there is nothing to clear", async () => {
+  // Present rather than absent, so the panel is the same size whatever is ticked.
   renderPicker([]);
   await userEvent.click(trigger());
-  expect(screen.queryByRole("button", { name: "Clear selection" })).toBeNull();
+  const clear = screen.getByRole<HTMLButtonElement>("button", {
+    name: "Clear selection",
+  });
+  expect(clear.disabled).toBe(true);
 });
 
 test("clears the whole selection in one click", async () => {

@@ -102,17 +102,19 @@ export function CategoryPicker({
                 {name}
               </label>
             ))}
-            {selected.length > 0 && (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm text-sm font-normal"
-                onClick={() => {
-                  onChange([]);
-                }}
-              >
-                Clear selection
-              </button>
-            )}
+            {/* Always in the panel, disabled rather than absent while there is nothing to
+                clear: it is wider than the list, so a panel it came and went from would
+                change size, and a right-anchored one shifts as it does. */}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm text-sm font-normal"
+              disabled={selected.length === 0}
+              onClick={() => {
+                onChange([]);
+              }}
+            >
+              Clear selection
+            </button>
           </fieldset>
         )}
       </div>
