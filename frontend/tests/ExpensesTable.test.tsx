@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
+import { CREDIT_CLASS, displayAmount } from "@/amounts";
 import { BASE_CURRENCY } from "@/api/currencies";
 import { EXPENSES_URL, type ExpensesQuery } from "@/api/expenses";
 import { ExpensesTable } from "@/components/ExpensesTable";
@@ -44,10 +45,20 @@ test("renders every expense the API serves, in the order it sends them", async (
       expense.date,
       expense.category,
       expense.details,
-      expense.amount,
+      displayAmount(expense.amount).text,
       expense.currency,
     ]),
   );
+});
+
+test("shows a negative amount as a credit and spending as it arrives", async () => {
+  renderExpensesTable();
+  await screen.findByRole("table", { name: "Expenses" });
+  // MOCK_EXPENSES opens with -4.20 and follows it with 13.37.
+  const credit = screen.getByRole("cell", { name: "+4.20" });
+  const spending = screen.getByRole("cell", { name: "13.37" });
+  expect(credit.classList).toContain(CREDIT_CLASS);
+  expect(spending.classList).not.toContain(CREDIT_CLASS);
 });
 
 test("renders one row per expense under the header row", async () => {

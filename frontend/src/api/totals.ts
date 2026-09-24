@@ -10,7 +10,7 @@ import { fetchList } from "./fetchList";
 // The first three fields are on every row. The last three are dumped with exclude_none,
 // so each is present with a value or absent altogether - never null and never "". An
 // absent amount means the period holds no expenses, which is not the same as a period of
-// refunds that netted to "0.00".
+// credits that netted to "0.00".
 export interface PeriodTotal {
   period: string;
   from_date: string;

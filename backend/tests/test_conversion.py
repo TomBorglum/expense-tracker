@@ -45,7 +45,7 @@ def test_a_half_cent_rounds_up_rather_than_to_even() -> None:
 
 
 def test_a_negative_amount_keeps_its_sign() -> None:
-    """The loader accepts a negative amount, so a refund converts like anything else."""
+    """The loader accepts a negative amount, so a credit converts like anything else."""
     converted = convert_expenses([_expense("-100.00")], [_DKK_TO_EUR], "EUR")
     assert converted == [_expense("-13.40", "EUR")]
 
@@ -62,7 +62,7 @@ def test_a_negative_half_cent_rounds_away_from_zero() -> None:
     ]
 
 
-def test_a_refund_too_small_to_show_is_not_negative_zero() -> None:
+def test_a_credit_too_small_to_show_is_not_negative_zero() -> None:
     """-0.01 * 0.134048 quantizes to -0.00, which str() would send as "-0.00"."""
     (converted,) = convert_expenses([_expense("-0.01")], [_DKK_TO_EUR], "EUR")
     assert str(converted.amount) == "0.00"

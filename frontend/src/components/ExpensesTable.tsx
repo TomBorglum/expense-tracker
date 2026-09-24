@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { CREDIT_CLASS, displayAmount } from "../amounts";
 import { type ExpensesQuery, expensesQueryOptions } from "../api/expenses";
 
 interface ExpensesTableProps {
@@ -7,11 +8,12 @@ interface ExpensesTableProps {
 }
 
 // The expenses are owned by the Python package and served from /api/expenses, oldest
-// first, restated in the currency asked for and narrowed to the days asked for. Amounts
-// and dates are rendered exactly as they arrive: the backend sends amount as a string so
-// no float round trip can drift a total by a cent - conversion included, which is why it
-// happens there and not here - and the date is a bare YYYY-MM-DD, which new Date() would
-// read as UTC and print a day early west of Greenwich.
+// first, restated in the currency asked for and narrowed to the days asked for. Dates are
+// rendered exactly as they arrive, and amounts too apart from their sign, which
+// displayAmount turns from a negative into a credit: the backend sends amount as a string
+// so no float round trip can drift a total by a cent - conversion included, which is why
+// it happens there and not here - and the date is a bare YYYY-MM-DD, which new Date()
+// would read as UTC and print a day early west of Greenwich.
 export function ExpensesTable({ query }: ExpensesTableProps) {
   // Not destructured: useQuery returns a discriminated union, and reading through the
   // result is what narrows `data` to an Expense[] in the success branch below.
@@ -91,20 +93,27 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
               </td>
             </tr>
           ) : (
-            expenses.data.map((expense, index) => (
-              // The payload carries no id, and schema.sql notes that the same amount, day,
-              // currency, category and details can legitimately repeat, so position is a
-              // row's only identity. The rows are rendered in arrival order and never
-              // sorted or filtered here, which is what makes that identity stable.
-              // eslint-disable-next-line @eslint-react/no-array-index-key -- see above
-              <tr key={index}>
-                <td className="tabular-nums">{expense.date}</td>
-                <td>{expense.category}</td>
-                <td>{expense.details}</td>
-                <td className="text-right tabular-nums">{expense.amount}</td>
-                <td>{expense.currency}</td>
-              </tr>
-            ))
+            expenses.data.map((expense, index) => {
+              const amount = displayAmount(expense.amount);
+              return (
+                // The payload carries no id, and schema.sql notes that the same amount, day,
+                // currency, category and details can legitimately repeat, so position is a
+                // row's only identity. The rows are rendered in arrival order and never
+                // sorted or filtered here, which is what makes that identity stable.
+                // eslint-disable-next-line @eslint-react/no-array-index-key -- see above
+                <tr key={index}>
+                  <td className="tabular-nums">{expense.date}</td>
+                  <td>{expense.category}</td>
+                  <td>{expense.details}</td>
+                  <td
+                    className={`text-right tabular-nums ${amount.isCredit ? CREDIT_CLASS : ""}`}
+                  >
+                    {amount.text}
+                  </td>
+                  <td>{expense.currency}</td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

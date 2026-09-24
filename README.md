@@ -252,8 +252,9 @@ to the newest, whether or not anything was spent in it. `period`, `from_date` an
 `to_date` are on every row; `amount`, `currency` and `category` are present with a value
 or **absent altogether**, never `null` and never `""`.
 
-That absence carries meaning, and refunds are why. A refund is a negative expense, so a
-period can hold rows that cancel each other out:
+That absence carries meaning, and credits are why. A credit - a refund, a reimbursement,
+a share paid back - is a negative expense, so a period can hold rows that cancel each
+other out:
 
 | Period | Rows in it | What comes back |
 | --- | --- | --- |
@@ -262,7 +263,7 @@ period can hold rows that cancel each other out:
 | `150.00` refunded, nothing bought | one | `"amount": "-150.00"` |
 
 An absent `amount` says "none recorded"; `"0.00"` says "these cancelled out". A client
-that read a missing key as zero would show a month of refunds as a quiet month.
+that read a missing key as zero would show a month of credits as a quiet month.
 
 The conversion runs **before** the summing, and the order is the point: `?currency=`
 quantizes each amount to cents, so converting then adding differs by cents from adding
@@ -438,7 +439,7 @@ columns in this order, then one line per expense.
 | `Details` | free text | May be empty |
 
 A third decimal place is refused rather than rounded away by `numeric(12, 2)` in
-silence. A negative amount is accepted, because a refund is a negative expense; a zero
+silence. A negative amount is accepted, because a credit is a negative expense; a zero
 one is refused, because an expense of nothing is not an entry, and
 `expense_amount_not_zero` backstops that in the database. The
 header is checked strictly, which doubles as a delimiter check: a comma-separated file
@@ -532,8 +533,10 @@ date, category and details. Nothing generates a client from a schema, so the pay
 mismatch shows up as a 404 or a failed shape guard at runtime. Every field is a string on
 the wire - `amount` included, because JSON has no decimal type - so the guard rejects a
 numeric amount rather than letting a float round trip through the page. Both
-values are rendered exactly as they arrive: formatting the amount client-side would put
-back the round trip `str(Decimal)` exists to prevent, and `new Date()` on a bare
+values are rendered as they arrive, except that a negative amount - a credit, money
+coming in - is shown as `+` in green, the sign rewritten on the string alone: parsing
+the amount client-side would put back the round trip `str(Decimal)` exists to prevent,
+and `new Date()` on a bare
 `YYYY-MM-DD` reads it as UTC and prints a day early west of Greenwich. The rows keep the
 order the API sends them in (oldest first) and are never re-sorted, and an empty ledger
 arrives as a 200 with `[]`, so the table says so in a row instead of raising an alert.

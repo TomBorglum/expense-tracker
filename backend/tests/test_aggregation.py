@@ -231,7 +231,7 @@ def test_a_month_nobody_spent_in_is_still_a_row() -> None:
 def test_a_month_whose_refunds_cancel_its_spending_is_a_zero_and_not_a_gap() -> None:
     """The other side of the rule above, and the case it was written for.
 
-    A refund is a negative expense, so a purchase and its full refund net to nothing.
+    A credit is a negative expense, so a purchase and its full refund net to nothing.
     That is a month somebody spent in, so the amount is 0.00 rather than the None the
     gap above carries - which is the whole difference between "these cancelled out"
     and "none recorded".

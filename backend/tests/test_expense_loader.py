@@ -40,7 +40,7 @@ def test_the_date_is_day_first() -> None:
 
 
 def test_a_negative_amount_is_accepted() -> None:
-    """A refund is a negative expense, so there is no sign check."""
+    """A credit is a negative expense, so there is no sign check."""
     (record,) = parse("x.tsv", _HEADER + b"-450.00\tDKK\t02/01/2026\tCar\tRefund\n")
     assert record.amount == Decimal("-450.00")
 
@@ -49,7 +49,7 @@ def test_a_negative_amount_is_accepted() -> None:
 def test_a_zero_amount_is_refused(value: bytes) -> None:
     """Every spelling of nothing, including the negative ones.
 
-    The sign is what makes an expense a refund, so -0.00 is not a tiny refund - it
+    The sign is what makes an expense a credit, so -0.00 is not a tiny credit - it
     is the same non-entry 0.00 is, and expense_amount_not_zero backstops it.
     """
     body = _HEADER + value + b"\tDKK\t02/01/2026\tCar\tNothing\n"

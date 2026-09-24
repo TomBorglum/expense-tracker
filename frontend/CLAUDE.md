@@ -7,12 +7,12 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
 
 ## Rendering
 
-- **Both tables render every amount and date verbatim.** No `Intl.NumberFormat`, no
-  `new Date()`. The backend sends `amount` as `str(Decimal)` so no float round trip can
-  drift a total by a cent, its dates as bare `YYYY-MM-DD`, which `new Date()` reads as UTC
-  and prints a day early west of Greenwich. A period is headed by those bounds,
-  `2026-12-01 to 2026-12-31`, never by its `YYYY-MM` label. Both guards reject a numeric
-  amount. Pinned by "shows an alert when an amount arrives as a number", in each file.
+- **Both tables render dates verbatim, and amounts verbatim but for the sign.** No
+  `Intl.NumberFormat`, no `new Date()`, no `Number()` on an amount: `amount` is
+  `str(Decimal)` so no float can drift a cent, a bare `YYYY-MM-DD` reads as UTC and prints
+  a day early west of Greenwich. A period is headed by its bounds, never its `YYYY-MM`.
+  **A negative is a credit, `+` in `CREDIT_CLASS`**, rewritten by `src/amounts.ts` alone.
+  Pinned by `amounts.test.ts` and "shows an alert when an amount arrives as a number".
 - **A `Date` is never built from a string and never named through UTC.** The picker deals in
   `Date` objects and the API in bare `YYYY-MM-DD`, so `src/dates.ts` is the one crossing
   point, built from `getFullYear`/`getMonth`/`getDate`. **No code in `src/` calls
