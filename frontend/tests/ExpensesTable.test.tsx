@@ -43,9 +43,9 @@ test("renders every expense the API serves, in the order it sends them", async (
     MOCK_EXPENSES.flatMap((expense) => [
       expense.date,
       expense.category,
+      expense.details,
       expense.amount,
       expense.currency,
-      expense.details,
     ]),
   );
 });
