@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
+import { CREDIT_CLASS } from "@/amounts";
 import { BASE_CURRENCY } from "@/api/currencies";
 import { CATEGORY_GROUPING, TOTALS_URL, type TotalsQuery } from "@/api/totals";
 import { PeriodTotals } from "@/components/PeriodTotals";
@@ -137,9 +138,59 @@ test("takes the subtotal from the ungrouped request rather than adding the lines
   ]);
 });
 
+test("shows a period and a category that net negative as credits", async () => {
+  server.use(
+    http.get(TOTALS_URL, ({ request }) =>
+      HttpResponse.json(
+        new URL(request.url).searchParams.get("group_by") === null
+          ? [{ ...MOCK_TOTALS[2], amount: "-5.00" }]
+          : [
+              { ...MOCK_CATEGORY_TOTALS[2], amount: "12.50" },
+              { ...MOCK_CATEGORY_TOTALS[3], amount: "-17.50" },
+            ],
+      ),
+    ),
+  );
+  renderPeriodTotals(GROUPED);
+  await screen.findByRole("table", { name: "Totals" });
+  expect(rowTexts()).toEqual([
+    GROUPED_HEADER,
+    ["2001-03-01 to 2001-03-31", "+5.00", "EUR"],
+    ["", "Stub category", "12.50", "EUR"],
+    ["", "Other stub category", "+17.50", "EUR"],
+  ]);
+  expect(screen.getByRole("cell", { name: "+5.00" }).classList).toContain(CREDIT_CLASS);
+  expect(screen.getByRole("cell", { name: "+17.50" }).classList).toContain(
+    CREDIT_CLASS,
+  );
+  expect(screen.getByRole("cell", { name: "12.50" }).classList).not.toContain(
+    CREDIT_CLASS,
+  );
+});
+
+test("leaves the amount blank on a category line that carries none", async () => {
+  // The guard lets a category row through without an amount, and there is no sign to read.
+  server.use(
+    http.get(TOTALS_URL, ({ request }) =>
+      HttpResponse.json(
+        new URL(request.url).searchParams.get("group_by") === null
+          ? [MOCK_TOTALS[0]]
+          : [{ ...MOCK_CATEGORY_TOTALS[0], amount: undefined }],
+      ),
+    ),
+  );
+  renderPeriodTotals(GROUPED);
+  await screen.findByRole("table", { name: "Totals" });
+  expect(rowTexts()).toEqual([
+    GROUPED_HEADER,
+    ["2001-01-01 to 2001-01-31", "11.00", "EUR"],
+    ["", "Stub category", "", "EUR"],
+  ]);
+});
+
 test("says a period holds nothing rather than showing it as zero", async () => {
   // The backend leaves amount off a period nobody spent in, which is a different fact
-  // from a month of refunds that netted to 0.00. Rendering one as the other would throw
+  // from a month of credits that netted to 0.00. Rendering one as the other would throw
   // that distinction away.
   server.use(
     http.get(TOTALS_URL, () =>

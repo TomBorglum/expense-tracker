@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS expense (
                                           REFERENCES loaded_expense_file (id),
     -- numeric, never float: this is money. (12,2) is ten integer digits and two
     -- decimal places; the loader rejects a third rather than letting PostgreSQL round
-    -- it away silently. The sign carries the meaning: a negative amount is a refund.
+    -- it away silently. The sign carries the meaning: a negative amount is a credit.
     amount                 numeric(12, 2) NOT NULL,
     -- ISO 4217 alpha-3. The loader checks the same shape, so this is the backstop.
     currency               text           NOT NULL,

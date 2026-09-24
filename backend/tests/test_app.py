@@ -503,7 +503,7 @@ def test_a_period_with_no_expenses_carries_only_its_span(
     """February holds nothing, so it sends no amount, no currency and no category.
 
     Absent rather than 0.00, which would say the month's expenses cancelled out - a
-    thing a month of refunds can genuinely do.
+    thing a month of credits can genuinely do.
     """
     response = gapped_expenses_client.get(
         "/api/expenses/totals", params={"period": "month", "group_by": "category"}

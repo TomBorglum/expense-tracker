@@ -91,7 +91,7 @@ def aggregate(
         if not rows:
             # A period nobody spent in is still a row, carrying the span and nothing
             # else: absent says "none recorded" where 0.00 would say "these cancelled
-            # out", which a month of refunds can genuinely do.
+            # out", which a month of credits can genuinely do.
             totals.append(TotalRecord(period_key, start, end, None, None, None))
         totals.extend(
             TotalRecord(period_key, start, end, amount, currency, category)

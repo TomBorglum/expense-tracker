@@ -54,10 +54,10 @@ def _convert(
         return record
     rate = _rate(index, record.currency, target)
     # ROUND_HALF_UP spelled out: Decimal rounds half to even by default. It rounds
-    # half away from zero, so a refund converts to the negation of what the same
+    # half away from zero, so a credit converts to the negation of what the same
     # amount spent would.
     amount = (record.amount * rate).quantize(_CENTS, rounding=ROUND_HALF_UP)
-    # A refund too small to show at this scale quantizes to -0.00, which is an
+    # A credit too small to show at this scale quantizes to -0.00, which is an
     # artefact of the sign rather than a fact about money.
     if amount == 0:
         amount = abs(amount)

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { CREDIT_CLASS, displayAmount } from "../amounts";
 import {
   CATEGORY_GROUPING,
   type PeriodTotal,
@@ -43,11 +44,29 @@ const PERIOD_BAND = "border-b-0 bg-base-200";
 // bg-base-200 out of it, leaving the card to show through. All three are one mechanism.
 const PERIOD_GAP = "bg-clip-padding border-t-8 border-t-transparent";
 
+function AmountCell({
+  amount,
+  className = "",
+}: {
+  readonly amount: string;
+  readonly className?: string;
+}) {
+  const shown = displayAmount(amount);
+  return (
+    <td
+      className={`${className} text-right tabular-nums ${shown.isCredit ? CREDIT_CLASS : ""}`}
+    >
+      {shown.text}
+    </td>
+  );
+}
+
 // The expenses of /api/expenses summed by month, oldest first, restated in the currency
-// asked for and narrowed to the days asked for. Amounts and the bounds each period was
-// summed over are rendered exactly as they arrive: the backend sends amount as a string so
-// no float round trip can drift a total by a cent, and the two dates are bare YYYY-MM-DD,
-// which new Date() would read as UTC and print a day early west of Greenwich.
+// asked for and narrowed to the days asked for. The bounds each period was summed over are
+// rendered exactly as they arrive, and amounts too apart from their sign, which
+// displayAmount turns from a negative net into a credit: the backend sends amount as a
+// string so no float round trip can drift a total by a cent, and the two dates are bare
+// YYYY-MM-DD, which new Date() would read as UTC and print a day early west of Greenwich.
 export function PeriodTotals({ query }: PeriodTotalsProps) {
   // Destructured out rather than overwritten with undefined, so the ungrouped query key
   // holds no dead entry.
@@ -164,7 +183,7 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
                     {total.from_date} to {total.to_date}
                   </th>
                   {total.amount === undefined ? (
-                    // Absent, not "0.00": a month of refunds can genuinely net to zero,
+                    // Absent, not "0.00": a month of credits can genuinely net to zero,
                     // and that is a different fact from having recorded nothing.
                     <td
                       colSpan={2}
@@ -174,9 +193,10 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
                     </td>
                   ) : (
                     <>
-                      <td className={`${band} text-right font-semibold tabular-nums`}>
-                        {total.amount}
-                      </td>
+                      <AmountCell
+                        amount={total.amount}
+                        className={`${band} font-semibold`}
+                      />
                       <td className={band}>{total.currency}</td>
                     </>
                   )}
@@ -190,7 +210,7 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
                     <th scope="row" className="font-normal">
                       {row.category}
                     </th>
-                    <td className="text-right tabular-nums">{row.amount}</td>
+                    <AmountCell amount={row.amount ?? ""} />
                     <td>{row.currency}</td>
                   </tr>
                 ))}

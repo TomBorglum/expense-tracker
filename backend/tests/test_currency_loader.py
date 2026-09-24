@@ -93,7 +93,7 @@ def test_a_comma_decimal_separator_is_refused() -> None:
 
 
 def test_a_negative_rate_is_refused() -> None:
-    """Unlike an expense amount, where a negative is a refund."""
+    """Unlike an expense amount, where a negative is a credit."""
     with pytest.raises(CurrencyFileError, match="exchange rate"):
         _ = parse("x.tsv", _HEADER + b"DKK\tEUR\t-0.134048\n")
 
