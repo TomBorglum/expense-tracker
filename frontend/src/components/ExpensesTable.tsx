@@ -55,9 +55,9 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
         <colgroup>
           <col className="w-32" />
           <col className="w-40" />
+          <col />
           <col className="w-40" />
           <col className="w-24" />
-          <col />
         </colgroup>
         <thead>
           {/* font-semibold on every th, because daisyUI puts 600 on <thead> and the
@@ -69,14 +69,14 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
             <th scope="col" className="font-semibold">
               Category
             </th>
+            <th scope="col" className="font-semibold">
+              Details
+            </th>
             <th scope="col" className="text-right font-semibold">
               Amount
             </th>
             <th scope="col" className="font-semibold">
               Currency
-            </th>
-            <th scope="col" className="font-semibold">
-              Details
             </th>
           </tr>
         </thead>
@@ -100,9 +100,9 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
               <tr key={index}>
                 <td className="tabular-nums">{expense.date}</td>
                 <td>{expense.category}</td>
+                <td>{expense.details}</td>
                 <td className="text-right tabular-nums">{expense.amount}</td>
                 <td>{expense.currency}</td>
-                <td>{expense.details}</td>
               </tr>
             ))
           )}
