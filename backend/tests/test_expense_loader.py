@@ -57,6 +57,15 @@ def _bend(field: bytes, value: bytes) -> bytes:
     return b"".join(lines)
 
 
+def _bent(field: bytes, value: bytes) -> bytes:
+    """A whole month file holding one record, with one field given another value.
+
+    Built outside the `pytest.raises` blocks below rather than inside them, so the one
+    call each block holds is the one expected to raise.
+    """
+    return _month(_bend(field, value))
+
+
 def test_a_valid_file_parses() -> None:
     records = parse("x.yaml", _month(_IMPORT))
     assert records == [
@@ -76,14 +85,15 @@ def test_the_date_is_the_one_the_file_states() -> None:
 
 def test_a_utc_date_is_read_as_written_too() -> None:
     """The other bank's spelling: a `Z` offset, and still the date in the file."""
-    body = _bend(b"datetime", b"      datetime: '2026-01-02T23:30:00Z'\n")
-    (record,) = parse("x.yaml", _month(body))
+    body = _bent(b"datetime", b"      datetime: '2026-01-02T23:30:00Z'\n")
+    (record,) = parse("x.yaml", body)
     assert record.expense_date == datetime.date(2026, 1, 2)
 
 
 def test_a_negative_amount_is_accepted() -> None:
     """A credit is a negative expense, so there is no sign check."""
-    (record,) = parse("x.yaml", _month(_bend(b"amount", b"      amount: '-450.00'\n")))
+    body = _bent(b"amount", b"      amount: '-450.00'\n")
+    (record,) = parse("x.yaml", body)
     assert record.amount == Decimal("-450.00")
 
 
@@ -94,13 +104,13 @@ def test_a_zero_amount_is_refused(value: bytes) -> None:
     The sign is what makes an expense a credit, so -0.00 is not a tiny credit - it
     is the same non-entry 0.00 is, and expense_amount_not_zero backstops it.
     """
-    body = _bend(b"amount", b"      amount: '" + value + b"'\n")
+    body = _bent(b"amount", b"      amount: '" + value + b"'\n")
     with pytest.raises(ExpenseFileError, match=r"amount .* is zero"):
-        _ = parse("x.yaml", _month(body))
+        _ = parse("x.yaml", body)
 
 
 def test_blank_details_are_accepted() -> None:
-    (record,) = parse("x.yaml", _month(_bend(b"details", b"      details: ''\n")))
+    (record,) = parse("x.yaml", _bent(b"details", b"      details: ''\n"))
     assert record.details == ""
 
 
@@ -168,84 +178,94 @@ def test_a_record_without_an_extracted_block_is_refused() -> None:
 
 def test_an_unknown_action_is_refused() -> None:
     """Neither import nor discard means a decision this loader cannot act on."""
-    body = b"      datetime: " + _MOMENT + b"\n      action: maybe\n"
+    body = _month(b"      datetime: " + _MOMENT + b"\n      action: maybe\n")
     with pytest.raises(ExpenseFileError, match="'import', 'discard'"):
-        _ = parse("x.yaml", _month(body))
+        _ = parse("x.yaml", body)
 
 
 def test_an_import_missing_a_field_is_refused() -> None:
     """An import states every field, so a missing one is not an empty one."""
-    body = b"".join(
-        line for line in _IMPORT.splitlines(keepends=True) if b"currency" not in line
+    body = _month(
+        b"".join(
+            line
+            for line in _IMPORT.splitlines(keepends=True)
+            if b"currency" not in line
+        )
     )
     with pytest.raises(ExpenseFileError, match=r"currency: Field required"):
-        _ = parse("x.yaml", _month(body))
+        _ = parse("x.yaml", body)
 
 
 def test_a_refusal_names_the_record_it_is_about() -> None:
     """The index is what finds the record in a file of ninety."""
-    body = _bend(b"amount", b"      amount: '1.005'\n")
+    body = _month(_IMPORT, _IMPORT, _bend(b"amount", b"      amount: '1.005'\n"))
     with pytest.raises(ExpenseFileError, match=r"records\[2\].extracted.import.amount"):
-        _ = parse("x.yaml", _month(_IMPORT, _IMPORT, body))
+        _ = parse("x.yaml", body)
 
 
 def test_an_unquoted_amount_is_refused() -> None:
     """YAML 1.1 resolves it to a float, and a float is how a total drifts a cent."""
-    body = _bend(b"amount", b"      amount: 775.37\n")
+    body = _bent(b"amount", b"      amount: 775.37\n")
     with pytest.raises(ExpenseFileError, match="must be text, not float; quote it"):
-        _ = parse("x.yaml", _month(body))
+        _ = parse("x.yaml", body)
 
 
 def test_an_unquoted_datetime_is_refused() -> None:
     """YAML 1.1 resolves it to a datetime, which is not what the format writes."""
-    body = _bend(b"datetime", b"      datetime: 2026-01-02T00:00:00+01:00\n")
+    body = _bent(b"datetime", b"      datetime: 2026-01-02T00:00:00+01:00\n")
     with pytest.raises(ExpenseFileError, match="must be text, not datetime; quote it"):
-        _ = parse("x.yaml", _month(body))
+        _ = parse("x.yaml", body)
 
 
 def test_three_decimal_places_are_refused() -> None:
     """numeric(12, 2) would round it away in silence."""
+    body = _bent(b"amount", b"      amount: '1.005'\n")
     with pytest.raises(ExpenseFileError, match="two decimal places"):
-        _ = parse("x.yaml", _month(_bend(b"amount", b"      amount: '1.005'\n")))
+        _ = parse("x.yaml", body)
 
 
 def test_a_comma_decimal_separator_is_refused() -> None:
     """The bank writes 775,37 in the record beside it; the amount is not its copy."""
+    body = _bent(b"amount", b"      amount: '775,37'\n")
     with pytest.raises(ExpenseFileError, match="amount"):
-        _ = parse("x.yaml", _month(_bend(b"amount", b"      amount: '775,37'\n")))
+        _ = parse("x.yaml", body)
 
 
 def test_a_bad_datetime_is_refused() -> None:
+    body = _bent(b"datetime", b"      datetime: 'noon'\n")
     with pytest.raises(ExpenseFileError, match="RFC 3339"):
-        _ = parse("x.yaml", _month(_bend(b"datetime", b"      datetime: 'noon'\n")))
+        _ = parse("x.yaml", body)
 
 
 def test_a_datetime_without_an_offset_is_refused() -> None:
     """One bank exports UTC and another local time, so a bare clock is ambiguous."""
-    body = _bend(b"datetime", b"      datetime: '2026-01-02T00:00:00'\n")
+    body = _bent(b"datetime", b"      datetime: '2026-01-02T00:00:00'\n")
     with pytest.raises(ExpenseFileError, match="no UTC offset"):
-        _ = parse("x.yaml", _month(body))
+        _ = parse("x.yaml", body)
 
 
 def test_a_lowercase_currency_is_refused() -> None:
+    body = _bent(b"currency", b"      currency: dkk\n")
     with pytest.raises(ExpenseFileError, match="ISO 4217"):
-        _ = parse("x.yaml", _month(_bend(b"currency", b"      currency: dkk\n")))
+        _ = parse("x.yaml", body)
 
 
 def test_a_blank_category_is_refused() -> None:
+    body = _bent(b"category", b"      category: ' '\n")
     with pytest.raises(ExpenseFileError, match="category is blank"):
-        _ = parse("x.yaml", _month(_bend(b"category", b"      category: ' '\n")))
+        _ = parse("x.yaml", body)
 
 
 def test_invalid_utf8_is_refused() -> None:
+    body = _bent(b"details", b"      details: '\xff\xfe'\n")
     with pytest.raises(ExpenseFileError, match="not valid YAML"):
-        _ = parse("x.yaml", _month(_bend(b"details", b"      details: '\xff\xfe'\n")))
+        _ = parse("x.yaml", body)
 
 
 def test_a_field_this_loader_does_not_read_is_ignored() -> None:
     """`key` is one, and the format takes new fields over time."""
-    body = _IMPORT + b"      note: something later\n"
-    assert len(parse("x.yaml", _month(body))) == 1
+    body = _month(_IMPORT + b"      note: something later\n")
+    assert len(parse("x.yaml", body)) == 1
 
 
 def test_the_committed_sample_files_parse() -> None:
