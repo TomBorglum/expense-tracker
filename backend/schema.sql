@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS loaded_expense_file (
     CONSTRAINT loaded_expense_file_row_count_positive CHECK (row_count >= 0)
 );
 
--- One row per data line of one loaded file.
+-- One row per imported record of one loaded file. A discarded record has none.
 CREATE TABLE IF NOT EXISTS expense (
     -- Surrogate, because nothing in the data identifies a row: the same amount, day,
     -- currency, category and details can legitimately repeat.
@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS expense (
     amount                 numeric(12, 2) NOT NULL,
     -- ISO 4217 alpha-3. The loader checks the same shape, so this is the backstop.
     currency               text           NOT NULL,
-    -- DD/MM/YYYY in the file, a real date here, so ordering is a date comparison.
+    -- An RFC 3339 date-time in the file, the day of it here, so ordering is a date
+    -- comparison.
     expense_date           date           NOT NULL,
     category               text           NOT NULL,
     -- The free-text memo. NOT NULL but allowed to be empty.

@@ -74,10 +74,10 @@ nobody can bypass it, so a non-compliant merge is refused rather than merely dis
   `backend/tests/data/expenses/` are synthetic fixtures, not a copy of it. Secret scanning
   with push protection is on, which catches credentials and nothing else.
 - **ASCII-only** committed source: no em-dashes, smart quotes, arrows, ellipses,
-  including the sample data under `backend/tests/data/expenses/`. The loader decodes
-  `utf-8-sig`, so a developer's own uncommitted exports carry Danish text and byte-order
-  marks fine. Nothing checks this - ruff's `RUF001`-`003` reach confusable characters in
-  Python source and nowhere else.
+  including the sample data under `backend/tests/data/expenses/`. PyYAML decodes UTF-8 and
+  strips a byte-order mark itself, so a developer's own uncommitted month files carry
+  Danish text fine. Nothing checks this - ruff's `RUF001`-`003` reach confusable characters
+  in Python source and nowhere else.
 - **Comments say what the code does**, and only where that is not plain from reading it.
   No rationale essays, no rejected alternatives, no explaining where a module sits in the
   layer order - that reasoning lives in these files and in `README.md`, and repeating it

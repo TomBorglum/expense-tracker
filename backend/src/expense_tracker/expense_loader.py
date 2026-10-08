@@ -1,32 +1,27 @@
-"""Reads the committed expense files into PostgreSQL.
+"""Reads the month files the expense data repository writes into PostgreSQL.
 
 `python -m expense_tracker.expense_loader <directory>`. The only thing that writes to
 the database; the API reads and never creates.
 """
 
 import asyncio
-import csv
 import datetime
 import hashlib
-import io
 import re
 import sys
-from decimal import Decimal, InvalidOperation
+from collections.abc import Callable
+from decimal import Decimal
 from pathlib import Path
-from typing import NamedTuple
+from typing import Annotated, ClassVar, Literal, NamedTuple, cast
 
+import yaml
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError
+from pydantic_core import PydanticCustomError
 from sqlalchemy import URL, insert, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from .config import database_url
 from .expense_repository import Expense, ExpenseRecord, LoadedExpenseFile
-
-# The file's first line, split on tabs. Checking it strictly doubles as a delimiter
-# check: a comma-separated file splits into one field and fails here.
-_HEADER = ("Amount", "Currency", "Date", "Category", "Details")
-
-# Day first: 02/01/2026 is 2 January.
-_DATE_FORMAT = "%d/%m/%Y"
 
 # At most two decimal places, because the column is numeric(12, 2) and a third would
 # be rounded away in silence. No limit on the integer digits - the column owns range.
@@ -34,6 +29,10 @@ _AMOUNT = re.compile(r"^-?\d+(?:\.\d{1,2})?$")
 
 # ISO 4217 alpha-3, e.g. DKK.
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
+
+# typeshed types yaml.safe_load as returning Any, which reportAny refuses, so it is
+# reached through one cast rather than through a suppression at the call.
+_safe_load: Callable[[bytes], object] = cast(Callable[[bytes], object], yaml.safe_load)
 
 
 class ExpenseFileError(Exception):
@@ -48,81 +47,205 @@ class LoadSummary(NamedTuple):
     rows_inserted: int
 
 
-def parse_expense_rows(filename: str, data: bytes) -> list[ExpenseRecord]:
-    """Turns one file's bytes into records, or raises ExpenseFileError naming the line.
+def _text(value: object) -> str:
+    """One field as the format writes it, or raises.
 
-    Takes bytes rather than a path so the caller hashes exactly what it parses.
+    YAML 1.1 resolves an unquoted 2438.47 to a float and an unquoted date-time to a
+    datetime, and the format quotes both, so anything that is not text is refused rather
+    than read through str().
     """
-    try:
-        # utf-8-sig strips a byte-order mark if a spreadsheet left one, and decodes
-        # plain UTF-8 when it did not.
-        text = data.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        raise ExpenseFileError(f"{filename}: not valid UTF-8 ({exc})") from exc
-
-    rows = list(csv.reader(io.StringIO(text, newline=""), delimiter="\t"))
-    if not rows:
-        raise ExpenseFileError(f"{filename}: file is empty")
-    if tuple(rows[0]) != _HEADER:
-        raise ExpenseFileError(
-            f"{filename}: line 1 is not the expected header."
-            + f" Expected {list(_HEADER)}, got {rows[0]}."
-            + " Fields are separated by tabs, not commas."
+    if not isinstance(value, str):
+        raise PydanticCustomError(
+            "not_text",
+            "must be text, not {kind}; quote it",
+            {"kind": type(value).__name__},
         )
-
-    records: list[ExpenseRecord] = []
-    # From 2, so a number in a message is the line a text editor shows.
-    for line_number, row in enumerate(rows[1:], start=2):
-        # A trailing newline yields an empty row, and a spreadsheet often leaves a
-        # line of empty columns. Neither is data and neither is an error.
-        if not any(field.strip() for field in row):
-            continue
-        records.append(_parse_row(filename, line_number, row))
-    return records
+    return value
 
 
-def _parse_row(filename: str, line_number: int, row: list[str]) -> ExpenseRecord:
-    """One data line, validated field by field so the message says which one."""
+def _header_line(value: object) -> str:
+    """The export header the file states, which is checked and then goes nowhere.
 
-    def refuse(problem: str) -> ExpenseFileError:
-        return ExpenseFileError(f"{filename}: line {line_number}: {problem}")
+    Read so that a YAML file which is not a month file is refused rather than taken for
+    one holding no expenses.
+    """
+    text = _text(value)
+    if not text:
+        raise PydanticCustomError("blank_header", "header is blank")
+    return text
 
-    if len(row) != len(_HEADER):
-        raise refuse(f"expected {len(_HEADER)} tab-separated fields, got {len(row)}")
 
-    raw_amount, raw_currency, raw_date, category, details = (
-        field.strip() for field in row
-    )
+def _day(value: object) -> datetime.date:
+    """One `datetime` field as the day it falls on, or raises.
 
-    if not _AMOUNT.match(raw_amount):
-        raise refuse(
-            f"amount {raw_amount!r} is not a number with at most two decimal places"
-        )
+    The offset is required but never applied: the date wanted is the one the file
+    states, which is the date the bank's own statement shows.
+    """
+    text = _text(value)
     try:
-        amount = Decimal(raw_amount)
-    except InvalidOperation as exc:  # pragma: no cover  # unreachable past the regex
-        raise refuse(f"amount {raw_amount!r} is not a decimal") from exc
+        moment = datetime.datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise PydanticCustomError(
+            "not_a_datetime",
+            "datetime {value} is not an RFC 3339 date-time ({problem})",
+            {"value": repr(text), "problem": str(exc)},
+        ) from exc
+    if moment.tzinfo is None:
+        raise PydanticCustomError(
+            "naive_datetime",
+            "datetime {value} has no UTC offset; one bank exports UTC and another"
+            + " local time, so a bare wall clock would mean two different things",
+            {"value": repr(text)},
+        )
+    return moment.date()
 
+
+def _amount(value: object) -> Decimal:
+    """One `amount` field as a Decimal, or raises."""
+    text = _text(value)
+    if not _AMOUNT.match(text):
+        raise PydanticCustomError(
+            "not_a_decimal",
+            "amount {value} is not a number with at most two decimal places",
+            {"value": repr(text)},
+        )
+    amount = Decimal(text)
     # Decimal("-0.00") and Decimal("0") both compare equal to zero, so this one
     # check covers every spelling the regex lets through.
     if amount == 0:
-        raise refuse(
-            f"amount {raw_amount!r} is zero; an expense of nothing is not an entry"
+        raise PydanticCustomError(
+            "zero_amount",
+            "amount {value} is zero; an expense of nothing is not an entry",
+            {"value": repr(text)},
+        )
+    return amount
+
+
+def _currency(value: object) -> str:
+    """One `currency` field, refused rather than uppercased."""
+    text = _text(value)
+    if not _CURRENCY.match(text):
+        raise PydanticCustomError(
+            "not_iso_4217",
+            "currency {value} is not a three-letter ISO 4217 code",
+            {"value": repr(text)},
+        )
+    return text
+
+
+def _category(value: object) -> str:
+    """One `category` field, stripped and refused if that leaves nothing."""
+    text = _text(value).strip()
+    if not text:
+        raise PydanticCustomError("blank_category", "category is blank")
+    return text
+
+
+def _details(value: object) -> str:
+    """One `details` field. Stripped, and allowed to be empty."""
+    return _text(value).strip()
+
+
+class _Mapping(BaseModel):
+    """A mapping the format writes, read for the fields this loader uses."""
+
+    # Stated rather than left to pydantic's default: `key` is a field deliberately
+    # skipped, and the format's mappings take new fields over time.
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
+
+class _Extracted(_Mapping):
+    """What every record states, whatever was decided about it."""
+
+    expense_date: Annotated[datetime.date, BeforeValidator(_day)] = Field(
+        alias="datetime"
+    )
+
+
+class _Imported(_Extracted):
+    """A record to load. An import states every field."""
+
+    action: Literal["import"]
+    amount: Annotated[Decimal, BeforeValidator(_amount)]
+    currency: Annotated[str, BeforeValidator(_currency)]
+    category: Annotated[str, BeforeValidator(_category)]
+    details: Annotated[str, BeforeValidator(_details)]
+
+
+class _Discarded(_Extracted):
+    """A record the other repository dropped. A discard states only these two."""
+
+    action: Literal["discard"]
+
+
+class _Record(_Mapping):
+    """One export record and what was decided about it. Only `extracted` is read."""
+
+    extracted: Annotated[_Imported | _Discarded, Field(discriminator="action")]
+
+
+class _MonthFile(_Mapping):
+    """One month file: the export's header line, and its records in file order."""
+
+    header: Annotated[str, BeforeValidator(_header_line)]
+    records: list[_Record]
+
+
+def parse_expense_records(filename: str, data: bytes) -> list[ExpenseRecord]:
+    """Turns one month file's bytes into records, or raises ExpenseFileError.
+
+    Takes bytes rather than a path so the caller hashes exactly what it parses. A
+    discarded record yields nothing: it is one the other repository decided against.
+    """
+    try:
+        # Bytes rather than decoded text: PyYAML's reader strips a byte-order mark and
+        # decodes UTF-8 itself, and raises here on invalid bytes and on a second
+        # document as it does on a syntax error.
+        document = _safe_load(data)
+    except yaml.YAMLError as exc:
+        raise ExpenseFileError(f"{filename}: not valid YAML ({exc})") from exc
+
+    # Both before the model, which would otherwise answer for the whole file with a
+    # message naming a private class.
+    if document is None:
+        raise ExpenseFileError(f"{filename}: file is empty")
+    if not isinstance(document, dict):
+        raise ExpenseFileError(
+            f"{filename}: must be a mapping holding 'header' and 'records', not"
+            + f" {type(document).__name__}"
         )
 
-    if not _CURRENCY.match(raw_currency):
-        raise refuse(f"currency {raw_currency!r} is not a three-letter ISO 4217 code")
-
     try:
-        expense_date = datetime.datetime.strptime(raw_date, _DATE_FORMAT).date()
-    except ValueError as exc:
-        raise refuse(f"date {raw_date!r} is not DD/MM/YYYY") from exc
+        month = _MonthFile.model_validate(document)
+    except ValidationError as exc:
+        raise _refused_file_error(filename, exc) from exc
 
-    if not category:
-        raise refuse("category is blank")
+    return [
+        ExpenseRecord(
+            record.extracted.amount,
+            record.extracted.currency,
+            record.extracted.expense_date,
+            record.extracted.category,
+            record.extracted.details,
+        )
+        for record in month.records
+        if isinstance(record.extracted, _Imported)
+    ]
 
-    # details is allowed to be empty: a blank memo is a real thing an export produces.
-    return ExpenseRecord(amount, raw_currency, expense_date, category, details)
+
+def _refused_file_error(filename: str, exc: ValidationError) -> ExpenseFileError:
+    """A file that did not validate, named by its first problem and where that is.
+
+    The first only, because a file this repository did not write is a file the one that
+    did write it would have refused, and the location is what finds it: `records[12]` is
+    the thirteenth entry under `records`.
+    """
+    first = exc.errors()[0]
+    where = "".join(
+        f"[{part}]" if isinstance(part, int) else f".{part}" for part in first["loc"]
+    ).lstrip(".")
+    problem = f"{where}: {first['msg']}" if where else first["msg"]
+    return ExpenseFileError(f"{filename}: {problem}")
 
 
 def _changed_file_error(
@@ -138,11 +261,11 @@ def _changed_file_error(
 
 
 async def load_directory(directory: Path, url: URL) -> LoadSummary:
-    """Loads every *.tsv in `directory`, in name order, one transaction per file."""
+    """Loads every *.yaml in `directory`, in name order, one transaction per file."""
     # Before the engine is built, so a mistyped path fails without opening a socket.
     if not directory.is_dir():
         raise ExpenseFileError(f"{directory}: not a directory")
-    paths = sorted(directory.glob("*.tsv"))
+    paths = sorted(directory.glob("*.yaml"))
 
     files_skipped = 0
     rows_inserted = 0
@@ -167,7 +290,7 @@ async def load_directory(directory: Path, url: URL) -> LoadSummary:
                         continue
                     raise _changed_file_error(path.name, recorded.loaded_at)
 
-                records = parse_expense_rows(path.name, data)
+                records = parse_expense_records(path.name, data)
                 # The ledger row first, for its generated id. RETURNING rather than a
                 # second SELECT: one round trip, and the value cannot be raced.
                 file_id = (

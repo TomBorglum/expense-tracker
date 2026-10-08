@@ -14,8 +14,8 @@ otherwise correct change, or nothing does; each bullet says which.
   `test_root_is_not_served` and its three surface neighbours.
 - **All four endpoints are read-only over HTTP.** Rows arrive through
   `backend-load-expenses` and `backend-load-currencies` and nowhere else, so there is no
-  POST, PUT or DELETE. The tables are a view of `*.tsv` files from `$EXPENSE_DATA_DIR` and
-  `data/currencies/`: columns checked strictly, dates `DD/MM/YYYY`. Nothing checks this.
+  POST, PUT or DELETE, and the tables are a strictly checked view of the files those read.
+  Nothing checks this.
 - **CORS is wildcard with `allow_credentials=False`.** The spec forbids the pair, so the
   day the API grows cookies or an `Authorization` header the wildcard has to become a real
   origin list. It is registered outermost, after the security-headers middleware, so it
@@ -60,11 +60,16 @@ otherwise correct change, or nothing does; each bullet says which.
 
 - **The two loaders differ on reloading, and that difference is the design.**
   `expense_loader` is append-only: the `loaded_expense_file` ledger skips a file whose
-  sha256 matches and *refuses* one that changed, two identical expense lines being two real
-  purchases. `currency_loader` has no ledger and replaces the whole `currency_rate` table
-  every run, a rate being a current fact rather than an event, so editing `rates.tsv` and
-  reloading is supported. It parses every file before deleting anything, in one
+  sha256 matches and *refuses* one that changed, two identical expense records being two
+  real purchases. `currency_loader` has no ledger and replaces the whole `currency_rate`
+  table every run, a rate being a current fact rather than an event, so editing `rates.tsv`
+  and reloading is supported. It parses every file before deleting anything, in one
   transaction. Pinned by `test_an_edited_rate_replaces_the_old_one`.
+- **A `<bank>-YYYY-MM.yaml` month file is rewritten in place upstream, so the rebuild is the
+  normal path.** A later export adds records to the month they fall in, which the refusal
+  above catches as an edit; a loader replacing a changed file's rows is what it exists
+  instead of. A date is read as written, the offset never applied, so a row keeps the date
+  its bank's own statement shows. `test_an_edited_file_is_refused_by_name_and_load_date`.
 
 ## Conversion
 
@@ -183,11 +188,6 @@ otherwise correct change, or nothing does; each bullet says which.
   username, so a task that lost those names would reach whatever answers there and report
   success. Any new task reaching a server without an explicit `--port` takes the guard;
   the `pg_ctl` tasks read the port from `.pgdata/postgresql.conf`.
-- **`feature.prod` installs the app as a wheel; only `feature.dev` installs it editable.**
-  An editable install ships the source tree, `tests/` and `data/`, and pins a container to
-  a directory layout rather than an artifact. **No correctness property rests on this** -
-  the app reads the environment either way. Pinned by no test; the check is
-  `pixi run -e prod`, in [`README.md`](../README.md#environments).
 
 ## Quality gates
 

@@ -26,7 +26,7 @@ expense-tracker/
     src/expense_tracker/        # __init__ (the API), deps, config, db,
                                 #   expense_repository, expense_loader
     tests/
-      data/expenses/            # sample-*.tsv, the suite's fixtures - not a data source
+      data/expenses/            # sample-*.yaml, the suite's fixtures - not a data source
     .pgdata/                    # the local PostgreSQL cluster, gitignored
   frontend/
     package.json, pnpm-lock.yaml, pnpm-workspace.yaml
@@ -361,7 +361,7 @@ Access is SQLAlchemy 2 async over asyncpg, split across five modules:
 | --- | --- |
 | `__init__.py` | `create_app()`, the route, the exception handler, `ExpensePayload` |
 | `deps.py` | the lifespan, the per-request session, and the `provide_expense_repository` seam |
-| `expense_loader.py` | the TSV parser and the `python -m` entry point - the only thing that writes |
+| `expense_loader.py` | the month-file parser and the `python -m` entry point - the only thing that writes |
 | `expense_repository.py` | `LoadedExpenseFile`, `Expense`, and the expense repository |
 | `db.py` | the declarative `Base` every repository module builds on |
 | `config.py` | the database connection settings, and nothing else |
@@ -396,12 +396,12 @@ answers, so a developer who has not run `db-init` does not face a red suite, and
 **The expense files are not in this repository.** Real spending is confidential and this
 repository is public, so the files live in a separate private one, and `EXPENSE_DATA_DIR`
 in `backend/.env` is the absolute path to the `data/` directory in your clone of it - that
-repository keeps the validated files there, with its archived originals and its category
-vocabulary beside it rather than in it. Nothing here fetches, updates or tracks that
+repository keeps one month file per bank there, with its category vocabulary and its
+decision maps in `meta/` rather than in it. Nothing here fetches, updates or tracks that
 clone - keeping it current is entirely your job.
 
 ```sh
-pixi run backend-load-expenses      # reads $EXPENSE_DATA_DIR/*.tsv into the database
+pixi run backend-load-expenses      # reads $EXPENSE_DATA_DIR/*.yaml into the database
 ```
 
 **A missing directory loads nothing and succeeds.** A machine without the data repository
@@ -415,7 +415,7 @@ is what keeps a typed path from failing silently:
 cd backend && python -m expense_tracker.expense_loader ~/expnses   # error: not a directory
 ```
 
-The twelve `sample-*.tsv` files under `backend/tests/data/expenses/` are the test suite's
+The twelve `sample-*.yaml` files under `backend/tests/data/expenses/` are the test suite's
 fixtures and no task points at them. To fill a database from them anyway:
 
 ```sh
@@ -423,33 +423,60 @@ cd backend && EXPENSE_DATA_DIR=tests/data/expenses poe load-expenses
 ```
 
 They carry the `sample-` prefix for a reason. `loaded_expense_file.filename` is unique on
-the bare name, so a fixture called `2026-01.tsv` and a real file of the same name would
-collide in the ledger and the second one loaded would be refused as an edit of the first.
-The prefix makes that impossible rather than merely unlikely.
+the bare name, so a fixture called `nykredit-2026-01.yaml` and a real file of the same name
+would collide in the ledger and the second one loaded would be refused as an edit of the
+first. The prefix makes that impossible rather than merely unlikely.
 
-Files are `*.tsv`: **tab-separated**, UTF-8, one header line naming exactly these five
-columns in this order, then one line per expense.
+Files are `*.yaml`: one month file per bank and calendar month, named
+`<bank>-YYYY-MM.yaml`, holding the bank's own export header, then every record that bank
+exported for the month - the raw line as evidence, and beside it what the other repository
+decided about it.
 
-| Column | Format | Notes |
+```yaml
+---
+header: '"Dato";"Beloeb";"Tekst";'
+records:
+  - record: '01-09-2026;-17000,00;"54790005551959";'
+    extracted:
+      datetime: '2026-09-01T00:00:00+02:00'
+      action: discard
+  - record: '01-09-2026;-2438,47;"BS E/F SOLBAKKEN";'
+    extracted:
+      datetime: '2026-09-01T00:00:00+02:00'
+      key: BS E/F SOLBAKKEN
+      action: import
+      amount: '2438.47'
+      currency: DKK
+      category: Building
+      details: E/F Solbakken
+```
+
+**`extracted` is the whole of what this repository reads**, and only where its `action` is
+`import`. A `discard` is a record the other repository decided against, and states just the
+two fields that place it in its file; `record` and `key` are read by nothing here.
+
+| Field | Format | Notes |
 | --- | --- | --- |
-| `Amount` | decimal | At most two decimal places; may be negative; never zero |
-| `Currency` | ISO 4217 alpha-3 | Uppercase |
-| `Date` | `DD/MM/YYYY` | Day first |
-| `Category` | free text | Must not be blank |
-| `Details` | free text | May be empty |
+| `datetime` | RFC 3339, with an offset | The day it names is `expense_date`; the offset is never applied |
+| `amount` | decimal | At most two decimal places; may be negative; never zero |
+| `currency` | ISO 4217 alpha-3 | Uppercase |
+| `category` | free text | Stripped, then must not be blank |
+| `details` | free text | Stripped, and may be empty |
 
 A third decimal place is refused rather than rounded away by `numeric(12, 2)` in
 silence. A negative amount is accepted, because a credit is a negative expense; a zero
 one is refused, because an expense of nothing is not an entry, and
-`expense_amount_not_zero` backstops that in the database. The
-header is checked strictly, which doubles as a delimiter check: a comma-separated file
-fails on line 1 naming what it found instead of loading a column of nonsense. A
-byte-order mark is tolerated, and blank lines are skipped.
+`expense_amount_not_zero` backstops that in the database. **Every field is read as text**,
+so an unquoted `2438.47` - which YAML 1.1 resolves to a float - is refused rather than
+rounded through one, and so is an unquoted date-time. The `datetime`'s offset is required
+and never applied: the date wanted is the one the file states, which is the date the bank's
+own statement shows, and the one the month file is named for. `header` is read only to
+refuse a YAML file that is not a month file at all. A byte-order mark is tolerated.
 
 **Re-running the loader is a no-op**, and that is the ledger's doing, not the rows'.
 `loaded_expense_file` records each file's name and the SHA-256 of its bytes; a file
 already recorded with a matching digest is skipped whole. The expense rows carry no
-content hash and no `ON CONFLICT`, deliberately - two identical lines are two real
+content hash and no `ON CONFLICT`, deliberately - two identical records are two real
 purchases, so the rows themselves cannot say whether they have been loaded, and hashing
 them would silently collapse a pair of same-day fill-ups into one and make the month
 come up short.
@@ -461,7 +488,12 @@ not at all, so a run that dies half way can simply be re-run.
 stops the run, naming the file and when it was taken in. Skipping it would make a typo
 fix appear to work while doing nothing; re-reading it would either duplicate the
 unchanged rows or delete from a database meant to be a read-only view. Append a new
-file instead, or rebuild:
+file instead, or rebuild.
+
+**With month files, that rebuild is the ordinary path rather than the exception.** The
+other repository adds a later export's records to the month file they fall in, rewriting
+it, so any import touching a month already loaded here arrives as an edit. A new month is
+a new filename and loads on its own:
 
 ```sh
 pixi run backend-db-reset && pixi run backend-db-init && pixi run backend-load-expenses
@@ -869,7 +901,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run backend-test` | `poe test` | Run the test suite with coverage |
 | `pixi run backend-lint` | `poe lint` | Lint with ruff, then check the import graph with import-linter |
 | `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues (ruff only) |
-| `pixi run backend-load-expenses` | `poe load-expenses` | Read `$EXPENSE_DATA_DIR/*.tsv` into the database, or nothing if that directory is absent |
+| `pixi run backend-load-expenses` | `poe load-expenses` | Read `$EXPENSE_DATA_DIR/*.yaml` into the database, or nothing if that directory is absent |
 | `pixi run backend-load-currencies` | `poe load-currencies` | Replace the exchange rates with `backend/data/currencies/*.tsv` |
 | `pixi run backend-format` | `poe format` | Format with ruff |
 | `pixi run backend-format-check` | `poe format-check` | Check formatting without writing changes |

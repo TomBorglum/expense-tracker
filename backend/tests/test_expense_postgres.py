@@ -35,7 +35,6 @@ pytestmark = pytest.mark.postgres
 
 _DATA = Path(__file__).resolve().parent / "data" / "expenses"
 
-_HEADER = "Amount\tCurrency\tDate\tCategory\tDetails\n"
 
 _EXPENSES = TypeAdapter(list[ExpensePayload])
 _CATEGORIES = TypeAdapter(list[CategoryPayload])
@@ -97,7 +96,7 @@ async def _insert_expense(amount: Decimal) -> None:
             file_id = (
                 await session.execute(
                     insert(LoadedExpenseFile)
-                    .values(filename="direct.tsv", sha256="0" * 64, row_count=1)
+                    .values(filename="direct.yaml", sha256="0" * 64, row_count=1)
                     .returning(LoadedExpenseFile.id)
                 )
             ).scalar_one()
@@ -137,17 +136,43 @@ def empty_tables() -> Iterator[None]:
     asyncio.run(_truncate())
 
 
+def _month_file(*rows: str) -> str:
+    """A month file holding one imported record per row.
+
+    A row is the five fields the database holds, tab-separated, in the order
+    ExpenseRecord names them and with the date as `DD/MM/YYYY` - so a test reads as its
+    expenses rather than as YAML. The offset the `datetime` is written with is stated
+    because the format requires one and is never applied, winter being when every date
+    below falls.
+    """
+    records = ""
+    for row in rows:
+        amount, currency, day, category, details = row.split("\t")
+        when = datetime.datetime.strptime(day, "%d/%m/%Y").date()
+        records += (
+            "  - record: 'line'\n"
+            + "    extracted:\n"
+            + f"      datetime: '{when.isoformat()}T00:00:00+01:00'\n"
+            + "      action: import\n"
+            + f"      amount: '{amount}'\n"
+            + f"      currency: '{currency}'\n"
+            + f"      category: '{category}'\n"
+            + f"      details: '{details}'\n"
+        )
+    return "---\nheader: 'H'\nrecords:\n" + records
+
+
 def _write(directory: Path, name: str, *rows: str) -> Path:
     path = directory / name
-    _ = path.write_text(_HEADER + "".join(row + "\n" for row in rows), encoding="utf-8")
+    _ = path.write_text(_month_file(*rows), encoding="utf-8")
     return path
 
 
 def test_loading_a_directory_inserts_every_row(tmp_path: Path) -> None:
-    _ = _write(tmp_path, "01.tsv", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
+    _ = _write(tmp_path, "01.yaml", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
     _ = _write(
         tmp_path,
-        "02.tsv",
+        "02.yaml",
         "1250.00\tDKK\t02/02/2026\tHousing\tRent",
         "99.95\tDKK\t19/02/2026\tUtilities\tInternet",
     )
@@ -157,8 +182,8 @@ def test_loading_a_directory_inserts_every_row(tmp_path: Path) -> None:
     assert summary == (2, 0, 3)
     assert len(asyncio.run(_expenses())) == 3
     assert [(name, count) for name, _sha, count in asyncio.run(_ledger())] == [
-        ("01.tsv", 1),
-        ("02.tsv", 2),
+        ("01.yaml", 1),
+        ("02.yaml", 2),
     ]
 
 
@@ -166,7 +191,7 @@ def test_identical_rows_in_one_file_both_survive(tmp_path: Path) -> None:
     """The property the whole design exists for: two fuel stops of the same amount on
     the same day are two purchases, and a content-hash key would collapse them."""
     row = "611.23\tDKK\t14/01/2026\tCar\tFuel"
-    _ = _write(tmp_path, "01.tsv", row, row)
+    _ = _write(tmp_path, "01.yaml", row, row)
 
     summary = asyncio.run(load_directory(tmp_path, database_url()))
 
@@ -175,8 +200,8 @@ def test_identical_rows_in_one_file_both_survive(tmp_path: Path) -> None:
 
 
 def test_reloading_an_unchanged_directory_skips_every_file(tmp_path: Path) -> None:
-    _ = _write(tmp_path, "01.tsv", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
-    _ = _write(tmp_path, "02.tsv", "1250.00\tDKK\t02/02/2026\tHousing\tRent")
+    _ = _write(tmp_path, "01.yaml", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
+    _ = _write(tmp_path, "02.yaml", "1250.00\tDKK\t02/02/2026\tHousing\tRent")
     first = asyncio.run(load_directory(tmp_path, database_url()))
 
     second = asyncio.run(load_directory(tmp_path, database_url()))
@@ -189,9 +214,9 @@ def test_reloading_an_unchanged_directory_skips_every_file(tmp_path: Path) -> No
 
 def test_a_new_file_beside_a_loaded_one_is_still_loaded(tmp_path: Path) -> None:
     """Appending is the supported workflow, so it must not be caught by the skip."""
-    _ = _write(tmp_path, "01.tsv", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
+    _ = _write(tmp_path, "01.yaml", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
     _ = asyncio.run(load_directory(tmp_path, database_url()))
-    _ = _write(tmp_path, "02.tsv", "1250.00\tDKK\t02/02/2026\tHousing\tRent")
+    _ = _write(tmp_path, "02.yaml", "1250.00\tDKK\t02/02/2026\tHousing\tRent")
 
     summary = asyncio.run(load_directory(tmp_path, database_url()))
 
@@ -200,15 +225,15 @@ def test_a_new_file_beside_a_loaded_one_is_still_loaded(tmp_path: Path) -> None:
 
 
 def test_an_edited_file_is_refused_by_name_and_load_date(tmp_path: Path) -> None:
-    path = _write(tmp_path, "01.tsv", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
+    path = _write(tmp_path, "01.yaml", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
     _ = asyncio.run(load_directory(tmp_path, database_url()))
     # A typo fix, which is exactly the case that must not pass silently.
     _ = path.write_text(
-        _HEADER + "775.38\tDKK\t02/01/2026\tInsurance\tCar\n", encoding="utf-8"
+        _month_file("775.38\tDKK\t02/01/2026\tInsurance\tCar"), encoding="utf-8"
     )
 
     pending = load_directory(tmp_path, database_url())
-    with pytest.raises(ExpenseFileError, match=r"01\.tsv changed since it was loaded"):
+    with pytest.raises(ExpenseFileError, match=r"01\.yaml changed since it was loaded"):
         _ = asyncio.run(pending)
 
     # Neither skipped nor re-read: the database is exactly as it was.
@@ -226,16 +251,16 @@ def test_a_file_that_fails_midway_leaves_earlier_files_committed(
     - and overflows numeric(12, 2) at the database, so this exercises a rollback rather
     than a parse error. Its ledger row is in the same transaction, so it goes too.
     """
-    _ = _write(tmp_path, "01-good.tsv", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
-    _ = _write(tmp_path, "02-bad.tsv", "1234567890123.45\tDKK\t02/02/2026\tHousing\tR")
+    _ = _write(tmp_path, "01-good.yaml", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
+    _ = _write(tmp_path, "02-bad.yaml", "1234567890123.45\tDKK\t02/02/2026\tHousing\tR")
 
     pending = load_directory(tmp_path, database_url())
     with pytest.raises(SQLAlchemyError):
         _ = asyncio.run(pending)
 
     assert len(asyncio.run(_expenses())) == 1
-    # 02-bad.tsv left no ledger row, so re-running after fixing the file retries it.
-    assert [name for name, _sha, _count in asyncio.run(_ledger())] == ["01-good.tsv"]
+    # 02-bad.yaml left no ledger row, so re-running after fixing the file retries it.
+    assert [name for name, _sha, _count in asyncio.run(_ledger())] == ["01-good.yaml"]
 
 
 def test_the_committed_sample_files_load(tmp_path: Path) -> None:
@@ -244,7 +269,7 @@ def test_the_committed_sample_files_load(tmp_path: Path) -> None:
     assert tmp_path.is_dir()
     summary = asyncio.run(load_directory(_DATA, database_url()))
 
-    assert summary.files_read == len(sorted(_DATA.glob("*.tsv")))
+    assert summary.files_read == len(sorted(_DATA.glob("*.yaml")))
     assert summary.files_skipped == 0
     assert summary.rows_inserted == len(asyncio.run(_expenses()))
 
@@ -254,7 +279,7 @@ def test_the_endpoint_returns_the_rows_oldest_first(tmp_path: Path) -> None:
     # order the loader read the lines in.
     _ = _write(
         tmp_path,
-        "01.tsv",
+        "01.yaml",
         "1250.00\tDKK\t02/02/2026\tHousing\tRent",
         "775.37\tDKK\t02/01/2026\tInsurance\tCar",
     )
@@ -287,7 +312,7 @@ def test_the_categories_endpoint_lists_each_category_once_in_name_order(
     # and the ORDER BY are the query's doing and not the file's.
     _ = _write(
         tmp_path,
-        "01.tsv",
+        "01.yaml",
         "1250.00\tDKK\t02/01/2026\tHousing\tRent",
         "775.37\tDKK\t03/01/2026\tInsurance\tCar",
         "35.00\tDKK\t04/01/2026\tHousing\tLight bulbs",
@@ -315,7 +340,7 @@ def _load_four_days(directory: Path) -> None:
     """One expense on each of four days, so a range can leave rows on either side."""
     _ = _write(
         directory,
-        "01.tsv",
+        "01.yaml",
         "100.00\tDKK\t01/01/2026\tCar\tFuel",
         "200.00\tDKK\t15/01/2026\tCar\tFuel",
         "300.00\tDKK\t31/01/2026\tCar\tFuel",
@@ -392,7 +417,7 @@ def _load_three_categories(directory: Path) -> None:
     side of a month and the totals' extent can shrink with it."""
     _ = _write(
         directory,
-        "01.tsv",
+        "01.yaml",
         "100.00\tDKK\t05/01/2026\tFood\tGroceries",
         "1250.00\tDKK\t01/02/2026\tHousing\tRent",
         "200.00\tDKK\t10/02/2026\tFood\tGroceries",
@@ -557,7 +582,7 @@ def test_main_prints_a_summary(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _ = _write(tmp_path, "01.tsv", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
+    _ = _write(tmp_path, "01.yaml", "775.37\tDKK\t02/01/2026\tInsurance\tCar")
     monkeypatch.setattr(sys, "argv", ["loader", str(tmp_path)])
 
     assert main() == 0
@@ -570,11 +595,16 @@ def test_main_reports_a_bad_file_without_a_traceback(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A data problem is not a crash: exit 1 and the message the parser wrote."""
-    _ = _write(tmp_path, "01.tsv", "1.00\tDKK\t2026-01-02\tCar\tFuel")
+    _ = (tmp_path / "01.yaml").write_text(
+        _month_file("1.00\tDKK\t02/01/2026\tCar\tFuel").replace(
+            "'2026-01-02T00:00:00+01:00'", "'noon'"
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(sys, "argv", ["loader", str(tmp_path)])
 
     assert main() == 1
-    assert "DD/MM/YYYY" in capsys.readouterr().err
+    assert "RFC 3339" in capsys.readouterr().err
 
 
 def test_a_refund_nets_its_purchase_out_over_the_real_database(tmp_path: Path) -> None:
@@ -585,7 +615,7 @@ def test_a_refund_nets_its_purchase_out_over_the_real_database(tmp_path: Path) -
     """
     _ = _write(
         tmp_path,
-        "01.tsv",
+        "01.yaml",
         "1250.00\tDKK\t01/12/2026\tHousing\tRent",
         "430.00\tDKK\t22/12/2026\tTransport\tTrain ticket",
         "-430.00\tDKK\t29/12/2026\tTransport\tRefund / Train ticket",
@@ -621,7 +651,7 @@ def test_a_refund_nets_its_purchase_out_over_the_real_database(tmp_path: Path) -
 
 def test_a_negative_amount_survives_the_round_trip(tmp_path: Path) -> None:
     """numeric(12, 2) keeps the sign, and the route sends it as it was stored."""
-    _ = _write(tmp_path, "01.tsv", "-450.00\tDKK\t28/01/2026\tInsurance\tRefund")
+    _ = _write(tmp_path, "01.yaml", "-450.00\tDKK\t28/01/2026\tInsurance\tRefund")
     _ = asyncio.run(load_directory(tmp_path, database_url()))
 
     assert [row[0] for row in asyncio.run(_expenses())] == [Decimal("-450.00")]

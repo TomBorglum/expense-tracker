@@ -114,7 +114,7 @@ lint-fix = "ruff check --fix"
 # Read data/currencies/*.tsv into the database, replacing every rate already there, so the
 # table ends up matching the files whatever it held before.
 load-currencies = "python -m expense_tracker.currency_loader data/currencies"
-# Read $EXPENSE_DATA_DIR/*.tsv into the database. That directory is a separate private
+# Read $EXPENSE_DATA_DIR/*.yaml into the database. That directory is a separate private
 # repository this one neither fetches nor tracks, so an absent one is a normal state that
 # loads nothing; an unset variable is an unblessed shell and fails, as in db-create. The
 # directory is echoed because there is now more than one it could be. Idempotent because

@@ -38,7 +38,7 @@ class LoadedExpenseFile(Base):
 
 
 class Expense(Base):
-    """One row per data line of one loaded file. Mirrors schema.sql."""
+    """One row per imported record of one loaded file. Mirrors schema.sql."""
 
     __tablename__: str = "expense"
 

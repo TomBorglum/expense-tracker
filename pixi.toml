@@ -21,6 +21,13 @@ sqlalchemy = "==2.0.51"
 asyncpg = "==0.31.0"
 # Resolved here by fastapi-core anyway; declared because create_app() imports it directly.
 pydantic = "==2.13.4"
+# Resolved by pydantic, declared on the same terms: expense_loader raises its
+# PydanticCustomError directly, so that a refusal reads as the loader's own message.
+pydantic-core = "==2.46.4"
+# What expense_loader parses $EXPENSE_DATA_DIR's month files with. Already in the lock as a
+# poethepoet dependency; declared because that module imports it, and here rather than in a
+# feature because the prod wheel ships it.
+pyyaml = "==6.0.3"
 # What config.py validates the database settings with. Only the BaseSettings half is used;
 # loading backend/.env is direnv's job (`dotenv_if_exists` in .envrc), never the app's.
 pydantic-settings = "==2.15.0"

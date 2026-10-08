@@ -1,0 +1,66 @@
+---
+header: '"Date";"Amount";"Text";'
+records:
+  - record: '01-12-2026;-1250,00;"RENT";'
+    extracted:
+      datetime: '2026-12-01T00:00:00+01:00'
+      key: RENT
+      action: import
+      amount: '1250.00'
+      currency: DKK
+      category: Housing
+      details: Rent
+  - record: '07-12-2026;-712,55;"SUPERMARKET";'
+    extracted:
+      datetime: '2026-12-07T00:00:00+01:00'
+      key: SUPERMARKET
+      action: import
+      amount: '712.55'
+      currency: DKK
+      category: Groceries
+      details: Supermarket
+  - record: '15-12-2026;-99,95;"INTERNET";'
+    extracted:
+      datetime: '2026-12-15T00:00:00+01:00'
+      key: INTERNET
+      action: import
+      amount: '99.95'
+      currency: DKK
+      category: Utilities
+      details: Internet
+  - record: '18-12-2026;-628,40;"FUEL";'
+    extracted:
+      datetime: '2026-12-18T00:00:00+01:00'
+      key: FUEL
+      action: import
+      amount: '628.40'
+      currency: DKK
+      category: Car
+      details: Fuel
+  - record: '22-12-2026;-430,00;"TRAIN TICKET";'
+    extracted:
+      datetime: '2026-12-22T00:00:00+01:00'
+      key: TRAIN TICKET
+      action: import
+      amount: '430.00'
+      currency: DKK
+      category: Transport
+      details: Train ticket
+  - record: '28-12-2026;-895,25;"SUPERMARKET";'
+    extracted:
+      datetime: '2026-12-28T00:00:00+01:00'
+      key: SUPERMARKET
+      action: import
+      amount: '895.25'
+      currency: DKK
+      category: Groceries
+      details: Supermarket
+  - record: '29-12-2026;430,00;"REFUND / TRAIN TICKET";'
+    extracted:
+      datetime: '2026-12-29T00:00:00+01:00'
+      key: REFUND / TRAIN TICKET
+      action: import
+      amount: '-430.00'
+      currency: DKK
+      category: Transport
+      details: Refund / Train ticket
