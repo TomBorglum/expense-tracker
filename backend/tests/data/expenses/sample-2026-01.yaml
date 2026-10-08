@@ -1,0 +1,70 @@
+---
+header: '"Date";"Amount";"Text";'
+records:
+  - record: '02-01-2026;-775,37;"ACCIDENT / CAR";'
+    extracted:
+      datetime: '2026-01-02T00:00:00+01:00'
+      key: ACCIDENT / CAR
+      action: import
+      amount: '775.37'
+      currency: DKK
+      category: Insurance
+      details: Accident / Car
+  - record: '02-01-2026;-611,23;"FUEL";'
+    extracted:
+      datetime: '2026-01-02T00:00:00+01:00'
+      key: FUEL
+      action: import
+      amount: '611.23'
+      currency: DKK
+      category: Car
+      details: Fuel
+  - record: '05-01-2026;-1250,00;"RENT";'
+    extracted:
+      datetime: '2026-01-05T00:00:00+01:00'
+      key: RENT
+      action: import
+      amount: '1250.00'
+      currency: DKK
+      category: Housing
+      details: Rent
+  - record: '14-01-2026;-89,50;"SUPERMARKET";'
+    extracted:
+      datetime: '2026-01-14T00:00:00+01:00'
+      key: SUPERMARKET
+      action: import
+      amount: '89.50'
+      currency: DKK
+      category: Groceries
+      details: Supermarket
+  - record: '14-01-2026;-611,23;"FUEL";'
+    extracted:
+      datetime: '2026-01-14T00:00:00+01:00'
+      key: FUEL
+      action: import
+      amount: '611.23'
+      currency: DKK
+      category: Car
+      details: Fuel
+  - record: '14-01-2026;-611,23;"FUEL";'
+    extracted:
+      datetime: '2026-01-14T00:00:00+01:00'
+      key: FUEL
+      action: import
+      amount: '611.23'
+      currency: DKK
+      category: Car
+      details: Fuel
+  - record: '20-01-2026;-10000,00;"To Savings";'
+    extracted:
+      datetime: '2026-01-20T00:00:00+01:00'
+      action: discard
+  - record: '28-01-2026;450,00;"REFUND / CAR";'
+    extracted:
+      datetime: '2026-01-28T00:00:00+01:00'
+      key: REFUND / CAR
+      action: import
+      amount: '-450.00'
+      currency: DKK
+      category: Insurance
+      details: Refund / Car

@@ -1,0 +1,57 @@
+---
+header: '"Date";"Amount";"Text";'
+records:
+  - record: '01-04-2026;-1250,00;"RENT";'
+    extracted:
+      datetime: '2026-04-01T00:00:00+02:00'
+      key: RENT
+      action: import
+      amount: '1250.00'
+      currency: DKK
+      category: Housing
+      details: Rent
+  - record: '02-04-2026;-775,37;"ACCIDENT / CAR";'
+    extracted:
+      datetime: '2026-04-02T00:00:00+02:00'
+      key: ACCIDENT / CAR
+      action: import
+      amount: '775.37'
+      currency: DKK
+      category: Insurance
+      details: Accident / Car
+  - record: '09-04-2026;-455,20;"SUPERMARKET";'
+    extracted:
+      datetime: '2026-04-09T00:00:00+02:00'
+      key: SUPERMARKET
+      action: import
+      amount: '455.20'
+      currency: DKK
+      category: Groceries
+      details: Supermarket
+  - record: '17-04-2026;-99,95;"INTERNET";'
+    extracted:
+      datetime: '2026-04-17T00:00:00+02:00'
+      key: INTERNET
+      action: import
+      amount: '99.95'
+      currency: DKK
+      category: Utilities
+      details: Internet
+  - record: '21-04-2026;-620,10;"FUEL";'
+    extracted:
+      datetime: '2026-04-21T00:00:00+02:00'
+      key: FUEL
+      action: import
+      amount: '620.10'
+      currency: DKK
+      category: Car
+      details: Fuel
+  - record: '28-04-2026;-210,00;"TRAIN TICKET";'
+    extracted:
+      datetime: '2026-04-28T00:00:00+02:00'
+      key: TRAIN TICKET
+      action: import
+      amount: '210.00'
+      currency: DKK
+      category: Transport
+      details: Train ticket

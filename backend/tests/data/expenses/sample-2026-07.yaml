@@ -1,0 +1,61 @@
+---
+header: '"Date";"Amount";"Text";'
+records:
+  - record: '02-07-2026;-1250,00;"RENT";'
+    extracted:
+      datetime: '2026-07-02T00:00:00+02:00'
+      key: RENT
+      action: import
+      amount: '1250.00'
+      currency: DKK
+      category: Housing
+      details: Rent
+  - record: '07-07-2026;-599,45;"SUPERMARKET";'
+    extracted:
+      datetime: '2026-07-07T00:00:00+02:00'
+      key: SUPERMARKET
+      action: import
+      amount: '599.45'
+      currency: DKK
+      category: Groceries
+      details: Supermarket
+  - record: '10-07-2026;-622,15;"FUEL";'
+    extracted:
+      datetime: '2026-07-10T00:00:00+02:00'
+      key: FUEL
+      action: import
+      amount: '622.15'
+      currency: DKK
+      category: Car
+      details: Fuel
+  - record: '10-07-2026; 10000,00;"budget";'
+    extracted:
+      datetime: '2026-07-10T00:00:00+02:00'
+      action: discard
+  - record: '17-07-2026;-99,95;"INTERNET";'
+    extracted:
+      datetime: '2026-07-17T00:00:00+02:00'
+      key: INTERNET
+      action: import
+      amount: '99.95'
+      currency: DKK
+      category: Utilities
+      details: Internet
+  - record: '23-07-2026;-890,00;"FLIGHT TICKET";'
+    extracted:
+      datetime: '2026-07-23T00:00:00+02:00'
+      key: FLIGHT TICKET
+      action: import
+      amount: '890.00'
+      currency: DKK
+      category: Transport
+      details: Flight ticket
+  - record: '30-07-2026;-630,70;"FUEL";'
+    extracted:
+      datetime: '2026-07-30T00:00:00+02:00'
+      key: FUEL
+      action: import
+      amount: '630.70'
+      currency: DKK
+      category: Car
+      details: Fuel
