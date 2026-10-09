@@ -113,10 +113,13 @@ error state until something answers on 8000.
 array - `GET /api/currencies` answers
 `{"items": [{"from_currency", "to_currency", "exchange_rate"}, ...]}`. An object rather
 than a bare array is what lets a response gain a field later without breaking a client,
-which is the one guideline this API follows here that it did not before. **Pagination is
-deliberately not among those fields**: a ledger already narrowed to a date range has no
-need of cursors, and `/api/expenses/totals` reads its whole answer at once. A refusal
-body stays the plain `{"detail": "..."}` object it already was.
+which is the one guideline this API follows here that it did not before.
+**`items` rather than a domain plural** like `expenses`: Zalando, whose rule puts the
+object there, names it that on every collection, and one key across all four keeps
+`fetchList` free of per-endpoint knowledge. AIP-132 would name it for the resource.
+**Pagination is deliberately not among those fields**: a ledger already narrowed to a
+date range has no need of cursors, and `/api/expenses/totals` reads its whole answer at
+once. A refusal body stays the plain `{"detail": "..."}` object it already was.
 
 All four send `Cache-Control: no-store`.
 
