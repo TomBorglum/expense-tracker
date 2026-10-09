@@ -86,7 +86,7 @@ explicit step - `pixi run backend-load-expenses` and
 `pixi run backend-load-currencies`, described under
 [Loading expenses](#loading-expenses) and
 [Loading exchange rates](#loading-exchange-rates) - because an empty table is a
-legitimate state the API answers `200` with `[]`.
+legitimate state the API answers `200` with an empty `items` array.
 
 Visit http://localhost:5173 and you should see the **Expenses** table, fetched from
 `http://localhost:8000/api/expenses` - a genuine cross-origin request, which works only
@@ -109,6 +109,18 @@ error state until something answers on 8000.
 | `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and `category` too |
 | `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
+**Every body is an object holding `items`**, so each shape above is what fills that
+array - `GET /api/currencies` answers
+`{"items": [{"from_currency", "to_currency", "exchange_rate"}, ...]}`. An object rather
+than a bare array is what lets a response gain a field later without breaking a client,
+which is the one guideline this API follows here that it did not before.
+**`items` rather than a domain plural** like `expenses`: Zalando, whose rule puts the
+object there, names it that on every collection, and one key across all four keeps
+`fetchList` free of per-endpoint knowledge. AIP-132 would name it for the resource.
+**Pagination is deliberately not among those fields**: a ledger already narrowed to a
+date range has no need of cursors, and `/api/expenses/totals` reads its whole answer at
+once. A refusal body stays the plain `{"detail": "..."}` object it already was.
+
 All four send `Cache-Control: no-store`.
 
 Expenses come back **oldest first**, and `amount` is a **string**, not a number: the
@@ -117,8 +129,9 @@ form, so a float round trip is how a total drifts by a cent. That shape is decla
 as the `ExpensePayload` pydantic model in `backend/src/expense_tracker/__init__.py`;
 the tests parse responses back into it rather than into untyped dicts. An unreachable
 database answers `503 {"detail": "expenses unavailable"}`, but an **empty table answers
-`200 []`** - a database nobody has run the loader against yet is a legitimate state, not
-a fault, and a 503 would train a client to retry forever against a working server.
+`200 {"items": []}`** - a database nobody has run the loader against yet is a
+legitimate state, not a fault, and a 503 would train a client to retry forever against a
+working server.
 
 Exchange rates come back **by pair**, `from_currency` then `to_currency`, and
 `exchange_rate` is a **string** for the same reason `amount` is: the column is
@@ -167,9 +180,10 @@ parameters existed.
 
 The filtering is a `WHERE` clause on `expense_date`, not a pass over the rows in Python,
 and the `expense_oldest_first_idx` index already serves it - so `schema.sql` gained
-nothing for this. **A range holding no expenses is `200 []`**, for the reason an empty
-table is: it is an answer, not a fault. The two parameters compose with `?currency=`, and
-the range is applied first, so an expense outside it needs no exchange rate.
+nothing for this. **A range holding no expenses is `200 {"items": []}`**, for the reason
+an empty table is: it is an answer, not a fault. The two parameters compose with
+`?currency=`, and the range is applied first, so an expense outside it needs no exchange
+rate.
 
 Dates are read as `YYYY-MM-DD` and nothing else - the form the payload's own `date` field
 uses. Anything else is a `422` carrying the same plain-string `detail`:
@@ -207,19 +221,20 @@ rows in Python, and it composes with `?currency=`, `?from_date=` and `?to_date=`
 those compose with each other: all three narrow the query, and the conversion runs over
 whatever they left. `schema.sql` gained no index for it - the table is small and
 `expense_oldest_first_idx` already orders the scan. **A category nobody has spent in is
-`200 []`**, for the reason an empty table is: it is an answer, not a fault. The filter is
-not checked against the list below first - a category is whatever a file said, and the
-check would be a second query on every request.
+`200 {"items": []}`**, for the reason an empty table is: it is an answer, not a fault.
+The filter is not checked against the list below first - a category is whatever a file
+said, and the check would be a second query on every request.
 
 `GET /api/expenses/categories` is that list: every category with an expense in it,
-**once each and in name order**, as `[{"category": "Car"}, {"category": "Housing"}]`.
+**once each and in name order**, as
+`{"items": [{"category": "Car"}, {"category": "Housing"}]}`.
 It takes no parameters. The `DISTINCT` and the `ORDER BY` are the repository's,
 `list_categories` in `backend/src/expense_tracker/expense_repository.py`, not a pass over
 the rows in Python: the route reproduces the order it is handed, as the other three do.
 The cluster is `initdb --locale=C`, so name order is byte order - `Zoo` before `apple` -
-which is the order Python's `sorted()` gives too. **An empty table is `200 []`** and an
-unreachable database `503 {"detail": "expenses unavailable"}`, the same table answering
-the same way.
+which is the order Python's `sorted()` gives too. **An empty table is
+`200 {"items": []}`** and an unreachable database
+`503 {"detail": "expenses unavailable"}`, the same table answering the same way.
 
 A blank value is a `422` carrying the same plain-string `detail`:
 
@@ -571,7 +586,8 @@ the amount client-side would put back the round trip `str(Decimal)` exists to pr
 and `new Date()` on a bare
 `YYYY-MM-DD` reads it as UTC and prints a day early west of Greenwich. The rows keep the
 order the API sends them in (oldest first) and are never re-sorted, and an empty ledger
-arrives as a 200 with `[]`, so the table says so in a row instead of raising an alert.
+arrives as a 200 with an empty `items` array, so the table says so in a row instead
+of raising an alert.
 
 ### Choosing a currency
 
@@ -617,7 +633,8 @@ the backend refuses is passed through and answered with a 422, which reaches the
 its ordinary "Could not load the expenses." Both parameters are always sent, and there is
 no clear button: an **empty** `?from_date=` is a malformed date to the backend rather than
 a request for everything, so the way to see more is to pick earlier or later days. A range
-holding no expenses is a 200 with `[]`, which the table shows as a row and not an alert.
+holding no expenses is a 200 with an empty `items` array, which the table shows as a
+row and not an alert.
 
 The currency, the range and the categories follow you between the two views: each route
 retains them through `retainSearchParams`, so a switch keeps what you were looking at. The
@@ -682,9 +699,9 @@ Router's default search serializer, which would write a JSON array and turn a
 hand-typed `?from_date=2026` into a number, with one that repeats a key per value and
 reads every parameter as the string it was typed. `validateSearch` folds one value or
 several into a list and checks nothing else: a name the ledger does not hold is passed
-through and answered with `[]`, an empty `?category=` with the 422 `category_filter.py`
-raises, and either is shown as it stands - a name the list does not offer still appears,
-ticked, at the top.
+through and answered with an empty `items` array, an empty `?category=` with the 422
+`category_filter.py` raises, and either is shown as it stands - a name the list does not
+offer still appears, ticked, at the top.
 
 A list that has not arrived, fails, or comes back empty leaves the control disabled and
 does not disturb the table below - they are two requests, like the rate table and the

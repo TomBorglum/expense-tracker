@@ -10,7 +10,7 @@ import { CURRENCIES_URL } from "@/api/currencies";
 import { EXPENSES_URL } from "@/api/expenses";
 import { createAppRouter } from "@/router";
 
-import { MOCK_CATEGORIES, MOCK_EXPENSES } from "./msw/handlers";
+import { collection, MOCK_CATEGORIES, MOCK_EXPENSES } from "./msw/handlers";
 import { server } from "./msw/server";
 
 // The date defaults read the clock, and several assertions below name the month they
@@ -55,7 +55,7 @@ function recordRequestedParams() {
         from_date: params.get("from_date"),
         to_date: params.get("to_date"),
       });
-      return HttpResponse.json(MOCK_EXPENSES);
+      return collection(MOCK_EXPENSES);
     }),
   );
   return requested;
@@ -68,7 +68,7 @@ function recordRequestedCategories() {
   server.use(
     http.get(EXPENSES_URL, ({ request }) => {
       requested.push(new URL(request.url).searchParams.getAll("category"));
-      return HttpResponse.json(MOCK_EXPENSES);
+      return collection(MOCK_EXPENSES);
     }),
   );
   return requested;
@@ -296,7 +296,7 @@ test("an unavailable rate table leaves the base currency and the expenses alone"
 test("an empty rate table is not an error, and leaves the base currency", async () => {
   // 200 with [] is a rate table nobody has run the loader against yet, which the backend
   // reports as a working server for the reason an empty ledger is one.
-  server.use(http.get(CURRENCIES_URL, () => HttpResponse.json([])));
+  server.use(http.get(CURRENCIES_URL, () => collection([])));
   renderPageAt("/");
   await screen.findByRole("table", { name: "Expenses" });
   await waitFor(() => {
@@ -311,9 +311,7 @@ test("a rate payload of the wrong shape is refused, not read", async () => {
   // table. A numeric rate is how it would break.
   server.use(
     http.get(CURRENCIES_URL, () =>
-      HttpResponse.json([
-        { from_currency: "DKK", to_currency: "EUR", exchange_rate: 7.65 },
-      ]),
+      collection([{ from_currency: "DKK", to_currency: "EUR", exchange_rate: 7.65 }]),
     ),
   );
   renderPageAt("/");
@@ -444,7 +442,7 @@ test("an unavailable category list leaves the expenses alone", async () => {
 test("an empty category list leaves nothing to pick", async () => {
   // 200 with [] is a ledger nobody has run the loader against yet: a working server, and
   // a filter with nothing to offer.
-  server.use(http.get(CATEGORIES_URL, () => HttpResponse.json([])));
+  server.use(http.get(CATEGORIES_URL, () => collection([])));
   renderPageAt("/");
   await screen.findByRole("table", { name: "Expenses" });
   await waitFor(() => {
@@ -453,7 +451,7 @@ test("an empty category list leaves nothing to pick", async () => {
 });
 
 test("a category payload of the wrong shape is refused, not read", async () => {
-  server.use(http.get(CATEGORIES_URL, () => HttpResponse.json([{ category: 42 }])));
+  server.use(http.get(CATEGORIES_URL, () => collection([{ category: 42 }])));
   renderPageAt("/");
   await screen.findByRole("table", { name: "Expenses" });
   await waitFor(() => {

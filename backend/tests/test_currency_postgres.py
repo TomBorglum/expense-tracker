@@ -13,7 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -31,7 +31,15 @@ _DATA = Path(__file__).resolve().parents[1] / "data" / "currencies"
 
 _HEADER = "FROM_CURRENCY\tTO_CURRENCY\tEXCHANGE_RATE\n"
 
-_CURRENCIES = TypeAdapter(list[CurrencyPayload])
+
+class _Collection[T](BaseModel):
+    """The object every endpoint wraps its rows in, so each body can gain fields."""
+
+    items: list[T]
+
+
+# Validates the envelope, so `.items` at a call site is the rows inside it.
+_CURRENCIES = TypeAdapter(_Collection[CurrencyPayload])
 
 
 async def _truncate() -> None:
@@ -180,7 +188,7 @@ def test_the_endpoint_returns_the_rows_by_pair(tmp_path: Path) -> None:
         response = client.get("/api/currencies")
 
     assert response.status_code == 200
-    body = _CURRENCIES.validate_json(response.content)
+    body = _CURRENCIES.validate_json(response.content).items
     assert [(row.from_currency, row.to_currency) for row in body] == [
         ("DKK", "EUR"),
         ("EUR", "DKK"),
@@ -195,7 +203,7 @@ def test_the_endpoint_returns_an_empty_list_when_nothing_is_loaded() -> None:
         response = client.get("/api/currencies")
 
     assert response.status_code == 200
-    assert _CURRENCIES.validate_json(response.content) == []
+    assert _CURRENCIES.validate_json(response.content).items == []
 
 
 def test_main_prints_a_summary(

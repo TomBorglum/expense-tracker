@@ -2,7 +2,7 @@ import datetime
 from decimal import Decimal
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from sqlalchemy import make_url
 from starlette.testclient import TestClient
 
@@ -22,17 +22,28 @@ from expense_tracker.expense_repository import ExpenseRecord
 # The origin a browser would send. Any value works against a wildcard policy.
 _ORIGIN = "http://localhost:5173"
 
+
+class _Collection[T](BaseModel):
+    """The object every endpoint wraps its rows in, so each body can gain fields."""
+
+    items: list[T]
+
+
 # Parses a response body into typed models instead of casting it to dicts. Reads
 # response.content, which is bytes, so Response.json()'s Any never enters the picture.
-_EXPENSES = TypeAdapter(list[ExpensePayload])
-_CATEGORIES = TypeAdapter(list[CategoryPayload])
-_CURRENCIES = TypeAdapter(list[CurrencyPayload])
+# Each one validates the envelope, so `.items` at a call site is the rows inside it.
+_EXPENSES = TypeAdapter(_Collection[ExpensePayload])
+_CATEGORIES = TypeAdapter(_Collection[CategoryPayload])
+_CURRENCIES = TypeAdapter(_Collection[CurrencyPayload])
 # Parses period, from_date and to_date, which every row carries. It says nothing
 # about the other three: they are optional here and pydantic ignores extra fields, so
 # the model accepts a row missing all of them and one carrying all of them alike.
-_TOTALS = TypeAdapter(list[PeriodTotalPayload])
-# The body as plain objects, which is the only way to read a key's absence.
-_RAW_ROWS = TypeAdapter(list[dict[str, str]])
+_TOTALS = TypeAdapter(_Collection[PeriodTotalPayload])
+# The rows as plain objects, which is the only way to read a key's absence.
+_RAW_ROWS = TypeAdapter(_Collection[dict[str, str]])
+# The body as one plain object, which is the only way to tell an envelope from the bare
+# array that used to be sent: a list does not validate as a dict at all.
+_ENVELOPE = TypeAdapter(dict[str, object])
 
 # What the requested_ranges fixture collects: every DateRange the route handed the
 # expense repository, and the requested_categories fixture's counterpart.
@@ -100,6 +111,27 @@ def test_openapi_docs_are_disabled(client: TestClient) -> None:
     assert client.get("/redoc").status_code == 404
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/expenses",
+        "/api/expenses/totals?period=month",
+        "/api/expenses/categories",
+        "/api/currencies",
+    ],
+)
+def test_every_collection_is_an_object_holding_items(
+    client: TestClient, path: str
+) -> None:
+    # A bare array is what each of these used to send, and it still parses for a client
+    # that reads the rows straight off the body - so the four are asserted together
+    # here rather than relying on the typed adapters above, which read `items` and
+    # would pass an endpoint that was never migrated. One key, so an addition is a
+    # decision rather than a drift.
+    body = _ENVELOPE.validate_json(client.get(path).content)
+    assert list(body) == ["items"]
+
+
 def test_expenses_endpoint_returns_json(
     client: TestClient, expense_records: list[ExpenseRecord]
 ) -> None:
@@ -107,7 +139,7 @@ def test_expenses_endpoint_returns_json(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     assert response.headers["Cache-Control"] == "no-store"
-    assert _EXPENSES.validate_json(response.content) == [
+    assert _EXPENSES.validate_json(response.content).items == [
         ExpensePayload(
             amount="775.37",
             currency="DKK",
@@ -134,14 +166,14 @@ def test_expense_amounts_are_strings_not_numbers(client: TestClient) -> None:
     ExpensePayload types amount as str, so a route that emitted a JSON number fails to
     parse here rather than passing with a drifted value.
     """
-    body = _EXPENSES.validate_json(client.get("/api/expenses").content)
+    body = _EXPENSES.validate_json(client.get("/api/expenses").content).items
     assert [row.amount for row in body] == ["775.37", "1250.00"]
 
 
 def test_expenses_endpoint_preserves_the_repository_order(client: TestClient) -> None:
     """Ordering belongs to the repository, not the route. The fake hands back what it
     was given, so this fails if the route ever sorts on its own."""
-    body = _EXPENSES.validate_json(client.get("/api/expenses").content)
+    body = _EXPENSES.validate_json(client.get("/api/expenses").content).items
     assert [row.date for row in body] == ["2026-01-02", "2026-02-02"]
 
 
@@ -156,7 +188,7 @@ def test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded(
     """
     response = empty_expenses_client.get("/api/expenses")
     assert response.status_code == 200
-    assert _EXPENSES.validate_json(response.content) == []
+    assert _EXPENSES.validate_json(response.content).items == []
 
 
 def test_expenses_can_be_requested_in_another_currency(
@@ -167,7 +199,7 @@ def test_expenses_can_be_requested_in_another_currency(
     response = client.get("/api/expenses", params={"currency": "EUR"})
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
-    assert _EXPENSES.validate_json(response.content) == [
+    assert _EXPENSES.validate_json(response.content).items == [
         ExpensePayload(
             # 775.37 * 0.134048 rounded half up, and 1250.00 * 0.134048.
             amount="103.94",
@@ -203,7 +235,7 @@ def test_a_converted_amount_is_a_string_not_a_number(client: TestClient) -> None
     arithmetic, and quantize is what keeps the trailing zero on a round result."""
     body = _EXPENSES.validate_json(
         client.get("/api/expenses", params={"currency": "EUR"}).content
-    )
+    ).items
     assert [row.amount for row in body] == ["103.94", "167.56"]
 
 
@@ -234,7 +266,7 @@ def test_nothing_loaded_is_still_an_empty_list_under_a_currency(
     """No rows means no rate is needed, so the empty state survives ?currency."""
     response = empty_expenses_client.get("/api/expenses", params={"currency": "EUR"})
     assert response.status_code == 200
-    assert _EXPENSES.validate_json(response.content) == []
+    assert _EXPENSES.validate_json(response.content).items == []
 
 
 def test_no_loaded_rates_refuses_a_conversion(
@@ -332,7 +364,9 @@ def test_a_range_is_applied_before_the_amounts_are_converted(
     assert requested_ranges == [
         DateRange(datetime.date(2026, 1, 1), datetime.date(2026, 12, 31))
     ]
-    assert [item.currency for item in _EXPENSES.validate_json(response.content)] == [
+    assert [
+        item.currency for item in _EXPENSES.validate_json(response.content).items
+    ] == [
         "EUR",
         "EUR",
     ]
@@ -410,7 +444,9 @@ def test_a_category_composes_with_the_range_and_the_currency(
         DateRange(datetime.date(2026, 1, 1), datetime.date(2026, 12, 31))
     ]
     assert requested_categories == [_FOOD]
-    assert [item.currency for item in _EXPENSES.validate_json(response.content)] == [
+    assert [
+        item.currency for item in _EXPENSES.validate_json(response.content).items
+    ] == [
         "EUR",
         "EUR",
     ]
@@ -430,7 +466,7 @@ def test_totals_endpoint_returns_json(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     assert response.headers["Cache-Control"] == "no-store"
-    assert _TOTALS.validate_json(response.content) == [
+    assert _TOTALS.validate_json(response.content).items == [
         PeriodTotalPayload(
             period="2026-02",
             from_date="2026-02-01",
@@ -467,7 +503,7 @@ def test_every_total_carries_the_span_it_covers(
         same_period_expenses_client.get(
             "/api/expenses/totals", params={"period": "month"}
         ).content
-    )
+    ).items
     assert [(row["period"], row["from_date"], row["to_date"]) for row in body] == [
         ("2026-02", "2026-02-01", "2026-02-28"),
         ("2026-03", "2026-03-01", "2026-03-31"),
@@ -487,7 +523,7 @@ def test_totals_drop_the_category_key_when_it_was_not_grouped_by(
         "/api/expenses/totals", params={"period": "month"}
     )
     assert response.status_code == 200
-    body = _RAW_ROWS.validate_json(response.content)
+    body = _RAW_ROWS.validate_json(response.content).items
     assert all("category" not in row for row in body)
     # The two Housing rows and the Food row now share a key.
     assert [(row["period"], row["amount"], row["currency"]) for row in body] == [
@@ -509,7 +545,7 @@ def test_a_period_with_no_expenses_carries_only_its_span(
         "/api/expenses/totals", params={"period": "month", "group_by": "category"}
     )
     assert response.status_code == 200
-    body = _RAW_ROWS.validate_json(response.content)
+    body = _RAW_ROWS.validate_json(response.content).items
     assert [row["period"] for row in body] == ["2026-01", "2026-02", "2026-03"]
     assert body[1] == {
         "period": "2026-02",
@@ -530,7 +566,7 @@ def test_a_period_whose_refunds_cancel_its_spending_sends_a_zero(
         "/api/expenses/totals", params={"period": "month", "group_by": "category"}
     )
     assert response.status_code == 200
-    body = _RAW_ROWS.validate_json(response.content)
+    body = _RAW_ROWS.validate_json(response.content).items
     december = [row for row in body if row["period"] == "2026-12"]
     assert december == [
         {
@@ -553,7 +589,7 @@ def test_a_negative_total_keeps_its_sign_on_the_wire(
             "/api/expenses/totals",
             params={"period": "month", "group_by": "category"},
         ).content
-    )
+    ).items
     assert [(row["category"], row["amount"]) for row in body if "amount" in row] == [
         ("Housing", "1250.00"),
         ("Transport", "-150.00"),
@@ -574,7 +610,7 @@ def test_the_query_bounds_narrow_only_the_periods_they_fall_inside(
                 "to_date": "2026-03-14",
             },
         ).content
-    )
+    ).items
     assert [(row["from_date"], row["to_date"]) for row in body] == [
         ("2026-01-12", "2026-01-31"),
         ("2026-02-01", "2026-02-28"),
@@ -590,7 +626,7 @@ def test_total_amounts_are_strings_not_numbers(
         same_period_expenses_client.get(
             "/api/expenses/totals", params={"period": "month"}
         ).content
-    )
+    ).items
     assert [row.amount for row in body] == ["7.25", "125.50", "10.00"]
 
 
@@ -605,7 +641,7 @@ def test_totals_are_an_empty_list_when_nothing_is_loaded(
         "/api/expenses/totals", params={"period": "month"}
     )
     assert response.status_code == 200
-    assert _TOTALS.validate_json(response.content) == []
+    assert _TOTALS.validate_json(response.content).items == []
 
 
 def test_totals_can_be_requested_in_another_currency(
@@ -617,7 +653,7 @@ def test_totals_can_be_requested_in_another_currency(
         params={"period": "month", "group_by": "category", "currency": "EUR"},
     )
     assert response.status_code == 200
-    assert _TOTALS.validate_json(response.content) == [
+    assert _TOTALS.validate_json(response.content).items == [
         PeriodTotalPayload(
             period="2026-02",
             from_date="2026-02-01",
@@ -651,7 +687,7 @@ def test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows(
         same_period_expenses_client.get(
             "/api/expenses", params={"currency": "EUR"}
         ).content
-    )
+    ).items
     summed: dict[tuple[str, str], Decimal] = {}
     for row in rows:
         key = (row.date[:7], row.category)
@@ -661,7 +697,7 @@ def test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows(
             "/api/expenses/totals",
             params={"period": "month", "group_by": "category", "currency": "EUR"},
         ).content
-    )
+    ).items
     assert {
         (row.period, row.category): Decimal(row.amount)
         # Every period here holds expenses; a gap would carry no amount to compare.
@@ -777,7 +813,7 @@ def test_categories_endpoint_returns_json(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     assert response.headers["Cache-Control"] == "no-store"
-    assert _CATEGORIES.validate_json(response.content) == [
+    assert _CATEGORIES.validate_json(response.content).items == [
         CategoryPayload(category="Insurance"),
         CategoryPayload(category="Housing"),
     ]
@@ -789,7 +825,9 @@ def test_categories_endpoint_returns_json(
 def test_categories_endpoint_preserves_the_repository_order(client: TestClient) -> None:
     """Deduplicating and ordering belong to the repository, so this fails if the route
     sorts: the fixture is deliberately not alphabetical."""
-    body = _CATEGORIES.validate_json(client.get("/api/expenses/categories").content)
+    body = _CATEGORIES.validate_json(
+        client.get("/api/expenses/categories").content
+    ).items
     assert [row.category for row in body] == ["Insurance", "Housing"]
 
 
@@ -799,7 +837,7 @@ def test_categories_endpoint_returns_an_empty_list_when_nothing_is_loaded(
     """200 and [], for the reason the expenses twin above gives."""
     response = empty_expenses_client.get("/api/expenses/categories")
     assert response.status_code == 200
-    assert _CATEGORIES.validate_json(response.content) == []
+    assert _CATEGORIES.validate_json(response.content).items == []
 
 
 def test_categories_are_unavailable_when_the_database_is_down(
@@ -821,7 +859,7 @@ def test_currencies_endpoint_returns_json(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     assert response.headers["Cache-Control"] == "no-store"
-    assert _CURRENCIES.validate_json(response.content) == [
+    assert _CURRENCIES.validate_json(response.content).items == [
         CurrencyPayload(
             from_currency="DKK", to_currency="EUR", exchange_rate="0.134048"
         ),
@@ -840,13 +878,13 @@ def test_exchange_rates_are_strings_not_numbers(client: TestClient) -> None:
     CurrencyPayload types exchange_rate as str, so a route that emitted a JSON number
     fails to parse here rather than passing with a drifted value.
     """
-    body = _CURRENCIES.validate_json(client.get("/api/currencies").content)
+    body = _CURRENCIES.validate_json(client.get("/api/currencies").content).items
     assert [row.exchange_rate for row in body] == ["0.134048", "7.460000"]
 
 
 def test_currencies_endpoint_preserves_the_repository_order(client: TestClient) -> None:
     """Ordering belongs to the repository here too, so this fails if the route sorts."""
-    body = _CURRENCIES.validate_json(client.get("/api/currencies").content)
+    body = _CURRENCIES.validate_json(client.get("/api/currencies").content).items
     assert [row.from_currency for row in body] == ["DKK", "EUR"]
 
 
@@ -856,7 +894,7 @@ def test_currencies_endpoint_returns_an_empty_list_when_nothing_is_loaded(
     """200 and [], for the reason the expenses twin above gives."""
     response = empty_currencies_client.get("/api/currencies")
     assert response.status_code == 200
-    assert _CURRENCIES.validate_json(response.content) == []
+    assert _CURRENCIES.validate_json(response.content).items == []
 
 
 def test_currencies_are_unavailable_when_the_database_is_down(

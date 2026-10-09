@@ -23,9 +23,12 @@ otherwise correct change, or nothing does; each bullet says which.
 - **`create_app()` opens no socket.** The engine is built by the lifespan in `deps.py`,
   which keeps `TestClient(app)` (without `with`) database-free and `uvicorn --factory`
   working. Moving engine creation into the factory breaks the entire HTTP suite.
-- **An empty table is 200 with `[]`, not 503.** A database nobody has loaded yet is a
-  legitimate state, and a 503 would train a client to retry forever against a working
-  server, so both repositories raise only from their `except` arm. Pinned by
+- **Every collection body is an object holding `items`**, never a bare array, so a body
+  can gain a field without breaking a client; a new endpoint goes through `_collection`.
+  Pinned by `test_every_collection_is_an_object_holding_items`.
+- **An empty table is 200 with an empty `items` array, not 503.** A database nobody has
+  loaded yet is a legitimate state, and a 503 would train a client to retry forever
+  against a working server, so both repositories raise only from their `except` arm.
   `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` and its twins.
 - **`amount` goes out as `str(Decimal)`** so no float round trip can drift a total by a
   cent, and `date` as a bare `YYYY-MM-DD`. The frontend renders both verbatim. Pinned by
@@ -174,9 +177,6 @@ otherwise correct change, or nothing does; each bullet says which.
   builds it with `sqlalchemy.URL`, which stops the port being written into a URL string
   twice and escapes parts containing `@`, `:` or `/`. `DATABASE_URL` overrides the four
   wholesale. Do not reintroduce a literal DSN, or f-string interpolation.
-- **`database_url()` returns a `URL`, not a `str`.** `str()` and `repr()` of it redact the
-  password as `***`, which keeps a deployment credential out of logs and tracebacks; a
-  `str` return would silently give that up. Nothing checks this.
 - **The dev server's port is `UVICORN_PORT` in `.env`, and `dev` passes no `--port`.**
   uvicorn's CLI carries `auto_envvar_prefix="UVICORN"`, so uvicorn resolves the flag
   itself. It takes **no `${UVICORN_PORT:?}` guard**, unlike the db tasks, because a lost
