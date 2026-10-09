@@ -47,13 +47,31 @@ def test_the_levels_are_walked_shallowest_first() -> None:
 @pytest.mark.parametrize(
     "value",
     # int() takes "+2", " 2 " and "1_0", and this API sends none of them, which is why
-    # the pattern runs first. "1\n" is why it is anchored with \Z rather than $.
-    ["", "two", "1.0", "-1", "+2", " 2", "2 ", "1_0", "0x2", "1\n"],
+    # the pattern runs first. "1\n" is why it is anchored with \Z rather than $, and
+    # "1abc" why re.match alone is not enough - it would match the digit prefix.
+    ["", "two", "1.0", "-1", "+2", " 2", "2 ", "1_0", "0x2", "1\n", "1abc"],
 )
 def test_a_from_level_that_is_not_a_whole_number_is_refused(value: str) -> None:
     """An empty value is malformed rather than absent, matching ?currency=."""
     with pytest.raises(LevelRangeError, match="from_level must be a whole number"):
         _ = parse_level_range(value, None)
+
+
+def test_an_arabic_indic_digit_is_not_a_whole_number_here() -> None:
+    """[0-9] rather than \\d, which is Unicode-aware: int() would read this as 2, so the
+    pattern is the only thing refusing a form the API never sends."""
+    with pytest.raises(LevelRangeError, match="from_level must be a whole number"):
+        _ = parse_level_range("\u0662", None)
+
+
+def test_a_level_longer_than_the_pattern_allows_is_refused_not_converted() -> None:
+    """int() refuses a string of over 4300 digits with a ValueError nothing catches, so
+    an unbounded pattern would make this a 500 rather than a 422. The {1,4} bound is
+    only load-bearing because \\Z forbids a prefix match."""
+    with pytest.raises(LevelRangeError, match="from_level must be a whole number"):
+        _ = parse_level_range("1" * 5000, None)
+    with pytest.raises(LevelRangeError, match="to_level must be a whole number"):
+        _ = parse_level_range(None, "99999")
 
 
 def test_a_to_level_that_is_not_a_whole_number_is_refused() -> None:

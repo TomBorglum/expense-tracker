@@ -894,6 +894,10 @@ def test_both_level_bounds_are_handed_to_the_repository(
             {"from_level": "3", "to_level": "2"},
             "from_level must not be after to_level",
         ),
+        # Longer than int() will convert at all: without the pattern's own length bound
+        # this reached int() and raised a ValueError no handler catches, so the endpoint
+        # answered 500 rather than refusing the value.
+        ({"from_level": "1" * 5000}, "from_level must be a whole number"),
     ],
 )
 def test_a_malformed_level_range_is_refused(
