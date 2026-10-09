@@ -6,8 +6,10 @@ from dataclasses import dataclass
 
 # The form GET /api/expenses sends dates back in, and the only one it takes. \A and \Z
 # rather than ^ and $: $ also matches before a trailing newline, which a query
-# parameter can carry.
-_DATE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
+# parameter can carry. re.ASCII because \d is otherwise Unicode-aware, which would leave
+# an Arabic-Indic digit for fromisoformat to refuse rather than the form, as level_range
+# does it.
+_DATE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z", re.ASCII)
 
 
 class DateRangeError(Exception):
