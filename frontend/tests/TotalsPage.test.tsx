@@ -2,13 +2,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { http } from "msw";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { CATEGORY_GROUPING, TOTALS_URL } from "@/api/totals";
 import { createAppRouter } from "@/router";
 
-import { MOCK_CATEGORY_TOTALS, MOCK_TOTALS } from "./msw/handlers";
+import { collection, MOCK_CATEGORY_TOTALS, MOCK_TOTALS } from "./msw/handlers";
 import { server } from "./msw/server";
 
 // The date defaults read the clock, and several assertions below name the year they
@@ -61,7 +61,7 @@ function recordRequestedParams() {
         from_date: params.get("from_date"),
         to_date: params.get("to_date"),
       });
-      return HttpResponse.json(grouping === null ? MOCK_TOTALS : MOCK_CATEGORY_TOTALS);
+      return collection(grouping === null ? MOCK_TOTALS : MOCK_CATEGORY_TOTALS);
     }),
   );
   return requested;
@@ -262,7 +262,7 @@ test("narrows both payloads to the categories the URL names", async () => {
     http.get(TOTALS_URL, ({ request }) => {
       const params = new URL(request.url).searchParams;
       requested.push(params.getAll("category"));
-      return HttpResponse.json(
+      return collection(
         params.get("group_by") === null ? MOCK_TOTALS : MOCK_CATEGORY_TOTALS,
       );
     }),

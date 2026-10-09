@@ -8,7 +8,7 @@ import { BASE_CURRENCY } from "@/api/currencies";
 import { EXPENSES_URL, type ExpensesQuery } from "@/api/expenses";
 import { ExpensesTable } from "@/components/ExpensesTable";
 
-import { MOCK_EXPENSES } from "./msw/handlers";
+import { collection, MOCK_EXPENSES } from "./msw/handlers";
 import { server } from "./msw/server";
 
 // Literal dates rather than the current month, so this file names what it asks for and
@@ -84,9 +84,21 @@ test("shows an alert when the endpoint fails", async () => {
 });
 
 test("shows an alert when the payload is not a list", async () => {
-  // Nothing generates a client from a schema here, so the guard in src/api/expenses.ts
-  // is the only thing between a drifted backend and a render that reads undefined.
+  // Nothing generates a client from a schema here, so the envelope check in
+  // src/api/fetchList.ts and the guard in src/api/expenses.ts are the only things
+  // between a drifted backend and a render that reads undefined. An object carrying
+  // the rows under another name is how the envelope half of that would break.
   server.use(http.get(EXPENSES_URL, () => HttpResponse.json({ expenses: [] })));
+  renderExpensesTable();
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe("Could not load the expenses.");
+});
+
+test("shows an alert when the rows arrive without their envelope", async () => {
+  // The bare array every endpoint sent before the envelope. Every row in it is valid,
+  // so the row guard passes it and only the envelope check refuses it - which is what
+  // stops an endpoint nobody migrated from going green.
+  server.use(http.get(EXPENSES_URL, () => HttpResponse.json(MOCK_EXPENSES)));
   renderExpensesTable();
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toBe("Could not load the expenses.");
@@ -96,9 +108,7 @@ test("shows an alert when an amount arrives as a number", async () => {
   // The backend pins amount to str(Decimal) on its side; this is the frontend half of
   // that contract, and a JSON number is how it would break.
   server.use(
-    http.get(EXPENSES_URL, () =>
-      HttpResponse.json([{ ...MOCK_EXPENSES[0], amount: 13.37 }]),
-    ),
+    http.get(EXPENSES_URL, () => collection([{ ...MOCK_EXPENSES[0], amount: 13.37 }])),
   );
   renderExpensesTable();
   const alert = await screen.findByRole("alert");
@@ -106,9 +116,9 @@ test("shows an alert when an amount arrives as a number", async () => {
 });
 
 test("shows an empty ledger as a row rather than an alert", async () => {
-  // 200 with [] is a database nobody has run the loader against yet, which the backend
-  // deliberately does not report as a fault.
-  server.use(http.get(EXPENSES_URL, () => HttpResponse.json([])));
+  // 200 with an empty items array is a database nobody has run the loader against yet,
+  // which the backend deliberately does not report as a fault.
+  server.use(http.get(EXPENSES_URL, () => collection([])));
   renderExpensesTable();
   await screen.findByRole("table", { name: "Expenses" });
   expect(screen.getByRole("cell").textContent).toBe(
@@ -129,7 +139,7 @@ test("asks the API for the parameters it was given", async () => {
         from_date: params.get("from_date"),
         to_date: params.get("to_date"),
       });
-      return HttpResponse.json(MOCK_EXPENSES);
+      return collection(MOCK_EXPENSES);
     }),
   );
   renderExpensesTable({
@@ -146,7 +156,7 @@ test("asks the API for the parameters it was given", async () => {
 test("shows a range that matches nothing as a row rather than an alert", async () => {
   // A valid range holding no expenses is a 200 with [], for the reason an empty table
   // is: it is an answer and not a fault.
-  server.use(http.get(EXPENSES_URL, () => HttpResponse.json([])));
+  server.use(http.get(EXPENSES_URL, () => collection([])));
   renderExpensesTable({ ...QUERY, from_date: "2026-06-01", to_date: "2026-06-30" });
   await screen.findByRole("table", { name: "Expenses" });
   expect(screen.getByRole("cell").textContent).toBe(

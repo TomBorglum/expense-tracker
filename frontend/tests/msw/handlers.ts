@@ -96,20 +96,27 @@ export const MOCK_CATEGORIES: Category[] = [
   { category: "Third stub category" },
 ];
 
+// Every collection body is an object holding its rows, so a mock has to be one too.
+// Spelled here once rather than at each stub: a mock that answered a bare array would
+// make fetchList throw, and the failure would read as a guard bug.
+export function collection(items: unknown): Response {
+  return HttpResponse.json({ items });
+}
+
 export const handlers = [
   // The absolute URLs, not the paths. The requests are cross-origin now, and a path-only
   // pattern would resolve against jsdom's origin and never match them.
-  http.get(EXPENSES_URL, () => HttpResponse.json(MOCK_EXPENSES)),
+  http.get(EXPENSES_URL, () => collection(MOCK_EXPENSES)),
   // Registered for every test, not only the ones about the selector: setup.ts errors on
   // an unstubbed request, and anything mounting the page asks for the rates.
-  http.get(CURRENCIES_URL, () => HttpResponse.json(MOCK_RATES)),
+  http.get(CURRENCIES_URL, () => collection(MOCK_RATES)),
   // Registered for the same reason: both pages ask for the category list on mount.
-  http.get(CATEGORIES_URL, () => HttpResponse.json(MOCK_CATEGORIES)),
+  http.get(CATEGORIES_URL, () => collection(MOCK_CATEGORIES)),
   // Matched ahead of nothing: msw compares whole paths, so /api/expenses does not catch
   // /api/expenses/totals despite being its prefix. The totals view makes both requests
   // whenever it is grouped, and they differ only by this parameter.
   http.get(TOTALS_URL, ({ request }) =>
-    HttpResponse.json(
+    collection(
       new URL(request.url).searchParams.get("group_by") === null
         ? MOCK_TOTALS
         : MOCK_CATEGORY_TOTALS,

@@ -100,6 +100,11 @@ def _total_payload(total: TotalRecord) -> PeriodTotalPayload:
     )
 
 
+def _collection(rows: Sequence[object]) -> JSONResponse:
+    """The rows as a collection body: an object, so it can gain fields later."""
+    return JSONResponse({"items": rows}, headers={"Cache-Control": "no-store"})
+
+
 async def _read_expenses(
     expenses: ExpenseRepository,
     currencies: CurrencyRepository,
@@ -178,10 +183,7 @@ def create_app() -> FastAPI:
             )
             for record in records
         ]
-        return JSONResponse(
-            [item.model_dump() for item in payload],
-            headers={"Cache-Control": "no-store"},
-        )
+        return _collection([item.model_dump() for item in payload])
 
     # The same rows /api/expenses lists, summed. Read-only for the same reason.
     @app.get("/api/expenses/totals")
@@ -211,12 +213,9 @@ def create_app() -> FastAPI:
             _total_payload(total)
             for total in aggregate(records, grain, grouping, dates)
         ]
-        return JSONResponse(
-            # exclude_none, not exclude_unset: _total_payload sets all six fields, so
-            # exclude_unset would drop nothing and say nothing about it.
-            [item.model_dump(exclude_none=True) for item in payload],
-            headers={"Cache-Control": "no-store"},
-        )
+        # exclude_none, not exclude_unset: _total_payload sets all six fields, so
+        # exclude_unset would drop nothing and say nothing about it.
+        return _collection([item.model_dump(exclude_none=True) for item in payload])
 
     # The categories the rows /api/expenses lists fall in, once each. Read-only for the
     # same reason.
@@ -229,10 +228,7 @@ def create_app() -> FastAPI:
             # The repository's order, reproduced untouched.
             for name in await expenses.list_categories()
         ]
-        return JSONResponse(
-            [item.model_dump() for item in payload],
-            headers={"Cache-Control": "no-store"},
-        )
+        return _collection([item.model_dump() for item in payload])
 
     # Read-only: rates arrive through `pixi run backend-load-currencies` and nowhere
     # else.
@@ -251,10 +247,7 @@ def create_app() -> FastAPI:
             # The repository's order, reproduced untouched.
             for record in await currencies.list_currencies()
         ]
-        return JSONResponse(
-            [item.model_dump() for item in payload],
-            headers={"Cache-Control": "no-store"},
-        )
+        return _collection([item.model_dump() for item in payload])
 
     # The only place a repository failure becomes an HTTP status, which is what lets
     # the repository module stay free of fastapi. Registered handlers run inside the
@@ -265,7 +258,7 @@ def create_app() -> FastAPI:
     ) -> JSONResponse:
         # Neither argument is used: the detail is the same either way, so a client
         # learns nothing about the database from a failure. An empty table is not this
-        # case at all: it answers 200 with [].
+        # case at all: it answers 200 with an empty items array.
         return JSONResponse({"detail": "expenses unavailable"}, status_code=503)
 
     @app.exception_handler(CurrenciesUnavailableError)
