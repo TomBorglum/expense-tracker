@@ -104,8 +104,8 @@ error state until something answers on 8000.
 | `GET /api/expenses` | `[{"amount", "currency", "date", "category", "details"}, ...]` - the `ExpensePayload` model |
 | `GET /api/expenses?currency=EUR` | The same, restated in one currency |
 | `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
-| `GET /api/expenses?category=Food&category=Housing` | Only the expenses in either category |
-| `GET /api/expenses/categories` | `[{"category"}, ...]` - the `CategoryPayload` model, every category with an expense in it, once each, in name order |
+| `GET /api/expenses?category=Food&category=Housing` | Only the expenses in either category, or under it |
+| `GET /api/expenses/categories` | `[{"category", "name", "parent"}, ...]` - the `CategoryPayload` model, every category at the levels asked for, once each, in path order; takes `from_level` and `to_level` |
 | `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and `category` too |
 | `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
@@ -209,15 +209,21 @@ once per value**, so `?category=Food&category=Housing` is every expense in eithe
 value given twice counts once. Give none and the request is the one that was there
 before the parameter existed.
 
-A value is matched the way the loader stored it: **stripped, then verbatim**, so
-`?category=%20Food` is `Food` and `?category=food` is another category altogether. That
-is the loader's own rule rather than a second one - it strips every field of a file and
-keeps the case it read - so the filter meets a stored value on the terms it was stored
-under, and the API never folds case on a client's behalf, as it never uppercases a
-currency code.
+A value is matched the way the loader stored it: **stripped level by level, then
+verbatim**, so `?category=%20Food` is `Food` and `?category=food` is another category
+altogether. That is the loader's own rule rather than a second one - it strips every
+level of every field and keeps the case it read - so the filter meets a stored value on
+the terms it was stored under, and the API never folds case on a client's behalf, as it
+never uppercases a currency code.
 
-The filtering is a `WHERE ... IN` clause beside the two date clauses, not a pass over the
-rows in Python, and it composes with `?currency=`, `?from_date=` and `?to_date=` the way
+**A value matches the node it names together with every path below it.** So
+`?category=Settlement` is every settlement and `?category=Settlement:Alice` is only
+hers. Over categories that carry no path the two are the same thing, which is why every
+request written before paths existed still means exactly what it meant.
+
+The filtering is one `WHERE` clause beside the two date clauses - `= path OR LIKE
+path || ':%'` per value, OR'd together - not a pass over the rows in Python, and it
+composes with `?currency=`, `?from_date=` and `?to_date=` the way
 those compose with each other: all three narrow the query, and the conversion runs over
 whatever they left. `schema.sql` gained no index for it - the table is small and
 `expense_oldest_first_idx` already orders the scan. **A category nobody has spent in is
@@ -225,12 +231,23 @@ whatever they left. `schema.sql` gained no index for it - the table is small and
 The filter is not checked against the list below first - a category is whatever a file
 said, and the check would be a second query on every request.
 
-`GET /api/expenses/categories` is that list: every category with an expense in it,
-**once each and in name order**, as
-`{"items": [{"category": "Car"}, {"category": "Housing"}]}`.
-It takes no parameters. The `DISTINCT` and the `ORDER BY` are the repository's,
+`GET /api/expenses/categories` is that list: every category at the levels asked for,
+**once each and in path order**, as
+`{"items": [{"category": "Settlement:Alice", "name": "Alice", "parent": "Settlement"}]}`.
+`name` is the path's last level and `parent` the path above it, so **no client has to
+know what joins one level to the next**; a depth-1 category carries no `parent` key at
+all rather than an empty one. The deduplication and the ordering are the repository's,
 `list_categories` in `backend/src/expense_tracker/expense_repository.py`, not a pass over
 the rows in Python: the route reproduces the order it is handed, as the other three do.
+
+`?from_level=` and `?to_level=` choose the depths, both inclusive. **Absent, they are the
+top level alone** - the response this endpoint gave before they existed - and an absent
+`to_level` is whatever `from_level` is, so `?from_level=2` is exactly depth 2 while
+`?to_level=3` is depths 1 through 3. Each level is one `SELECT` truncating `category` to
+that depth, `UNION`ed, so **an ancestor nobody filed anything directly under is still
+listed**: `Settlement` appears even when every settlement is `Settlement:<someone>`, and
+without that it could not be selected. `MAX_LEVEL` in
+`backend/src/expense_tracker/level_range.py` bounds how many legs a client can ask for.
 The cluster is `initdb --locale=C`, so name order is byte order - `Zoo` before `apple` -
 which is the order Python's `sorted()` gives too. **An empty table is
 `200 {"items": []}`** and an unreachable database
@@ -242,6 +259,10 @@ A blank value is a `422` carrying the same plain-string `detail`:
 | --- | --- |
 | `?category=` | `{"detail": "category must not be blank"}` |
 | `?category=%20` | `{"detail": "category must not be blank"}` |
+| `?from_level=two` | `{"detail": "from_level must be a whole number"}` |
+| `?from_level=0` | `{"detail": "from_level must be 1 or more"}` |
+| `?to_level=11` | `{"detail": "to_level must not be more than 10"}` |
+| `?from_level=3&to_level=2` | `{"detail": "from_level must not be after to_level"}` |
 
 An empty value is malformed rather than absent, as an empty `?from_date=` is, and blank
 means blank after the strip, as it does to the loader. The refusal belongs to the
@@ -249,6 +270,27 @@ means blank after the strip, as it does to the loader. The refusal belongs to th
 built, and the repository takes that type instead of a loose set of strings. Both live
 in `backend/src/expense_tracker/category_filter.py`, which knows no HTTP and no database
 at all, and are tested in `backend/tests/test_category_filter.py`.
+
+#### Category paths
+
+A category is one `text` column holding a `:`-separated path - `Groceries`, or
+`Settlement:Alice`. **Depth is unbounded and a third level needs no API change**, which
+is the whole reason the second level is not a column of its own.
+
+The separator is declared twice and only twice: `SEPARATOR` in `category_filter.py`, and
+the `expense_category_is_a_path` CHECK in `schema.sql` that refuses an empty level. That
+CHECK is what makes **no level able to contain the separator**, so splitting a path or
+joining one back up is lossless and **nothing anywhere needs escaping** - not the SQL,
+not the URL, not the payload. Matching is by level rather than by characters, which is
+why the clause has two legs: `Foodstuffs` is not under `Food`.
+
+PostgreSQL's own `ltree` models exactly this and is deliberately not used. Its labels
+forbid a space in a name, it is a contrib extension this project would have to depend on,
+and with the CHECK above a prefix match on plain `text` is already exact. It stays the
+upgrade path if the table ever outgrows the scan. For the same reason the level query is
+one `SELECT` per level rather than a `generate_series` join: the union reads as the rule
+and keeps `MAX_LEVEL` meaningful, and `generate_series` is the form to switch to on the
+day that cap is dropped.
 
 ### Asking for totals
 
@@ -261,6 +303,22 @@ assumption hidden inside a sum; `month` is the only one, so the payload field is
 grain-neutral `period`. Rows are keyed by `(period, currency)`, and `?group_by=category`
 adds a third part to that key. **`currency` stays in the key whatever was asked for** -
 DKK added to EUR is a number that means nothing.
+
+**`?group_by=` is only a toggle; the grain of that third part comes from `?category=`.**
+A row sums under the **deepest** selected path it sits under, so the groups partition the
+expenses rather than counting one of them twice. Say Alice's settlement is 150 and Bob's
+is 25:
+
+| Selection | Rows |
+| --- | --- |
+| nothing | `Settlement` 175 - every path rolled up to its top level |
+| `Settlement` | `Settlement` 175 |
+| `Settlement` and `Settlement:Alice` | `Settlement:Alice` 150, `Settlement` 25 |
+
+The last one is worth reading twice: with Alice selected separately, the `Settlement` row
+holds what she did not take. The two still add to the 175 the same request returns
+ungrouped, which is what "partition" buys. There is **no level parameter here** - depth
+belongs to the category list, and the selection is what says how finely to cut a sum.
 
 The response is a **dense calendar**: one row per period from the oldest matching expense
 to the newest, whether or not anything was spent in it. `period`, `from_date` and
@@ -475,13 +533,16 @@ two fields that place it in its file; `record` and `key` are read by nothing her
 | `datetime` | RFC 3339, with an offset | The day it names is `expense_date`; the offset is never applied |
 | `amount` | decimal | At most two decimal places; may be negative; never zero |
 | `currency` | ISO 4217 alpha-3 | Uppercase |
-| `category` | free text | Stripped, then must not be blank |
+| `category` | a `:`-separated path | Each level stripped; no level may be empty |
 | `details` | free text | Stripped, and may be empty |
 
 A third decimal place is refused rather than rounded away by `numeric(12, 2)` in
 silence. A negative amount is accepted, because a credit is a negative expense; a zero
 one is refused, because an expense of nothing is not an entry, and
-`expense_amount_not_zero` backstops that in the database. **Every field is read as text**,
+`expense_amount_not_zero` backstops that in the database. A `category` that is not a path
+- `Food:`, `:Food`, `Food::Drink` - is refused here rather than only by
+`expense_category_is_a_path`, because the loader names the file and the constraint alone
+would surface as a bare `IntegrityError`. **Every field is read as text**,
 so an unquoted `2438.47` - which YAML 1.1 resolves to a float - is refused rather than
 rounded through one, and so is an unquoted date-time. The `datetime`'s offset is required
 and never applied: the date wanted is the one the file states, which is the date the bank's

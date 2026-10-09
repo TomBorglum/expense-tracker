@@ -44,7 +44,7 @@ records:
       action: import
       amount: '430.00'
       currency: DKK
-      category: Transport
+      category: Transport:Train
       details: Train ticket
   - record: '28-12-2026;-895,25;"SUPERMARKET";'
     extracted:
@@ -62,5 +62,5 @@ records:
       action: import
       amount: '-430.00'
       currency: DKK
-      category: Transport
+      category: Transport:Train
       details: Refund / Train ticket

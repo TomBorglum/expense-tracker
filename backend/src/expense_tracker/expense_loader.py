@@ -20,12 +20,16 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import URL, insert, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from .category_filter import strip_path
 from .config import database_url
 from .expense_repository import Expense, ExpenseRecord, LoadedExpenseFile
 
 # At most two decimal places, because the column is numeric(12, 2) and a third would
 # be rounded away in silence. No limit on the integer digits - the column owns range.
 _AMOUNT = re.compile(r"^-?\d+(?:\.\d{1,2})?$")
+
+# The same path shape schema.sql states as a CHECK: one or more levels, none empty.
+_CATEGORY_PATH = re.compile(r"\A[^:]+(:[^:]+)*\Z")
 
 # ISO 4217 alpha-3, e.g. DKK.
 _CURRENCY = re.compile(r"^[A-Z]{3}$")
@@ -134,10 +138,17 @@ def _currency(value: object) -> str:
 
 
 def _category(value: object) -> str:
-    """One `category` field, stripped and refused if that leaves nothing."""
-    text = _text(value).strip()
+    """One `category` field as a path, each level stripped and none of them empty."""
+    # Every level, not the whole value: "Settlement : Alice" would otherwise store its
+    # inner spaces and become a node that renders identically to Settlement:Alice while
+    # never merging with it.
+    text = strip_path(_text(value))
     if not text:
         raise PydanticCustomError("blank_category", "category is blank")
+    if _CATEGORY_PATH.match(text) is None:
+        # Before the database sees it: main() catches ExpenseFileError and nothing
+        # else, so the CHECK alone would surface as a bare IntegrityError traceback.
+        raise PydanticCustomError("not_a_category_path", "category is not a path")
     return text
 
 

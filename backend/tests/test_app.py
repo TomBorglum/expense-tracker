@@ -18,6 +18,7 @@ from expense_tracker.category_filter import CategoryFilter
 from expense_tracker.currency_repository import CurrencyRateRecord
 from expense_tracker.date_range import UNBOUNDED, DateRange
 from expense_tracker.expense_repository import ExpenseRecord
+from expense_tracker.level_range import MAX_LEVEL, TOP_LEVEL, LevelRange
 
 # The origin a browser would send. Any value works against a wildcard policy.
 _ORIGIN = "http://localhost:5173"
@@ -49,6 +50,7 @@ _ENVELOPE = TypeAdapter(dict[str, object])
 # expense repository, and the requested_categories fixture's counterpart.
 _Ranges = list[DateRange]
 _Categories = list[CategoryFilter | None]
+_Levels = list[LevelRange]
 
 _FOOD = CategoryFilter(frozenset({"Food"}))
 
@@ -814,12 +816,13 @@ def test_categories_endpoint_returns_json(
     assert response.headers["content-type"].startswith("application/json")
     assert response.headers["Cache-Control"] == "no-store"
     assert _CATEGORIES.validate_json(response.content).items == [
-        CategoryPayload(category="Insurance"),
-        CategoryPayload(category="Housing"),
+        CategoryPayload(category="Insurance", name="Insurance"),
+        CategoryPayload(category="Housing", name="Housing"),
+        CategoryPayload(category="Housing:Rent", name="Rent", parent="Housing"),
     ]
     # The fixture is the other half of that literal; if it changes, this should fail
     # rather than quietly assert against itself.
-    assert len(category_names) == 2
+    assert len(category_names) == 3
 
 
 def test_categories_endpoint_preserves_the_repository_order(client: TestClient) -> None:
@@ -828,7 +831,7 @@ def test_categories_endpoint_preserves_the_repository_order(client: TestClient) 
     body = _CATEGORIES.validate_json(
         client.get("/api/expenses/categories").content
     ).items
-    assert [row.category for row in body] == ["Insurance", "Housing"]
+    assert [row.category for row in body] == ["Insurance", "Housing", "Housing:Rent"]
 
 
 def test_categories_endpoint_returns_an_empty_list_when_nothing_is_loaded(
@@ -838,6 +841,156 @@ def test_categories_endpoint_returns_an_empty_list_when_nothing_is_loaded(
     response = empty_expenses_client.get("/api/expenses/categories")
     assert response.status_code == 200
     assert _CATEGORIES.validate_json(response.content).items == []
+
+
+def test_a_bare_categories_request_asks_for_the_top_level(
+    client: TestClient, requested_levels: _Levels
+) -> None:
+    """The request made before the parameters existed, and what it still means."""
+    response = client.get("/api/expenses/categories")
+    assert response.status_code == 200
+    assert requested_levels == [TOP_LEVEL]
+
+
+def test_a_from_level_alone_asks_for_exactly_that_level(
+    client: TestClient, requested_levels: _Levels
+) -> None:
+    """One generation, which is what a picker drilling into a node wants."""
+    response = client.get("/api/expenses/categories", params={"from_level": "2"})
+    assert response.status_code == 200
+    assert requested_levels == [LevelRange(2, 2)]
+
+
+def test_a_to_level_alone_asks_from_the_top_down_to_it(
+    client: TestClient, requested_levels: _Levels
+) -> None:
+    """The other shorthand: a whole bounded tree in one request."""
+    response = client.get("/api/expenses/categories", params={"to_level": "3"})
+    assert response.status_code == 200
+    assert requested_levels == [LevelRange(1, 3)]
+
+
+def test_both_level_bounds_are_handed_to_the_repository(
+    client: TestClient, requested_levels: _Levels
+) -> None:
+    response = client.get(
+        "/api/expenses/categories", params={"from_level": "2", "to_level": "3"}
+    )
+    assert response.status_code == 200
+    assert requested_levels == [LevelRange(2, 3)]
+
+
+@pytest.mark.parametrize(
+    ("params", "detail"),
+    [
+        ({"from_level": "two"}, "from_level must be a whole number"),
+        ({"to_level": ""}, "to_level must be a whole number"),
+        ({"from_level": "0"}, "from_level must be 1 or more"),
+        (
+            {"to_level": str(MAX_LEVEL + 1)},
+            f"to_level must not be more than {MAX_LEVEL}",
+        ),
+        (
+            {"from_level": "3", "to_level": "2"},
+            "from_level must not be after to_level",
+        ),
+        # Longer than int() will convert at all: without the pattern's own length bound
+        # this reached int() and raised a ValueError no handler catches, so the endpoint
+        # answered 500 rather than refusing the value.
+        ({"from_level": "1" * 5000}, "from_level must be a whole number"),
+    ],
+)
+def test_a_malformed_level_range_is_refused(
+    client: TestClient,
+    requested_levels: _Levels,
+    params: dict[str, str],
+    detail: str,
+) -> None:
+    response = client.get("/api/expenses/categories", params=params)
+    assert response.status_code == 422
+    assert response.json() == {"detail": detail}
+    # A registered handler runs inside the middleware, so a 422 is decorated too.
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    # Read before the query, so a malformed value costs no round trip.
+    assert requested_levels == []
+
+
+def test_a_depth_one_category_carries_no_parent_key(client: TestClient) -> None:
+    """Absent rather than empty, so "no parent" and "a parent named nothing" cannot be
+    confused. Read as plain objects: the model would not show the difference."""
+    body = _RAW_ROWS.validate_json(client.get("/api/expenses/categories").content).items
+    assert [sorted(row) for row in body] == [
+        ["category", "name"],
+        ["category", "name"],
+        ["category", "name", "parent"],
+    ]
+
+
+def test_the_level_parameters_reach_only_the_categories_endpoint(
+    client: TestClient, requested_ranges: _Ranges
+) -> None:
+    """Depth is a property of the category list, not of the expenses or their totals -
+    where the grain comes from ?category= instead. FastAPI drops a parameter a route
+    does not declare, so both of these are the request without it."""
+    assert client.get("/api/expenses", params={"from_level": "2"}).status_code == 200
+    totals = client.get(
+        "/api/expenses/totals", params={"period": "month", "from_level": "2"}
+    )
+    assert totals.status_code == 200
+    assert requested_ranges == [UNBOUNDED, UNBOUNDED]
+
+
+def test_totals_group_on_the_top_level_when_no_category_is_selected(
+    nested_expenses_client: TestClient,
+) -> None:
+    """The whole subtree rolled up, which is what the page shows before anyone picks."""
+    response = nested_expenses_client.get(
+        "/api/expenses/totals", params={"period": "month", "group_by": "category"}
+    )
+    assert response.status_code == 200
+    body = _TOTALS.validate_json(response.content).items
+    assert [(row.amount, row.category) for row in body] == [
+        ("10.00", "Groceries"),
+        ("175.00", "Settlement"),
+    ]
+
+
+def test_totals_group_on_the_selected_path(
+    nested_expenses_client: TestClient,
+) -> None:
+    response = nested_expenses_client.get(
+        "/api/expenses/totals",
+        params={"period": "month", "group_by": "category", "category": "Settlement"},
+    )
+    assert response.status_code == 200
+    body = _TOTALS.validate_json(response.content).items
+    assert [(row.amount, row.category) for row in body] == [
+        ("10.00", "Groceries"),
+        ("175.00", "Settlement"),
+    ]
+
+
+def test_totals_split_a_selected_child_out_of_its_selected_parent(
+    nested_expenses_client: TestClient,
+) -> None:
+    """The deepest selected ancestor wins, so Settlement keeps only what Alice did not
+    take - and the two still add to the 175 it held on its own above."""
+    response = nested_expenses_client.get(
+        "/api/expenses/totals",
+        params=[
+            ("period", "month"),
+            ("group_by", "category"),
+            ("category", "Settlement"),
+            ("category", "Settlement:Alice"),
+        ],
+    )
+    assert response.status_code == 200
+    body = _TOTALS.validate_json(response.content).items
+    assert [(row.amount, row.category) for row in body] == [
+        ("10.00", "Groceries"),
+        ("25.00", "Settlement"),
+        ("150.00", "Settlement:Alice"),
+    ]
 
 
 def test_categories_are_unavailable_when_the_database_is_down(

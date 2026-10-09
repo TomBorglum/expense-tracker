@@ -53,5 +53,5 @@ records:
       action: import
       amount: '210.00'
       currency: DKK
-      category: Transport
+      category: Transport:Train
       details: Train ticket

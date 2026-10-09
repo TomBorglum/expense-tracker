@@ -44,7 +44,9 @@ def test_the_bounds_may_be_the_same_day() -> None:
     "value",
     # "2026-01-02\n" is why the pattern is anchored with \Z: $ would accept it.
     # 20260102 and 2026-W01-1 are forms date.fromisoformat takes and this API never
-    # sends; 2026-02-30 has the shape but is not a day.
+    # sends; 2026-02-30 has the shape but is not a day. The last is 2026-01-02 in
+    # Arabic-Indic digits, which re.ASCII is what refuses: \d alone would match it and
+    # leave the refusal to fromisoformat.
     [
         "",
         "yesterday",
@@ -54,6 +56,7 @@ def test_the_bounds_may_be_the_same_day() -> None:
         "2026-1-2",
         "2026-02-30",
         "2026-01-02\n",
+        "\u0662\u0660\u0662\u0666-\u0660\u0661-\u0660\u0662",
     ],
 )
 def test_a_from_date_that_is_not_yyyy_mm_dd_is_refused(value: str) -> None:

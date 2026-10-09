@@ -14,7 +14,13 @@ from .aggregation import (
     parse_grouping,
     parse_period,
 )
-from .category_filter import CategoryFilterError, parse_category_filter
+from .category_filter import (
+    CategoryFilter,
+    CategoryFilterError,
+    parse_category_filter,
+    path_name,
+    path_parent,
+)
 from .conversion import ConversionError, convert_expenses, validate_currency_code
 from .currency_repository import CurrenciesUnavailableError, CurrencyRepository
 from .date_range import DateRange, DateRangeError, parse_date_range
@@ -24,6 +30,7 @@ from .expense_repository import (
     ExpenseRepository,
     ExpensesUnavailableError,
 )
+from .level_range import LevelRangeError, parse_level_range
 
 # Applied to every response. This app serves JSON and nothing else, so the policy
 # grants nothing at all.
@@ -63,9 +70,17 @@ class CurrencyPayload(BaseModel):
 
 
 class CategoryPayload(BaseModel):
-    """One category as GET /api/expenses/categories sends it."""
+    """One category as GET /api/expenses/categories sends it.
+
+    `category` is the whole colon-separated path. `name` is its last level and `parent`
+    the path above it, so no client has to know what joins one level to the next.
+    `parent` is dumped with exclude_none, so a depth-1 category carries no such key at
+    all rather than an empty one.
+    """
 
     category: str
+    name: str
+    parent: str | None = None
 
 
 class PeriodTotalPayload(BaseModel):
@@ -112,8 +127,8 @@ async def _read_expenses(
     from_date: str | None,
     to_date: str | None,
     category: list[str] | None,
-) -> tuple[DateRange, Sequence[ExpenseRecord]]:
-    """The rows both expense routes read, and the range they were read over."""
+) -> tuple[DateRange, CategoryFilter | None, Sequence[ExpenseRecord]]:
+    """The rows both expense routes read, and the range and filter behind them."""
     # Both read before the query, so a malformed value costs no round trip.
     dates = parse_date_range(from_date, to_date)
     categories = parse_category_filter(category)
@@ -126,7 +141,7 @@ async def _read_expenses(
         # code costs no query. Resolving the repository did not open one either.
         target = validate_currency_code(currency)
         records = convert_expenses(records, await currencies.list_currencies(), target)
-    return dates, records
+    return dates, categories, records
 
 
 def create_app() -> FastAPI:
@@ -168,7 +183,7 @@ def create_app() -> FastAPI:
         # repeats once per value. list[str] so that FastAPI refuses nothing itself.
         category: Annotated[list[str] | None, Query()] = None,
     ) -> JSONResponse:
-        _, records = await _read_expenses(
+        _, _, records = await _read_expenses(
             expenses, currencies, currency, from_date, to_date, category
         )
         payload = [
@@ -204,14 +219,16 @@ def create_app() -> FastAPI:
         # malformed one costs no round trip.
         grain = parse_period(period)
         grouping = parse_grouping(group_by)
-        dates, records = await _read_expenses(
+        dates, categories, records = await _read_expenses(
             expenses, currencies, currency, from_date, to_date, category
         )
         # After the conversion, never before: converting each amount and then adding is
         # what makes a total equal the sum of the rows /api/expenses shows for it.
         payload = [
             _total_payload(total)
-            for total in aggregate(records, grain, grouping, dates)
+            # The filter as well as the range: what was selected is what the rows
+            # are grouped under, and nothing selected groups on the top level.
+            for total in aggregate(records, grain, grouping, dates, categories)
         ]
         # exclude_none, not exclude_unset: _total_payload sets all six fields, so
         # exclude_unset would drop nothing and say nothing about it.
@@ -222,13 +239,25 @@ def create_app() -> FastAPI:
     @app.get("/api/expenses/categories")
     async def categories(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
         expenses: Annotated[ExpenseRepository, Depends(provide_expense_repository)],
+        # str rather than int, for the reason the dates are str: an int annotation hands
+        # the refusal to FastAPI, whose body is a list of errors rather than the
+        # plain-string detail every refusal here sends. Both absent is the top level
+        # alone, which is what this endpoint answered before they existed.
+        from_level: str | None = None,
+        to_level: str | None = None,
     ) -> JSONResponse:
+        # Read before the query, so a malformed value costs no round trip.
+        levels = parse_level_range(from_level, to_level)
         payload = [
-            CategoryPayload(category=name)
+            CategoryPayload(
+                category=path, name=path_name(path), parent=path_parent(path)
+            )
             # The repository's order, reproduced untouched.
-            for name in await expenses.list_categories()
+            for path in await expenses.list_categories(levels)
         ]
-        return _collection([item.model_dump() for item in payload])
+        # exclude_none for the reason the totals dump has it: a depth-1 category has no
+        # parent, and an absent key says that where an empty string would not.
+        return _collection([item.model_dump(exclude_none=True) for item in payload])
 
     # Read-only: rates arrive through `pixi run backend-load-currencies` and nowhere
     # else.
@@ -299,6 +328,13 @@ def create_app() -> FastAPI:
         _request: Request, exc: Exception
     ) -> JSONResponse:
         # The fourth of the kind, reading its exception for the same reason.
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    @app.exception_handler(LevelRangeError)
+    async def handle_level_range_error(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+        _request: Request, exc: Exception
+    ) -> JSONResponse:
+        # The fifth of the kind, reading its exception for the same reason.
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
     # Added last, so it is the outermost middleware and can answer a preflight itself
