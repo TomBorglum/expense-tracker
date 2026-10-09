@@ -13,6 +13,7 @@ from expense_tracker.currency_repository import CurrencyRateRecord, CurrencyRepo
 from expense_tracker.date_range import UNBOUNDED, DateRange
 from expense_tracker.deps import provide_currency_repository, provide_expense_repository
 from expense_tracker.expense_repository import ExpenseRecord, ExpenseRepository
+from expense_tracker.level_range import TOP_LEVEL, LevelRange
 
 
 class _FakeExpenseRepository(ExpenseRepository):
@@ -22,6 +23,7 @@ class _FakeExpenseRepository(ExpenseRepository):
     _records: Sequence[ExpenseRecord]
     _ranges: list[DateRange]
     _categories: list[CategoryFilter | None]
+    _levels: list[LevelRange]
     _category_names: Sequence[str]
 
     def __init__(
@@ -29,11 +31,13 @@ class _FakeExpenseRepository(ExpenseRepository):
         records: Sequence[ExpenseRecord],
         ranges: list[DateRange],
         categories: list[CategoryFilter | None],
+        levels: list[LevelRange],
         category_names: Sequence[str] = (),
     ) -> None:
         self._records = records
         self._ranges = ranges
         self._categories = categories
+        self._levels = levels
         self._category_names = category_names
 
     @override
@@ -49,9 +53,12 @@ class _FakeExpenseRepository(ExpenseRepository):
         return self._records
 
     @override
-    async def list_categories(self) -> Sequence[str]:
-        # Handed back as given, not derived from the records: deduplicating and
-        # ordering are the repository's job, for the reason above.
+    async def list_categories(self, levels: LevelRange = TOP_LEVEL) -> Sequence[str]:
+        # The range is recorded rather than applied, like the two above: truncating the
+        # names to it here would hide a route that did it again. Handed back as given,
+        # not derived from the records, because deduplicating and ordering are the
+        # repository's job.
+        self._levels.append(levels)
         return self._category_names
 
 
@@ -93,12 +100,14 @@ def expense_records() -> list[ExpenseRecord]:
 
 @pytest.fixture
 def category_names() -> list[str]:
-    """The expense_records categories in the order they first appear.
+    """What list_categories answers: two depth-1 names and one path below one of them.
 
     Deliberately not alphabetical, so a route that sorts on its own fails the order test
-    instead of agreeing with the repository by coincidence.
+    instead of agreeing with the repository by coincidence, and deliberately not derived
+    from expense_records - the real repository derives an ancestor nothing is filed
+    directly under, which no list of record categories would contain.
     """
-    return ["Insurance", "Housing"]
+    return ["Insurance", "Housing", "Housing:Rent"]
 
 
 @pytest.fixture
@@ -132,12 +141,19 @@ def requested_categories() -> list[CategoryFilter | None]:
 
 
 @pytest.fixture
+def requested_levels() -> list[LevelRange]:
+    """Every LevelRange the route hands the expense repository, in order."""
+    return []
+
+
+@pytest.fixture
 def app(
     expense_records: list[ExpenseRecord],
     category_names: list[str],
     currency_records: list[CurrencyRateRecord],
     requested_ranges: list[DateRange],
     requested_categories: list[CategoryFilter | None],
+    requested_levels: list[LevelRange],
 ) -> FastAPI:
     """An app whose data comes from memory instead of PostgreSQL.
 
@@ -147,7 +163,11 @@ def app(
     application = create_app()
     application.dependency_overrides[provide_expense_repository] = lambda: (
         _FakeExpenseRepository(
-            expense_records, requested_ranges, requested_categories, category_names
+            expense_records,
+            requested_ranges,
+            requested_categories,
+            requested_levels,
+            category_names,
         )
     )
     application.dependency_overrides[provide_currency_repository] = lambda: (
@@ -169,7 +189,7 @@ def empty_expenses_client(app: FastAPI) -> TestClient:
     # Re-overriding on the app fixture rather than parametrising it indirectly:
     # request.param is an Any expression, which reportAny rejects.
     app.dependency_overrides[provide_expense_repository] = lambda: (
-        _FakeExpenseRepository([], [], [], [])
+        _FakeExpenseRepository([], [], [], [], [])
     )
     return TestClient(app)
 
@@ -200,6 +220,7 @@ def same_period_expenses_client(app: FastAPI) -> TestClient:
             ],
             [],
             [],
+            [],
         )
     )
     return TestClient(app)
@@ -222,6 +243,7 @@ def gapped_expenses_client(app: FastAPI) -> TestClient:
                     Decimal("300.00"), "DKK", datetime.date(2026, 3, 20), "Housing", ""
                 ),
             ],
+            [],
             [],
             [],
         )
@@ -269,6 +291,51 @@ def refunded_expenses_client(app: FastAPI) -> TestClient:
                     "Refund / Train ticket",
                 ),
             ],
+            [],
+            [],
+            [],
+        )
+    )
+    return TestClient(app)
+
+
+@pytest.fixture
+def nested_expenses_client(app: FastAPI) -> TestClient:
+    """One month of category paths: a subtree of three, beside a depth-1 category.
+
+    Alice's 100 and her Spain trip's 50 sit under Settlement:Alice, Bob's 25 under
+    Settlement, so grouping on Settlement is 175 and splitting Alice out of it leaves 25
+    - which is what makes the groups a partition rather than a roll-up.
+    """
+    app.dependency_overrides[provide_expense_repository] = lambda: (
+        _FakeExpenseRepository(
+            [
+                ExpenseRecord(
+                    Decimal("100.00"),
+                    "DKK",
+                    datetime.date(2026, 1, 5),
+                    "Settlement:Alice",
+                    "Dinner",
+                ),
+                ExpenseRecord(
+                    Decimal("50.00"),
+                    "DKK",
+                    datetime.date(2026, 1, 9),
+                    "Settlement:Alice:Spain",
+                    "Hotel",
+                ),
+                ExpenseRecord(
+                    Decimal("25.00"),
+                    "DKK",
+                    datetime.date(2026, 1, 12),
+                    "Settlement:Bob",
+                    "Taxi",
+                ),
+                ExpenseRecord(
+                    Decimal("10.00"), "DKK", datetime.date(2026, 1, 20), "Groceries", ""
+                ),
+            ],
+            [],
             [],
             [],
         )

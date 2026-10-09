@@ -3,7 +3,13 @@ import pytest
 from expense_tracker.category_filter import (
     CategoryFilter,
     CategoryFilterError,
+    deepest_ancestor,
     parse_category_filter,
+    path_name,
+    path_parent,
+    split_path,
+    strip_path,
+    top_level,
 )
 
 # Nothing here touches HTTP or a session: reading query values is string work, which
@@ -17,7 +23,7 @@ def test_one_value_is_a_filter_of_one_name() -> None:
 
 
 def test_two_values_are_a_filter_of_both() -> None:
-    """Either matches: the repository turns the set into one IN clause."""
+    """Either matches: the repository ORs one prefix clause per name together."""
     assert parse_category_filter(["Food", "Housing"]) == CategoryFilter(
         frozenset({"Food", "Housing"})
     )
@@ -81,3 +87,76 @@ def test_a_filter_is_frozen() -> None:
     categories = CategoryFilter(frozenset({"Food"}))
     with pytest.raises(AttributeError):
         categories.names = frozenset({""})  # pyright: ignore[reportAttributeAccessIssue]  # the point of the test
+
+
+def test_a_name_with_no_separator_is_one_level() -> None:
+    """The identity every backward-compatibility claim rests on: for a category that
+    carries no path, each helper hands back the name itself."""
+    assert split_path("Groceries") == ("Groceries",)
+    assert top_level("Groceries") == "Groceries"
+    assert path_name("Groceries") == "Groceries"
+    assert path_parent("Groceries") is None
+
+
+def test_a_path_is_taken_apart_at_every_separator() -> None:
+    assert split_path("Settlement:Alice:Spain") == ("Settlement", "Alice", "Spain")
+    assert top_level("Settlement:Alice:Spain") == "Settlement"
+    assert path_name("Settlement:Alice:Spain") == "Spain"
+    assert path_parent("Settlement:Alice:Spain") == "Settlement:Alice"
+
+
+def test_a_root_has_no_parent_rather_than_an_empty_one() -> None:
+    """None, so the payload drops the key altogether: an empty string would say the
+    parent is a category whose name is nothing."""
+    assert path_parent("Settlement") is None
+    assert path_parent("Settlement:Alice") == "Settlement"
+
+
+def test_every_level_is_stripped_not_just_the_whole_value() -> None:
+    """A level keeping its inner spaces would be a node that renders identically to
+    the real one - HTML collapses whitespace - and never merges with it."""
+    assert strip_path(" Settlement : Alice ") == "Settlement:Alice"
+    assert strip_path("Groceries") == "Groceries"
+
+
+def test_the_deepest_selected_ancestor_is_the_one_that_wins() -> None:
+    """What keeps a row out of two groups at once: Alice's expense is summed under
+    Settlement:Alice, and only there, even though Settlement is selected too."""
+    selected = frozenset({"Settlement", "Settlement:Alice"})
+    assert deepest_ancestor("Settlement:Alice:Spain", selected) == "Settlement:Alice"
+    assert deepest_ancestor("Settlement:Alice", selected) == "Settlement:Alice"
+    assert deepest_ancestor("Settlement:Bob", selected) == "Settlement"
+
+
+def test_a_node_counts_as_its_own_ancestor() -> None:
+    assert deepest_ancestor("Groceries", frozenset({"Groceries"})) == "Groceries"
+
+
+def test_a_path_under_nothing_selected_has_no_ancestor() -> None:
+    """Unreachable through the real repository, which only returns rows the clause
+    matched, but the HTTP suite's fake filters nothing - so aggregation falls back to
+    the top level rather than raising."""
+    assert deepest_ancestor("Groceries", frozenset({"Settlement"})) is None
+
+
+def test_a_name_merely_starting_with_another_is_not_under_it() -> None:
+    """By level and never by character: this is the whole reason the repository ORs
+    `= path` with a LIKE on `path + separator` instead of one bare prefix match."""
+    assert deepest_ancestor("SettlementFund", frozenset({"Settlement"})) is None
+
+
+def test_a_level_of_a_filter_value_is_stripped_too() -> None:
+    """The loader strips each level, so a query value meets a stored one on the same
+    terms however the path was typed."""
+    assert parse_category_filter(["Settlement : Alice"]) == CategoryFilter(
+        frozenset({"Settlement:Alice"})
+    )
+
+
+@pytest.mark.parametrize("value", ["Food:", ":Food", "Food::Drink"])
+def test_a_value_the_column_could_never_hold_is_not_refused(value: str) -> None:
+    """Only blank is refused here. A malformed path is an unmatchable value, which is
+    what an unknown category already is - and the filter is checked against the known
+    list on neither side. `Food:` compiles to `= 'Food:' OR LIKE 'Food::%'`, so it
+    matches nothing rather than acting as an undocumented "strictly below"."""
+    assert parse_category_filter([value]) == CategoryFilter(frozenset({value}))

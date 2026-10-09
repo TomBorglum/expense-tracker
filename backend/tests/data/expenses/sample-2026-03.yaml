@@ -44,7 +44,7 @@ records:
       action: import
       amount: '145.00'
       currency: DKK
-      category: Transport
+      category: Transport:Bus
       details: Bus pass
   - record: '27-03-2026;-612,40;"FUEL";'
     extracted:

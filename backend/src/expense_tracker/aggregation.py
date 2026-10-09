@@ -8,6 +8,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import NamedTuple
 
+from .category_filter import CategoryFilter, deepest_ancestor, top_level
 from .date_range import UNBOUNDED, DateRange
 from .expense_repository import ExpenseRecord
 
@@ -37,7 +38,8 @@ class TotalRecord(NamedTuple):
     # None together, and only when the period holds no expenses at all.
     amount: Decimal | None
     currency: str | None
-    # Also None when the request did not group by category.
+    # The path the rows were summed under - the deepest selected ancestor, or the top
+    # level when nothing was selected. Also None when the request did not group at all.
     category: str | None
 
 
@@ -61,11 +63,31 @@ def parse_grouping(value: str | None) -> Grouping | None:
         raise AggregationError(f"unknown group_by: {value}") from exc
 
 
+def _group(
+    category: str, grouping: Grouping | None, categories: CategoryFilter | None
+) -> str | None:
+    """The path a record is summed under, or None when nothing was grouped by."""
+    if grouping is not Grouping.CATEGORY:
+        return None
+    # The deepest selected path the record sits under, so the groups partition the rows
+    # rather than counting one of them under an ancestor and a descendant both. No
+    # filter is no selection to match, and the grain is then the top level - which for a
+    # depth-1 category is the category itself.
+    #
+    # The fall-back is load-bearing rather than defensive: every row the repository
+    # returned sits under something selected, but the HTTP suite's fake records the
+    # filter and applies nothing, the same case _clamp is written for.
+    if categories is None:
+        return top_level(category)
+    return deepest_ancestor(category, categories.names) or top_level(category)
+
+
 def aggregate(
     expenses: Sequence[ExpenseRecord],
     period: Period,
     grouping: Grouping | None,
     dates: DateRange = UNBOUNDED,
+    categories: CategoryFilter | None = None,
 ) -> list[TotalRecord]:
     """Every period from the oldest expense to the newest, oldest first."""
     sums: defaultdict[tuple[str, str, str | None], Decimal] = defaultdict(
@@ -77,7 +99,7 @@ def aggregate(
         key = (
             _period_key(record.expense_date, period),
             record.currency,
-            record.category if grouping is Grouping.CATEGORY else None,
+            _group(record.category, grouping, categories),
         )
         sums[key] += record.amount
     grouped: defaultdict[str, list[tuple[str, str | None, Decimal]]] = defaultdict(list)

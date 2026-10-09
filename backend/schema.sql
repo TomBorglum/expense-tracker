@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS expense (
     -- An RFC 3339 date-time in the file, the day of it here, so ordering is a date
     -- comparison.
     expense_date           date           NOT NULL,
+    -- A colon-separated path from the outermost category inward: Groceries, or
+    -- Settlement:Alice. The loader checks the same two things, so these are the
+    -- backstop.
     category               text           NOT NULL,
     -- The free-text memo. NOT NULL but allowed to be empty.
     details                text           NOT NULL,
@@ -56,7 +59,10 @@ CREATE TABLE IF NOT EXISTS expense (
     -- this refuses -0.00 as well.
     CONSTRAINT expense_amount_not_zero      CHECK (amount <> 0),
     CONSTRAINT expense_currency_is_iso_4217 CHECK (currency ~ '^[A-Z]{3}$'),
-    CONSTRAINT expense_category_not_blank   CHECK (category <> '')
+    CONSTRAINT expense_category_not_blank   CHECK (category <> ''),
+    -- One or more levels, none of them empty - so no level can hold the separator, and
+    -- splitting a path or joining one back up is lossless and needs no escaping.
+    CONSTRAINT expense_category_is_a_path   CHECK (category ~ '^[^:]+(:[^:]+)*$')
 );
 
 -- Exactly the order GET /api/expenses asks for, tiebreak included.

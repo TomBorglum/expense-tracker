@@ -256,6 +256,34 @@ def test_a_blank_category_is_refused() -> None:
         _ = parse("x.yaml", body)
 
 
+@pytest.mark.parametrize(
+    "value", [b"'Food:'", b"':Food'", b"'Food::Drink'", b"':'", b"'Food: :Drink'"]
+)
+def test_a_category_that_is_not_a_path_is_refused(value: bytes) -> None:
+    """Refused here and not only by the CHECK: main() catches ExpenseFileError and
+    nothing else, so the constraint alone would surface as an IntegrityError traceback
+    naming no file. `Food: :Drink` gets here because each level is stripped first."""
+    body = _bent(b"category", b"      category: " + value + b"\n")
+    with pytest.raises(ExpenseFileError, match="category is not a path"):
+        _ = parse("x.yaml", body)
+
+
+def test_a_category_path_is_stripped_level_by_level() -> None:
+    """Not just the whole field: a level keeping its inner spaces would store a node
+    that renders identically to the real one and never merges with it."""
+    body = _bent(b"category", b"      category: ' Settlement : Alice '\n")
+    assert [record.category for record in parse("x.yaml", body)] == ["Settlement:Alice"]
+
+
+def test_a_category_path_of_several_levels_is_kept_whole() -> None:
+    """The negative control for the refusals above, and the shape the feature exists
+    for: the path is stored as written, one column, no second table."""
+    body = _bent(b"category", b"      category: Settlement:Alice:Spain\n")
+    assert [record.category for record in parse("x.yaml", body)] == [
+        "Settlement:Alice:Spain"
+    ]
+
+
 def test_invalid_utf8_is_refused() -> None:
     body = _bent(b"details", b"      details: '\xff\xfe'\n")
     with pytest.raises(ExpenseFileError, match="not valid YAML"):

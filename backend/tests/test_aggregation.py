@@ -12,6 +12,7 @@ from expense_tracker.aggregation import (
     parse_grouping,
     parse_period,
 )
+from expense_tracker.category_filter import CategoryFilter
 from expense_tracker.date_range import DateRange
 from expense_tracker.expense_repository import ExpenseRecord
 
@@ -419,3 +420,137 @@ def test_a_list_of_groupings_is_refused_rather_than_split() -> None:
 
 def test_the_category_grouping_is_read_from_its_own_spelling() -> None:
     assert parse_grouping("category") is Grouping.CATEGORY
+
+
+_MARCH = datetime.date(2026, 3, 4)
+_ALSO_MARCH = datetime.date(2026, 3, 9)
+
+
+def _settlements() -> list[ExpenseRecord]:
+    """Alice 100 and her Spain trip 50 under Settlement:Alice, Bob 25 under Settlement,
+    and a depth-1 category beside the subtree."""
+    return [
+        _expense("100.00", _MARCH, category="Settlement:Alice"),
+        _expense("50.00", _ALSO_MARCH, category="Settlement:Alice:Spain"),
+        _expense("25.00", _ALSO_MARCH, category="Settlement:Bob"),
+        _expense("10.00", _ALSO_MARCH, category="Groceries"),
+    ]
+
+
+def test_a_depth_one_category_is_still_grouped_under_itself() -> None:
+    """The identity the backward-compatibility claim rests on: over categories that
+    carry no path, grouping on the top level is grouping on the category."""
+    totals = aggregate(
+        [_expense("100.00", _MARCH, category="Housing")],
+        Period.MONTH,
+        Grouping.CATEGORY,
+    )
+    assert [(total.amount, total.category) for total in totals] == [
+        (Decimal("100.00"), "Housing")
+    ]
+
+
+def test_paths_with_no_filter_are_grouped_under_their_top_level() -> None:
+    """Nothing selected is the whole tree rolled up to its outermost level, which is
+    what the totals page shows before anyone picks a category."""
+    totals = aggregate(_settlements(), Period.MONTH, Grouping.CATEGORY)
+    assert [(total.amount, total.category) for total in totals] == [
+        (Decimal("10.00"), "Groceries"),
+        (Decimal("175.00"), "Settlement"),
+    ]
+
+
+def test_the_selected_path_is_the_grain() -> None:
+    """Selecting a node groups its whole subtree under it, descendants included."""
+    totals = aggregate(
+        _settlements(),
+        Period.MONTH,
+        Grouping.CATEGORY,
+        categories=CategoryFilter(frozenset({"Settlement"})),
+    )
+    assert [(total.amount, total.category) for total in totals] == [
+        (Decimal("10.00"), "Groceries"),
+        (Decimal("175.00"), "Settlement"),
+    ]
+
+
+def test_a_selected_child_is_split_out_of_its_selected_parent() -> None:
+    """The deepest selected ancestor wins, so the groups partition the rows: Alice and
+    her Spain trip leave Settlement holding Bob alone, and the two add up to what
+    Settlement held on its own above."""
+    totals = aggregate(
+        _settlements(),
+        Period.MONTH,
+        Grouping.CATEGORY,
+        categories=CategoryFilter(frozenset({"Settlement", "Settlement:Alice"})),
+    )
+    assert [(total.amount, total.category) for total in totals] == [
+        (Decimal("10.00"), "Groceries"),
+        (Decimal("25.00"), "Settlement"),
+        (Decimal("150.00"), "Settlement:Alice"),
+    ]
+    assert sum(total.amount for total in totals if total.amount is not None) == Decimal(
+        "185.00"
+    )
+
+
+def test_two_selected_siblings_stay_two_groups() -> None:
+    totals = aggregate(
+        _settlements(),
+        Period.MONTH,
+        Grouping.CATEGORY,
+        categories=CategoryFilter(frozenset({"Settlement:Alice", "Settlement:Bob"})),
+    )
+    assert [(total.amount, total.category) for total in totals] == [
+        (Decimal("10.00"), "Groceries"),
+        (Decimal("150.00"), "Settlement:Alice"),
+        (Decimal("25.00"), "Settlement:Bob"),
+    ]
+
+
+def test_a_record_under_nothing_selected_falls_back_to_its_top_level() -> None:
+    """Unreachable through the real repository, whose clause only returns rows under a
+    selected path - but the HTTP suite's fake records the filter and applies nothing,
+    the same case the period clamp is written for. Bob and Groceries are grouped under
+    their own top level rather than dropped or raised over."""
+    totals = aggregate(
+        _settlements(),
+        Period.MONTH,
+        Grouping.CATEGORY,
+        categories=CategoryFilter(frozenset({"Settlement:Alice"})),
+    )
+    assert [(total.amount, total.category) for total in totals] == [
+        (Decimal("10.00"), "Groceries"),
+        (Decimal("25.00"), "Settlement"),
+        (Decimal("150.00"), "Settlement:Alice"),
+    ]
+
+
+def test_an_ungrouped_request_names_no_category_whatever_was_selected() -> None:
+    """The grain comes from the selection only when ?group_by=category asked for one."""
+    totals = aggregate(
+        _settlements(),
+        Period.MONTH,
+        None,
+        categories=CategoryFilter(frozenset({"Settlement"})),
+    )
+    assert [(total.amount, total.category) for total in totals] == [
+        (Decimal("185.00"), None)
+    ]
+
+
+def test_the_currency_stays_in_the_key_whatever_the_grain() -> None:
+    """DKK added to EUR means nothing, which no choice of grouping path changes."""
+    totals = aggregate(
+        [
+            _expense("100.00", _MARCH, category="Settlement:Alice"),
+            _expense("10.00", _MARCH, currency="EUR", category="Settlement:Bob"),
+        ],
+        Period.MONTH,
+        Grouping.CATEGORY,
+        categories=CategoryFilter(frozenset({"Settlement"})),
+    )
+    assert [(total.amount, total.currency, total.category) for total in totals] == [
+        (Decimal("100.00"), "DKK", "Settlement"),
+        (Decimal("10.00"), "EUR", "Settlement"),
+    ]

@@ -10,12 +10,9 @@ otherwise correct change, or nothing does; each bullet says which.
 - **The backend serves no frontend and publishes no OpenAPI.** The whole surface is
   `GET /api/expenses`, `/api/expenses/totals`, `/api/expenses/categories` and
   `/api/currencies`: no `/` route, no `StaticFiles` mount, no build artifact, and
-  `docs_url`, `redoc_url` and `openapi_url` stay `None`. Pinned by
-  `test_root_is_not_served` and its three surface neighbours.
-- **All four endpoints are read-only over HTTP.** Rows arrive through
-  `backend-load-expenses` and `backend-load-currencies` and nowhere else, so there is no
-  POST, PUT or DELETE, and the tables are a strictly checked view of the files those read.
-  Nothing checks this.
+  `docs_url`, `redoc_url` and `openapi_url` stay `None`. All four are **read-only** -
+  rows arrive through the two loaders and nowhere else, so there is no POST, PUT or
+  DELETE. Pinned by `test_root_is_not_served` and its three surface neighbours.
 - **CORS is wildcard with `allow_credentials=False`.** The spec forbids the pair, so the
   day the API grows cookies or an `Authorization` header the wildcard has to become a real
   origin list. It is registered outermost, after the security-headers middleware, so it
@@ -62,17 +59,15 @@ otherwise correct change, or nothing does; each bullet says which.
 ## The loaders
 
 - **The two loaders differ on reloading, and that difference is the design.**
-  `expense_loader` is append-only: the `loaded_expense_file` ledger skips a file whose
-  sha256 matches and *refuses* one that changed, two identical expense records being two
-  real purchases. `currency_loader` has no ledger and replaces the whole `currency_rate`
-  table every run, a rate being a current fact rather than an event, so editing `rates.tsv`
-  and reloading is supported. It parses every file before deleting anything, in one
-  transaction. Pinned by `test_an_edited_rate_replaces_the_old_one`.
-- **A `<bank>-YYYY-MM.yaml` month file is rewritten in place upstream, so the rebuild is the
-  normal path.** A later export adds records to the month they fall in, which the refusal
-  above catches as an edit; a loader replacing a changed file's rows is what it exists
-  instead of. A date is read as written, the offset never applied, so a row keeps the date
-  its bank's own statement shows. `test_an_edited_file_is_refused_by_name_and_load_date`.
+  `expense_loader` is append-only: its ledger skips a file whose sha256 matches and
+  *refuses* one that changed. `currency_loader` has no ledger and replaces the whole
+  `currency_rate` table every run, a rate being a current fact rather than an event, so
+  editing `rates.tsv` and reloading is supported. It parses every file before deleting
+  anything, in one transaction. Pinned by `test_an_edited_rate_replaces_the_old_one`.
+- **A month file is rewritten in place upstream, so the rebuild is the normal path.** A
+  later export adds records to the month they fall in, which the refusal above catches as
+  an edit; a loader replacing a changed file's rows is what it exists instead of.
+  `test_an_edited_file_is_refused_by_name_and_load_date`.
 
 ## Conversion
 
@@ -86,10 +81,8 @@ otherwise correct change, or nothing does; each bullet says which.
 - **The identity is the one thing it does not refuse:** `record.currency == target` returns
   the record before any lookup, which is why no `DKK DKK 1.000000` row exists. Pinned by
   `test_an_expense_already_in_the_target_currency_is_untouched`.
-- **Arithmetic is `Decimal` throughout**,
-  `quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)` - spelled out because `Decimal`
-  rounds half to **even** by default. Pinned by
-  `test_a_half_cent_rounds_up_rather_than_to_even`.
+- **`ROUND_HALF_UP` is spelled out because `Decimal` rounds half to even by default.**
+  Pinned by `test_a_half_cent_rounds_up_rather_than_to_even`.
 
 ## Aggregation
 
@@ -98,6 +91,13 @@ otherwise correct change, or nothing does; each bullet says which.
   because DKK added to EUR means nothing - and takes the same four query parameters. It
   adds **no repository method**: `list_expenses` is what it reads. Pinned by
   `test_two_currencies_in_one_month_stay_two_totals`.
+- **That third part's grain comes from `?category=`; `?group_by=` is only a toggle.** A
+  row sums under the **deepest** selected path it sits under, so the groups partition the
+  rows rather than counting one under an ancestor and a descendant both; nothing selected
+  sums under its top level, which for a depth-1 category is the category. **No level
+  parameter here** - depth belongs to the category list. The top-level fall-back keeps
+  `_group` total against the fake that filters nothing, like `_clamp` below.
+  `test_a_selected_child_is_split_out_of_its_selected_parent`.
 - **The conversion runs before the summing, and the order is the point.**
   `convert_expenses` quantizes to cents, so converting then adding differs by cents from
   adding then converting, and only the first makes a total equal what a reader adds up from
@@ -128,73 +128,71 @@ otherwise correct change, or nothing does; each bullet says which.
 
 - **`?from_date=`, `?to_date=` and `?category=` filter in SQL, not in the route.** The
   `DateRange` and `CategoryFilter` go to `list_expenses`, which adds one `>=`, one `<=`
-  and one `IN` clause, each only when its parameter is set. Both bounds are **inclusive**
-  and open on their own; `None` adds no clause, so an absent parameter and an empty one
-  are not the same request. Pinned by the range and category tests in the postgres suite.
-- **Both types validate in `__post_init__`, so the repository does not.** `DateRange`
-  refuses `start > end` and `CategoryFilter` a blank name at **every** construction, so
-  `list_expenses` takes the types and stops trusting its caller; a second check there
-  gives one rule two homes. `test_the_type_refuses_an_inverted_range_however_it_is_built`.
-- **`\A\d{4}-\d{2}-\d{2}\Z` is the accepted date form, and the only one.**
+  and one OR'd prefix clause per name - `= path OR LIKE path || ':%'`, with `autoescape`
+  because a level may hold `%` or `_` - each only when its parameter is set. Both bounds
+  are **inclusive** and open on their own; `None` adds no clause, so an absent parameter
+  and an empty one are not the same request. Pinned by the postgres suite's range and
+  category tests.
+- **All three types validate in `__post_init__`, so the repository does not.** `DateRange`
+  refuses `start > end`, `LevelRange` a level outside `1..MAX_LEVEL` as well, and
+  `CategoryFilter` a blank name, at **every** construction, so `list_expenses` takes the
+  types and stops trusting its caller; a second check there gives one rule two homes.
+  `test_the_type_refuses_an_inverted_range_however_it_is_built`.
+- **`date_range._DATE` is the accepted date form, and the only one.**
   `date.fromisoformat` also takes `20260102` and `2026-W01-1`, which this API never sends,
-  so the regex refuses them first, as `validate_currency_code` refuses rather than
+  so the pattern refuses them first, as `validate_currency_code` refuses rather than
   uppercases. Both bounds are read before either is compared, so an unreadable value is
   refused as itself: `test_a_malformed_bound_is_refused_before_the_two_are_compared`.
-- **A category value is stripped, then refused if blank - the loader's two steps - and
-  never case-folded.** A stored category is what the loader kept after `strip()`, so the
-  filter meets it on those terms; folding case would match rows the file does not hold.
-  Pinned by `test_a_value_is_stripped_the_way_the_loader_strips_a_field` and its case twin.
-- **`GET /api/expenses/categories` is `list_categories`, `DISTINCT` and `ORDER BY` in
+- **A category is a `:`-separated path, and a value matches a node and every path below
+  it.** `category_filter.SEPARATOR` is its only declaration in Python; the CHECK in
+  `schema.sql` is what stops a level holding it, so nothing needs escaping. Matching is by
+  **level, never character** - `Foodstuffs` is not under `Food`, hence the clause's two
+  legs - and over depth-1 data it is plain equality, so every request written before paths
+  still means what it meant. Each **level** is stripped, not each field, or
+  `Settlement : Alice` becomes a node that renders identically and never merges; a
+  malformed path is not refused but matches nothing, as an unknown category does. Pinned
+  by `test_a_category_matches_its_descendants_as_well` and the strip and case twins.
+- **`GET /api/expenses/categories` is `list_categories`, deduplicated and ordered in
   SQL, never `list_expenses` deduplicated in the route.** Totals skipped a repository
   method because conversion had to precede the sum; nothing here converts, and pulling
   every row for one column is what this prevents. The filter is **not** checked against
   it. `test_categories_endpoint_preserves_the_repository_order`.
+- **`?from_level=`/`?to_level=` are one `SELECT` per level, `UNION`ed**, each truncating
+  `category` and guarded by `array_length >= depth` - what makes a level exact, a slice
+  past the end returning the array. Every leg needs its own `DISTINCT`, because `union()`
+  over one select emits no `UNION` and one level is the default. An ancestor nothing is
+  filed under **is** listed, which is what makes it selectable, and `MAX_LEVEL` bounds the
+  statement. `test_a_node_with_no_expense_of_its_own_is_still_listed`.
 
 ## Database and configuration
 
-- **The HTTP suite never touches PostgreSQL.** `tests/conftest.py` overrides both
-  repository dependencies with fakes, and a new test hitting an endpoint takes the `client`
-  fixture. Only the two `*_postgres.py` modules, behind the registered `postgres` marker,
-  connect: they skip when no server answers, **fail** under `CI=true` so a database that
-  did not come up cannot go green, and TRUNCATE what they read; the loaders put it back.
-- **`schema.sql` is the only DDL.** No Alembic, no `Base.metadata.create_all`, and every
-  statement stays idempotent because `db-init` re-runs against live clusters. New tables
-  use `GENERATED ALWAYS AS IDENTITY`, not `serial`, and `IF NOT EXISTS` never alters, so
-  changing a table means `backend-db-reset` and a reload. Nothing checks this.
+- **The HTTP suite never touches PostgreSQL.** `conftest.py` fakes both repositories, so
+  a new test hitting an endpoint takes the `client` fixture; only the two `*_postgres.py`
+  modules connect, on the terms
+  [`README.md`](../README.md#schema-and-access) states, and they TRUNCATE what they read.
+- **`schema.sql` is the only DDL, and `IF NOT EXISTS` never alters.** Changing a table -
+  a constraint included - means `backend-db-reset` and a reload, because a live cluster
+  skips the whole statement. The rest of the rule is in
+  [`README.md`](../README.md#schema-and-access). Nothing checks this.
 - **The app reads the environment; loading `.env` is a launcher's job.** `config.py` opens
-  no file and resolves no path: no `__file__`, no `env_file=`, no `parents[N]`.
-  Reintroducing dotenv reading is the regression this prevents: a wheel-installed package
-  has no project directory to derive a path from. There is **no `.env.local` layer**, a
-  dotenv **overwrites** the environment so `export PGPORT=...` is not an override, and
-  `[tool.poe]` declares **no `envfile`**. Pinned by
+  no file and resolves no path: no `__file__`, no `env_file=`, no `parents[N]`, and
+  `[tool.poe]` declares no `envfile`. A wheel-installed package has no project directory
+  to derive one from, which is the regression this prevents. No literal DSN and no
+  f-string either; what `.env` and `DATABASE_URL` each own is in
+  [`README.md`](../README.md#configuration). Pinned by
   `test_missing_database_settings_are_refused_at_startup`.
-- **CI is a cross-repo dependency, and that is the price of the single loader.**
-  `setup-direnv` activates `.envrc` and forwards the result to `$GITHUB_ENV`, which every
-  later `pixi run` depends on. A `PGPORT` failure in CI means checking that pin in
-  `.github/workflows/ci.yml` before anything in this repo.
-- **`.env` is the single source of the connection settings**, and `pixi.toml` declares no
-  `[activation.env]` by design. **The DSN is stored nowhere**: `DatabaseSettings.dsn`
-  builds it with `sqlalchemy.URL`, which stops the port being written into a URL string
-  twice and escapes parts containing `@`, `:` or `/`. `DATABASE_URL` overrides the four
-  wholesale. Do not reintroduce a literal DSN, or f-string interpolation.
-- **The dev server's port is `UVICORN_PORT` in `.env`, and `dev` passes no `--port`.**
-  uvicorn's CLI carries `auto_envvar_prefix="UVICORN"`, so uvicorn resolves the flag
-  itself. It takes **no `${UVICORN_PORT:?}` guard**, unlike the db tasks, because a lost
-  name makes uvicorn *bind* 8000 rather than silently *reach* the wrong server.
-  `test_a_non_numeric_port_is_refused`.
-- **Nothing here falls back to port 5432.** `config.py` refuses to start without its
-  settings (`_needs_a_source`), and `db-create` and `db-init` open with a
-  `: "${PGPORT:?...}"` guard: initdb, psql and createdb each default to 5432 and the OS
+- **Any new task reaching a server without an explicit `--port` takes the
+  `: "${PGPORT:?...}"` guard.** initdb, psql and createdb each default to 5432 and the OS
   username, so a task that lost those names would reach whatever answers there and report
-  success. Any new task reaching a server without an explicit `--port` takes the guard;
-  the `pg_ctl` tasks read the port from `.pgdata/postgresql.conf`.
+  success. `dev` is the exception and needs none: a lost `UVICORN_PORT` makes uvicorn
+  *bind* 8000 rather than silently *reach* the wrong server.
+  `test_a_non_numeric_port_is_refused`.
 
 ## Quality gates
 
 - **basedpyright's `recommended` mode sets `failOnWarnings`**, which is what makes a
   warning fail the build like an error. It and ruff are configured in `pyproject.toml` only.
-- **Module layering is import-linter**, run by `backend-lint` as the second half of that
-  task; `lint-fix` is ruff alone, because where a new module belongs in the layer order is
-  a design decision, not a mechanical edit. In a layer list `|` joins siblings that may
-  **not** import each other and `:` joins siblings that **may** - easy to transpose, and
-  only one enforces anything. ruff builds no cross-module graph.
+- **In a layer list, `|` joins siblings that may *not* import each other and `:` joins
+  siblings that *may*** - easy to transpose, and only one enforces anything. `lint-fix`
+  is ruff alone: where a new module belongs in the order is a design decision rather than
+  a mechanical edit, and ruff builds no cross-module graph.

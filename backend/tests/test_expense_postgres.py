@@ -95,7 +95,7 @@ async def _ledger() -> list[tuple[str, str, int]]:
         await engine.dispose()
 
 
-async def _insert_expense(amount: Decimal) -> None:
+async def _insert_expense(amount: Decimal, category: str = "Car") -> None:
     """One expense inserted past the loader, so a CHECK answers for itself."""
     engine = create_async_engine(database_url())
     try:
@@ -113,7 +113,7 @@ async def _insert_expense(amount: Decimal) -> None:
                     amount=amount,
                     currency="DKK",
                     expense_date=datetime.date(2026, 1, 2),
-                    category="Car",
+                    category=category,
                     details="Nothing",
                 )
             )
@@ -433,6 +433,21 @@ def _load_three_categories(directory: Path) -> None:
     _ = asyncio.run(load_directory(directory, database_url()))
 
 
+def _load_a_tree(directory: Path) -> None:
+    """A three-level subtree beside a depth-1 category, and a name that merely starts
+    with the subtree's own - so a prefix of levels is told from one of characters."""
+    _ = _write(
+        directory,
+        "01.yaml",
+        "100.00\tDKK\t05/01/2026\tGroceries\tFood",
+        "200.00\tDKK\t06/01/2026\tSettlement:Alice\tDinner",
+        "300.00\tDKK\t07/01/2026\tSettlement:Alice:Spain\tHotel",
+        "400.00\tDKK\t08/01/2026\tSettlement:Bob\tTaxi",
+        "500.00\tDKK\t09/01/2026\tSettlementFund\tShares",
+    )
+    _ = asyncio.run(load_directory(directory, database_url()))
+
+
 def test_a_category_returns_only_the_expenses_in_it(tmp_path: Path) -> None:
     """The IN clause itself, which the HTTP suite's fake cannot show: it records the
     filter and filters nothing."""
@@ -497,6 +512,216 @@ def test_a_category_narrows_what_the_totals_are_taken_over(tmp_path: Path) -> No
             amount="611.23",
             currency="DKK",
         )
+    ]
+
+
+def test_a_category_matches_its_descendants_as_well(tmp_path: Path) -> None:
+    """The clause the whole feature turns on, and the one thing the HTTP suite cannot
+    show. SettlementFund is the control: it shares every character of the prefix and
+    is still not under Settlement, because the match is by level."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"category": "Settlement"})
+
+    assert response.status_code == 200
+    body = _EXPENSES.validate_json(response.content).items
+    assert [(row.date, row.category) for row in body] == [
+        ("2026-01-06", "Settlement:Alice"),
+        ("2026-01-07", "Settlement:Alice:Spain"),
+        ("2026-01-08", "Settlement:Bob"),
+    ]
+
+
+def test_a_depth_one_category_still_matches_exactly_what_it_did(
+    tmp_path: Path,
+) -> None:
+    """Prefix matching over a category that carries no path is plain equality, which
+    is why every request written before paths existed still means what it meant."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"category": "Groceries"})
+
+    body = _EXPENSES.validate_json(response.content).items
+    assert [(row.date, row.category) for row in body] == [("2026-01-05", "Groceries")]
+
+
+def test_a_mid_level_node_matches_itself_and_everything_below(tmp_path: Path) -> None:
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"category": "Settlement:Alice"})
+
+    body = _EXPENSES.validate_json(response.content).items
+    assert [row.category for row in body] == [
+        "Settlement:Alice",
+        "Settlement:Alice:Spain",
+    ]
+
+
+def test_a_leaf_matches_only_itself(tmp_path: Path) -> None:
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses", params={"category": "Settlement:Alice:Spain"}
+        )
+
+    body = _EXPENSES.validate_json(response.content).items
+    assert [row.category for row in body] == ["Settlement:Alice:Spain"]
+
+
+def test_a_node_and_its_own_child_return_each_row_once(tmp_path: Path) -> None:
+    """The names are OR'd into one WHERE, so overlapping subtrees cannot duplicate a
+    row - a property someone might later "fix" with a DISTINCT that is not needed."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses",
+            params=[("category", "Settlement"), ("category", "Settlement:Alice")],
+        )
+
+    body = _EXPENSES.validate_json(response.content).items
+    assert [row.category for row in body] == [
+        "Settlement:Alice",
+        "Settlement:Alice:Spain",
+        "Settlement:Bob",
+    ]
+
+
+def test_a_wildcard_in_a_category_name_is_matched_literally(tmp_path: Path) -> None:
+    """autoescape=True, which nothing else in the suite reaches. Without it the LIKE
+    reads the % in the name as a wildcard, and 1005:Fees - which starts with 100 and
+    has a separator later - would come back as though it sat under 100%."""
+    _ = _write(
+        tmp_path,
+        "01.yaml",
+        "100.00\tDKK\t05/01/2026\t100%\tOne",
+        "200.00\tDKK\t06/01/2026\t100%:Fees\tTwo",
+        "300.00\tDKK\t07/01/2026\t1005:Fees\tThree",
+    )
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"category": "100%"})
+
+    body = _EXPENSES.validate_json(response.content).items
+    assert [row.category for row in body] == ["100%", "100%:Fees"]
+
+
+def test_a_node_with_no_expense_of_its_own_is_still_listed(tmp_path: Path) -> None:
+    """Settlement is where nobody filed anything directly, so only the per-level
+    truncation puts it in the list - and without it the node could not be picked."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/categories", params={"to_level": "2"})
+
+    body = _CATEGORIES.validate_json(response.content).items
+    assert [(row.category, row.name, row.parent) for row in body] == [
+        ("Groceries", "Groceries", None),
+        ("Settlement", "Settlement", None),
+        ("Settlement:Alice", "Alice", "Settlement"),
+        ("Settlement:Bob", "Bob", "Settlement"),
+        ("SettlementFund", "SettlementFund", None),
+    ]
+
+
+def test_a_bare_categories_request_lists_the_top_level_only(tmp_path: Path) -> None:
+    """What a client that never heard of the parameters gets, over data that has
+    depth: the outermost level of every path, once each."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/categories")
+
+    body = _CATEGORIES.validate_json(response.content).items
+    assert [row.category for row in body] == [
+        "Groceries",
+        "Settlement",
+        "SettlementFund",
+    ]
+
+
+def test_from_level_two_lists_exactly_the_second_level(tmp_path: Path) -> None:
+    """One generation: no depth-1 name and nothing from the third level. Pins the
+    array_length guard - without it, a slice past the end returns the whole array and
+    Groceries would be listed here as well."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/categories", params={"from_level": "2"})
+
+    body = _CATEGORIES.validate_json(response.content).items
+    assert [row.category for row in body] == ["Settlement:Alice", "Settlement:Bob"]
+
+
+def test_a_level_range_lists_every_level_in_it_once_each(tmp_path: Path) -> None:
+    """Settlement is derived at levels 1, 2 and 3 alike, so this is also what proves
+    the UNION deduplicates across the legs. The order is byte order, the cluster being
+    initdb --locale=C: ':' is 0x3A and sorts before every letter, which is why the
+    whole Settlement subtree precedes SettlementFund."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/categories", params={"to_level": "3"})
+
+    body = _CATEGORIES.validate_json(response.content).items
+    assert [row.category for row in body] == [
+        "Groceries",
+        "Settlement",
+        "Settlement:Alice",
+        "Settlement:Alice:Spain",
+        "Settlement:Bob",
+        "SettlementFund",
+    ]
+
+
+def test_a_level_nobody_goes_that_deep_is_still_an_empty_list(tmp_path: Path) -> None:
+    """The empty-table rule again: a level with no category at it is an answer."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/categories", params={"from_level": "4"})
+
+    assert response.status_code == 200
+    assert _CATEGORIES.validate_json(response.content).items == []
+
+
+def test_totals_group_on_the_deepest_selected_node(tmp_path: Path) -> None:
+    """The partition claim end to end, through the real WHERE clause: Alice's subtree
+    sums to 500 under her own node, Settlement keeps Bob's 400, and the two add up to
+    the 900 the same request returns when it is not grouped at all."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        grouped = client.get(
+            "/api/expenses/totals",
+            params=[
+                ("period", "month"),
+                ("group_by", "category"),
+                ("category", "Settlement"),
+                ("category", "Settlement:Alice"),
+            ],
+        )
+        ungrouped = client.get(
+            "/api/expenses/totals",
+            params=[
+                ("period", "month"),
+                ("category", "Settlement"),
+                ("category", "Settlement:Alice"),
+            ],
+        )
+
+    rows = _TOTALS.validate_json(grouped.content).items
+    assert [(row.amount, row.category) for row in rows] == [
+        ("400.00", "Settlement"),
+        ("500.00", "Settlement:Alice"),
+    ]
+    assert [row.amount for row in _TOTALS.validate_json(ungrouped.content).items] == [
+        "900.00"
     ]
 
 
@@ -683,6 +908,23 @@ def test_the_database_refuses_a_zero_amount() -> None:
     pending = _insert_expense(Decimal("0.00"))
     with pytest.raises(SQLAlchemyError, match="expense_amount_not_zero"):
         asyncio.run(pending)
+
+
+@pytest.mark.parametrize("category", [":", "Food:", ":Food", "Food::Drink"])
+def test_the_database_refuses_a_category_that_is_not_a_path(category: str) -> None:
+    """expense_category_is_a_path, reached past the loader that refuses it first - the
+    backstop schema.sql promises, and the only thing that exercises it."""
+    pending = _insert_expense(Decimal("1.00"), category)
+    with pytest.raises(SQLAlchemyError, match="expense_category_is_a_path"):
+        asyncio.run(pending)
+
+
+def test_a_path_of_several_levels_passes_the_same_constraint() -> None:
+    """The negative control: depth is what the column is for, so the refusals above
+    refuse for the reason they name rather than because any colon is unwelcome."""
+    asyncio.run(_insert_expense(Decimal("1.00"), "Settlement:Alice:Spain"))
+
+    assert [row[3] for row in asyncio.run(_expenses())] == ["Settlement:Alice:Spain"]
 
 
 def test_a_nonzero_amount_passes_the_same_constraint() -> None:

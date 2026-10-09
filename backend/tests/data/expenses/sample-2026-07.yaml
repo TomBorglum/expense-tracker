@@ -48,7 +48,7 @@ records:
       action: import
       amount: '890.00'
       currency: DKK
-      category: Transport
+      category: Transport:Flight
       details: Flight ticket
   - record: '30-07-2026;-630,70;"FUEL";'
     extracted:

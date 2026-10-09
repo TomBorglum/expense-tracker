@@ -6,14 +6,29 @@ from collections.abc import Sequence
 from decimal import Decimal
 from typing import NamedTuple, override
 
-from sqlalchemy import Date, DateTime, ForeignKey, Identity, Numeric, Text, select
+from sqlalchemy import (
+    ARRAY,
+    Date,
+    DateTime,
+    ForeignKey,
+    Identity,
+    Integer,
+    Numeric,
+    Text,
+    func,
+    or_,
+    select,
+    union,
+)
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import ColumnElement, Select
 
-from .category_filter import CategoryFilter
+from .category_filter import SEPARATOR, CategoryFilter
 from .date_range import UNBOUNDED, DateRange
 from .db import Base
+from .level_range import TOP_LEVEL, LevelRange
 
 
 class ExpensesUnavailableError(Exception):
@@ -64,6 +79,35 @@ class ExpenseRecord(NamedTuple):
     details: str
 
 
+def _under(path: str) -> ColumnElement[bool]:
+    """Matches the path itself and every path below it."""
+    # The separator in the LIKE is what makes this a prefix of levels rather than one
+    # of characters: without it, Food would match Foodstuffs. autoescape because a level
+    # may hold % or _, which the path CHECK does not forbid and a bare LIKE would read
+    # as a wildcard.
+    return (Expense.category == path) | Expense.category.startswith(
+        path + SEPARATOR, autoescape=True
+    )
+
+
+def _at_level(depth: int) -> Select[tuple[str]]:
+    """Every stored category cut to `depth` levels, over the rows that go that deep."""
+    levels = func.string_to_array(Expense.category, SEPARATOR, type_=ARRAY(Text))
+    return (
+        select(
+            func.array_to_string(levels[1:depth], SEPARATOR, type_=Text).label(
+                "category"
+            )
+        )
+        # What makes a level exact: an array slice past the end returns the array, so
+        # without this a depth-1 row would be listed again at level 2.
+        .where(func.array_length(levels, 1, type_=Integer) >= depth)
+        # Not redundant beside the UNION below: union() over a single select compiles to
+        # a bare SELECT, and one level is what the default request asks for.
+        .distinct()
+    )
+
+
 class ExpenseRepository(ABC):
     """The contract a caller depends on in order to read expenses."""
 
@@ -73,7 +117,9 @@ class ExpenseRepository(ABC):
     ) -> Sequence[ExpenseRecord]: ...
 
     @abstractmethod
-    async def list_categories(self) -> Sequence[str]: ...
+    async def list_categories(
+        self, levels: LevelRange = TOP_LEVEL
+    ) -> Sequence[str]: ...
 
 
 class PostgresExpenseRepository(ExpenseRepository):
@@ -104,8 +150,13 @@ class PostgresExpenseRepository(ExpenseRepository):
             statement = statement.where(Expense.expense_date <= dates.end)
         # sorted() for a deterministic clause; that no name is blank is the type's
         # guarantee, like the range's ordering above.
+        # A name matches itself and every path below it, which over a corpus of depth-1
+        # categories is plain equality - so this reads the same as the IN clause it
+        # replaces until a path actually has levels.
         if categories is not None:
-            statement = statement.where(Expense.category.in_(sorted(categories.names)))
+            statement = statement.where(
+                or_(*(_under(name) for name in sorted(categories.names)))
+            )
         try:
             rows = await self._session.execute(
                 statement.order_by(Expense.expense_date, Expense.id)
@@ -118,11 +169,17 @@ class PostgresExpenseRepository(ExpenseRepository):
         return [ExpenseRecord(*row) for row in rows.all()]
 
     @override
-    async def list_categories(self) -> Sequence[str]:
-        """Every category with an expense in it, once each, in name order."""
-        statement = select(Expense.category).distinct().order_by(Expense.category)
+    async def list_categories(self, levels: LevelRange = TOP_LEVEL) -> Sequence[str]:
+        """Every category path at the levels given, once each, in path order.
+
+        A path is listed whether or not an expense sits at exactly it, so an ancestor
+        nothing is filed directly under is still a node a client can ask for.
+        """
+        paths = union(*(_at_level(depth) for depth in levels.levels))
         try:
-            names = await self._session.scalars(statement)
+            names = await self._session.scalars(
+                paths.order_by(paths.selected_columns.category)
+            )
         except (SQLAlchemyError, OSError) as exc:
             raise ExpensesUnavailableError("category query failed") from exc
         return names.all()
