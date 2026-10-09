@@ -9,7 +9,7 @@ from enum import StrEnum
 from typing import NamedTuple
 
 from .category_filter import CategoryFilter, deepest_ancestor, top_level
-from .date_range import UNBOUNDED, DateRange
+from .date_range import DateRange
 from .expense_repository import ExpenseRecord
 
 
@@ -86,8 +86,11 @@ def aggregate(
     expenses: Sequence[ExpenseRecord],
     period: Period,
     grouping: Grouping | None,
-    dates: DateRange = UNBOUNDED,
-    categories: CategoryFilter | None = None,
+    # Neither is defaulted, for the reason grouping is not: both change what a row means
+    # rather than only which rows there are, and a grain nobody chose is an assumption
+    # inside a sum. UNBOUNDED and None are what a caller asking for neither passes.
+    dates: DateRange,
+    categories: CategoryFilter | None,
 ) -> list[TotalRecord]:
     """Every period from the oldest expense to the newest, oldest first."""
     sums: defaultdict[tuple[str, str, str | None], Decimal] = defaultdict(
