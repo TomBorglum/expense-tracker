@@ -3,12 +3,12 @@
 import re
 from dataclasses import dataclass
 
-# The pattern rather than int() alone: int() also takes "+2", " 2 " and "1_0". [0-9]
-# rather than \d, which is Unicode-aware and would take an Arabic-Indic digit int() then
+# The pattern rather than int() alone: int() also takes "+2", " 2 " and "1_0". re.ASCII
+# because \d is otherwise Unicode-aware and would take an Arabic-Indic digit int() then
 # reads as a 2. {1,4} keeps the value under the 4300 digits int() will convert at all,
 # and \Z is what makes that bound bite - re.match anchors only the start. \A is
 # redundant beside re.match and kept for the day the call site is not.
-_LEVEL = re.compile(r"\A[0-9]{1,4}\Z")
+_LEVEL = re.compile(r"\A\d{1,4}\Z", re.ASCII)
 
 # The deepest level a request may ask for. list_categories unions one SELECT per level,
 # so an unbounded to_level is an unbounded statement; no real tree goes near this.

@@ -58,8 +58,8 @@ def test_a_from_level_that_is_not_a_whole_number_is_refused(value: str) -> None:
 
 
 def test_an_arabic_indic_digit_is_not_a_whole_number_here() -> None:
-    """[0-9] rather than \\d, which is Unicode-aware: int() would read this as 2, so the
-    pattern is the only thing refusing a form the API never sends."""
+    """re.ASCII, because \\d is otherwise Unicode-aware and int() would read this as 2 -
+    so the flag is the only thing refusing a form the API never sends."""
     with pytest.raises(LevelRangeError, match="from_level must be a whole number"):
         _ = parse_level_range("\u0662", None)
 
