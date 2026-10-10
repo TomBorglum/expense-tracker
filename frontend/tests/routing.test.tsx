@@ -159,6 +159,19 @@ test("carries the categories between the views as well", async () => {
   ]);
 });
 
+test("carries a category path across the views unsplit", async () => {
+  const user = userEvent.setup();
+  const router = renderAppAt("/?category=Stub%20category%3ANested%20stub");
+  await screen.findByRole("table", { name: "Expenses" });
+
+  await user.click(navLink("Totals"));
+
+  await screen.findByRole("table", { name: "Totals" });
+  // One value, retained whole: retainSearchParams copies what validateSearch read, and
+  // a separator is nothing either of them knows about.
+  expect(router.state.location.search.category).toBe("Stub category:Nested stub");
+});
+
 test("spells a list as a key repeated once per value", async () => {
   // The form an HTML form submits and the backend reads, rather than the JSON array the
   // router would write on its own - so a URL can be typed by hand and pasted as it is.
@@ -168,6 +181,19 @@ test("spells a list as a key repeated once per value", async () => {
   expect(searchStr).toContain("category=A&category=B");
   expect(searchStr).not.toContain("%5B");
   expect(new URLSearchParams(searchStr).getAll("category")).toEqual(["A", "B"]);
+});
+
+test("spells a category path as the one value it is", async () => {
+  // The separator percent-encodes, and the value still arrives whole: a path is one
+  // category, not two, so neither the serializer nor validateSearch may split it.
+  const router = renderAppAt("/?category=Settlement%3AAlice&category=Car");
+  await screen.findByRole("table", { name: "Expenses" });
+  const searchStr = router.state.location.searchStr;
+  expect(searchStr).toContain("category=Settlement%3AAlice&category=Car");
+  expect(new URLSearchParams(searchStr).getAll("category")).toEqual([
+    "Settlement:Alice",
+    "Car",
+  ]);
 });
 
 test("reads every parameter as the string it was typed", async () => {

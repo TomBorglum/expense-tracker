@@ -86,14 +86,28 @@ export const MOCK_CATEGORY_TOTALS: PeriodTotal[] = [
     currency: "EUR",
     category: "Other stub category",
   },
+  {
+    period: "2001-03",
+    from_date: "2001-03-01",
+    to_date: "2001-03-31",
+    amount: "0.00",
+    currency: "EUR",
+    category: "Stub category:Nested stub",
+  },
 ];
 
-// The two names the mock expenses carry and a third nothing is filed under, in the name
-// order the backend sends, so a test can tick one and tell it from the rest.
+// The two names the mock expenses carry, a third nothing is filed under, and one path
+// below the second, in the path order the backend sends - so a test can tick one and
+// tell it from the rest, and the picker has a tree to build rather than a list.
 export const MOCK_CATEGORIES: Category[] = [
-  { category: "Other stub category" },
-  { category: "Stub category" },
-  { category: "Third stub category" },
+  { category: "Other stub category", name: "Other stub category" },
+  { category: "Stub category", name: "Stub category" },
+  {
+    category: "Stub category:Nested stub",
+    name: "Nested stub",
+    parent: "Stub category",
+  },
+  { category: "Third stub category", name: "Third stub category" },
 ];
 
 // Every collection body is an object holding its rows, so a mock has to be one too.

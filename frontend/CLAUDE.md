@@ -36,13 +36,10 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   "an empty table is 200, not 503". **The period's own row names no category**: its heading
   spans that column rather than invent a name for the sum, a value no payload carries.
   Pinned by "adds a line per category when the grouping was asked for".
-- **The theme follows the OS, and nothing can override it.** The single `@plugin "daisyui"`
-  block in `src/styles/app.css` names `nord --default` and `dim --prefersdark`. There is no
-  `data-theme`, no theme provider and no `dark:` variant in `src/`; a toggle would be a
-  feature on top of the pair, not a config change. daisyUI paints `base-100` on `:root`, so
-  the surface is `bg-base-200 text-base-content` on `<html>` in `index.html`, the one
-  background that covers the whole canvas. **Every colour is referenced by role**, never a
-  hard-coded shade, which is wrong in one theme rather than merely awkward.
+- **The surface is `bg-base-200 text-base-content` on `<html>` in `index.html`.** daisyUI
+  paints `base-100` on `:root`, so that is the one background covering the whole canvas.
+  **Every colour is referenced by role**, never a hard-coded shade. The two themes and why
+  no toggle exists are in [`README.md`](../README.md#frontend).
 - **The calendar is themed by daisyUI, and `@daypicker/react/style.css` is deliberately not
   imported.** daisyUI ships a first-party theme keyed on the `react-day-picker` class,
   written in role tokens. **Importing the package's own stylesheet would silently beat it**:
@@ -133,7 +130,13 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   is always offered and needs no rate. A rate list that is pending, 503s, empty or
   malformed leaves the select disabled and **does not disturb the table below it**: they
   are two requests. The category list is offered on the same terms, a URL value it does
-  not name shown ticked like a code nobody offered.
+  not name shown ticked like a code nobody offered - and a path among them passes through
+  `categoryFilter` untouched, nothing here knowing what joins one level to the next.
+- **The picker builds its tree from `parent`, not from the order the list arrived in**:
+  path order is nearly pre-order, but a level name starting below `:` interleaves, so a
+  contiguity walk nests a root under the wrong parent. **Ticking a parent leaves its
+  children alone** - the backend reads a node as its whole subtree, so auto-ticking only
+  builds the overlap its longest-prefix rule then resolves. `CategoryPicker.test.tsx`.
 - **The date range is always bounded, and every `navigate` carries the whole search.**
   No clear button and no unbounded mode: `DateRangePicker` holds a half-picked range in
   local state and reports nothing until both ends are set, an empty bound being malformed
@@ -174,11 +177,8 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   Dependabot's lockfile parsing, and that version is what it reads its pnpm major from. See
   [`README.md`](../README.md#package-manager).
 - **`pnpm-workspace.yaml` states `minimumReleaseAge` and must never gain a
-  `minimumReleaseAgeExclude`.** The value mirrors `cooldown.default-days` in
-  [`.github/dependabot.yml`](../.github/dependabot.yml) and has to keep mirroring it:
-  Dependabot enforces the higher of the two across its whole resolution, so a gap either
-  way fails the weekly update job. It must be stated because Dependabot resolves this
-  lockfile with pnpm 10, where the default is 0; an exclusion disables the guard.
+  `minimumReleaseAgeExclude`**, which disables the guard for the least-vetted package of
+  all. The value it mirrors and why is in [`README.md`](../README.md#package-manager).
 
 ## Quality gates
 

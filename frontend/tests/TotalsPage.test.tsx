@@ -279,7 +279,7 @@ test("narrows both payloads to the categories the URL names", async () => {
     ["Stub category", "Other stub category"],
   ]);
   expect(screen.getByRole("button", { name: /^Categories / }).textContent).toBe(
-    "Stub category, Other stub category",
+    "2 categories",
   );
 });
 
