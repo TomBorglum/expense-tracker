@@ -1,5 +1,44 @@
 # Changelog
 
+## [2.0.0](https://github.com/TomBorglum/expense-tracker/compare/v1.0.0...v2.0.0) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* read categories as colon-separated paths ([#123](https://github.com/TomBorglum/expense-tracker/issues/123))
+* wrap every collection body in an items object ([#122](https://github.com/TomBorglum/expense-tracker/issues/122))
+* `backend-load-expenses` no longer reads `*.tsv` from `$EXPENSE_DATA_DIR`. A directory still holding them loads nothing.
+
+### Features
+
+* filter expenses and totals by category ([#103](https://github.com/TomBorglum/expense-tracker/issues/103)) ([2245469](https://github.com/TomBorglum/expense-tracker/commit/2245469d9f80e2c0b2be147fe63557f5d0eaa30b))
+* filter expenses and totals by category in the frontend ([#106](https://github.com/TomBorglum/expense-tracker/issues/106)) ([acdc443](https://github.com/TomBorglum/expense-tracker/commit/acdc4431ede907a479b475916e4e105cefcab01b))
+* list the recorded expense categories ([#105](https://github.com/TomBorglum/expense-tracker/issues/105)) ([5017793](https://github.com/TomBorglum/expense-tracker/commit/5017793ac07f93f7763fd04c168bbc2c99b7e3b6))
+* offer the categories as a tree in the picker ([#125](https://github.com/TomBorglum/expense-tracker/issues/125)) ([f5595b4](https://github.com/TomBorglum/expense-tracker/commit/f5595b4b503d2cce616f3868a55d697c462ed5ec))
+* pin the refund model and refuse a zero amount ([#102](https://github.com/TomBorglum/expense-tracker/issues/102)) ([c1dc394](https://github.com/TomBorglum/expense-tracker/commit/c1dc39481d1e4f453092a62335d72e393125069a))
+* read categories as colon-separated paths ([#123](https://github.com/TomBorglum/expense-tracker/issues/123)) ([b609c65](https://github.com/TomBorglum/expense-tracker/commit/b609c658e02591e68f945c371391a77505400458))
+* read expense-data's YAML month files instead of TSV ([#121](https://github.com/TomBorglum/expense-tracker/issues/121)) ([84d853e](https://github.com/TomBorglum/expense-tracker/commit/84d853eccdd3e08bb717e21ff98e788c30edaca0))
+* return expenses and totals oldest first ([#97](https://github.com/TomBorglum/expense-tracker/issues/97)) ([6233417](https://github.com/TomBorglum/expense-tracker/commit/6233417f95b0b63b27d673c3d12c45ca9aecf53a))
+* show credits as money coming in rather than negative spending ([#112](https://github.com/TomBorglum/expense-tracker/issues/112)) ([b1c6fbe](https://github.com/TomBorglum/expense-tracker/commit/b1c6fbe3dadd83119004263cffb63b9d91c9d1fe))
+* show expense details before the amount ([#111](https://github.com/TomBorglum/expense-tracker/issues/111)) ([8606929](https://github.com/TomBorglum/expense-tracker/commit/86069293389d22dc334836ecf02cf5b040319c71))
+* wrap every collection body in an items object ([#122](https://github.com/TomBorglum/expense-tracker/issues/122)) ([e485315](https://github.com/TomBorglum/expense-tracker/commit/e4853152693b9e3720962ba41e3ffb5300ab8415))
+
+
+### Bug Fixes
+
+* add RON exchange rates so converted views load again ([#110](https://github.com/TomBorglum/expense-tracker/issues/110)) ([a778724](https://github.com/TomBorglum/expense-tracker/commit/a778724f7e20563d0a0f3e1fe478154e582eb0c9))
+
+
+### Dependencies
+
+* bump brace-expansion from 5.0.9 to 5.0.12 in /frontend ([#119](https://github.com/TomBorglum/expense-tracker/issues/119)) ([e35f484](https://github.com/TomBorglum/expense-tracker/commit/e35f4842360e164df6b89b74b3b2d8e664c222c9))
+* bump source-map-js from 1.2.1 to 1.2.2 in /frontend ([#118](https://github.com/TomBorglum/expense-tracker/issues/118)) ([7abb472](https://github.com/TomBorglum/expense-tracker/commit/7abb4722eb26d0f6aa336ef1c612feabb3369712))
+* bump the frontend group across 1 directory with 13 updates ([#120](https://github.com/TomBorglum/expense-tracker/issues/120)) ([5af026a](https://github.com/TomBorglum/expense-tracker/commit/5af026ae081a473e52dc3eae3ddb11c230d0d2ad))
+* bump the frontend group across 1 directory with 17 updates ([#109](https://github.com/TomBorglum/expense-tracker/issues/109)) ([5c7f418](https://github.com/TomBorglum/expense-tracker/commit/5c7f4188b6b28a0affcaaf75769d487048a0a308))
+* bump the frontend group in /frontend with 11 updates ([#114](https://github.com/TomBorglum/expense-tracker/issues/114)) ([7c839c8](https://github.com/TomBorglum/expense-tracker/commit/7c839c87fd6bb53d0b063a54526309c10620421c))
+* bump the frontend group in /frontend with 7 updates ([#124](https://github.com/TomBorglum/expense-tracker/issues/124)) ([6c75078](https://github.com/TomBorglum/expense-tracker/commit/6c75078de48c43afa86402045b63db02477e0673))
+* bump the frontend group in /frontend with 8 updates ([#100](https://github.com/TomBorglum/expense-tracker/issues/100)) ([bd8d5f1](https://github.com/TomBorglum/expense-tracker/commit/bd8d5f159291f561a3e8f2468151ee53218006cf))
+
 ## 1.0.0 (2026-09-02)
 
 
