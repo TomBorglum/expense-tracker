@@ -738,24 +738,45 @@ A **Categories** control beside the currency select narrows both views to one or
 categories, and the choice is the `?category=` the table and the totals ask the API for -
 **the key repeats once per value**, as described under
 [Asking for one or more categories](#asking-for-one-or-more-categories). The filtering
-stays the backend's: the frontend sends names and drops no row of its own, and the totals
-view hands the same names to its subtotal and its breakdown, so a period is summed over
+stays the backend's: the frontend sends paths and drops no row of its own, and the totals
+view hands the same paths to its subtotal and its breakdown, so a period is summed over
 the expenses it is split by.
 
-The names on offer come from `GET /api/expenses/categories`, read by
-`frontend/src/api/categories.ts` in the order the backend sends them - once each, by
-name. **A category is picked, never typed**: the control is a button that opens a list of
-checkboxes, each tick applies at once and the list stays open for the next, and a
-**Clear selection** button empties it in one click - present but disabled while there is
-nothing to clear, so the panel is the same size whatever is ticked. Nothing ticked reads as
-**All categories** and sends no `category` at all, which is what the backend means by an
-absent one; there is no "All" checkbox because that is a value no request carries. The
-trigger names one or two picked categories and counts three or more, and is a fixed
+The nodes on offer come from `GET /api/expenses/categories`, read by
+`frontend/src/api/categories.ts` in the order the backend sends them - once each, by path.
+The control asks for `?to_level=3`, so **the whole bounded tree arrives in one request**
+and no node costs a round trip to read; `from_level` is the backend's own parameter and
+nothing here sends it.
+
+**The panel is a tree, indented, and each box reads as its own level** - `Alice` under
+`Settlement`, not `Settlement:Alice` - which is what the payload's `name` and `parent` are
+for: nothing on this side splits a path, so the separator stays the backend's alone. The
+tree is built from `parent` rather than from the order the list arrived in, because path
+order is only nearly pre-order: a level name beginning with a character below `:` sorts
+between a node and its own children, and a walk that trusted the order would nest it in
+the wrong place.
+
+**A tick reports the whole path**, so `Alice` sends `category=Settlement:Alice`. **Ticking
+a parent leaves its children alone**: the backend already reads a node as its whole
+subtree, so ticking `Settlement` asks for every settlement without touching a box below
+it. Ticking a parent *and* one of its children is a request in its own right rather than a
+mistake - on the totals view it splits that child out of its parent's total, leaving the
+parent holding the rest.
+
+**A category is picked, never typed**: each tick applies at once, the list stays open for
+the next, and a **Clear selection** button empties it in one click - present but disabled
+while there is nothing to clear, so the panel is the same size whatever is ticked. Nothing
+ticked reads as **All categories** and sends no `category` at all, which is what the
+backend means by an absent one; there is no "All" checkbox because that is a value no
+request carries. The trigger names one picked path and counts two or more, and is a fixed
 width either way, so the filter row never moves as the selection changes.
 
 The selection lives in the **URL** alongside the rest, and is spelled the way the API
 reads it: `/?category=Car&category=Groceries` is a link worth sending and one you can type
-by hand. That is the router's own doing - `frontend/src/router.ts` replaces TanStack
+by hand. A path costs a `%3A` there - `?category=Settlement%3AAlice` - which is the one
+place the separator shows through, and it still arrives as the single value it is.
+
+That is the router's own doing - `frontend/src/router.ts` replaces TanStack
 Router's default search serializer, which would write a JSON array and turn a
 hand-typed `?from_date=2026` into a number, with one that repeats a key per value and
 reads every parameter as the string it was typed. `validateSearch` folds one value or

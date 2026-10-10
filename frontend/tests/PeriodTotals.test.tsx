@@ -85,6 +85,9 @@ test("adds a line per category when the grouping was asked for", async () => {
     ["2001-03-01 to 2001-03-31", "30.00", "EUR"],
     ["", "Stub category", "12.50", "EUR"],
     ["", "Other stub category", "17.50", "EUR"],
+    // A path renders verbatim: the breakdown splits nothing, the backend having chosen
+    // the grain. 0.00 keeps the lines adding up to the subtotal above them.
+    ["", "Stub category:Nested stub", "0.00", "EUR"],
   ]);
 });
 

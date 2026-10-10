@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode } from "react";
 
-import { categoriesQueryOptions, categoryNames } from "../api/categories";
+import { categoriesQueryOptions, CATEGORY_LEVELS } from "../api/categories";
 import {
   BASE_CURRENCY,
   currenciesQueryOptions,
@@ -33,8 +33,8 @@ export function ExpenseFilters({ search, onChange, children }: ExpenseFiltersPro
   const options = rates.isSuccess ? targetCurrencies(rates.data) : [BASE_CURRENCY];
   // The category list is what the picker can offer, on the same terms as the rates: its
   // failure disables the control and nothing else.
-  const categories = useQuery(categoriesQueryOptions);
-  const categoryOptions = categories.isSuccess ? categoryNames(categories.data) : [];
+  const categories = useQuery(categoriesQueryOptions(CATEGORY_LEVELS));
+  const categoryOptions = categories.isSuccess ? categories.data : [];
 
   return (
     <div className="flex flex-wrap items-center gap-6">

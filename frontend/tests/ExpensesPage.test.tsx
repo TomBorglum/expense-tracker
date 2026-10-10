@@ -322,7 +322,7 @@ test("a rate payload of the wrong shape is refused, not read", async () => {
   expect(offeredCurrencies()).toEqual(["DKK"]);
 });
 
-test("offers the categories the backend lists, in its order", async () => {
+test("offers the categories the backend lists, labelled by their own level", async () => {
   renderPageAt("/");
   await screen.findByRole("table", { name: "Expenses" });
   await categoryTriggerEnabled();
@@ -330,7 +330,9 @@ test("offers the categories the backend lists, in its order", async () => {
   const names = screen
     .getAllByRole("checkbox")
     .map((box) => (box as HTMLInputElement).labels?.[0]?.textContent);
-  expect(names).toEqual(MOCK_CATEGORIES.map((item) => item.category));
+  // Each box reads as its last level rather than its whole path - the parent above it
+  // says where it sits - and the order is the backend's, a child following its parent.
+  expect(names).toEqual(MOCK_CATEGORIES.map((item) => item.name));
 });
 
 test("sends no category when the URL names none", async () => {
@@ -347,7 +349,8 @@ test("requests the categories the URL names, once each", async () => {
   renderPageAt("/?category=Stub%20category&category=Other%20stub%20category");
   await screen.findByRole("table", { name: "Expenses" });
   expect(requested).toEqual([["Stub category", "Other stub category"]]);
-  expect(categoryTrigger().textContent).toBe("Stub category, Other stub category");
+  // Two is a count on the trigger, a pair of paths being longer than it shows.
+  expect(categoryTrigger().textContent).toBe("2 categories");
 });
 
 test("reads a single category the URL names", async () => {
@@ -382,6 +385,42 @@ test("ticking a category keeps the currency and the range, and asks again", asyn
   });
   await waitFor(() => {
     expect(requested).toEqual([[], ["Stub category"]]);
+  });
+});
+
+test("requests a nested category by its whole path", async () => {
+  // The box reads as its own level, so this is what proves the tick reports the path:
+  // "Nested stub" on its own would match nothing the backend holds.
+  const requested = recordRequestedCategories();
+  const router = renderPageAt("/");
+  await screen.findByRole("table", { name: "Expenses" });
+  await categoryTriggerEnabled();
+  await userEvent.click(categoryTrigger());
+  await userEvent.click(screen.getByRole("checkbox", { name: "Nested stub" }));
+  await waitFor(() => {
+    expect(requested.at(-1)).toEqual(["Stub category:Nested stub"]);
+  });
+  // Percent-encoded in the URL, which is what a separator costs in the address bar.
+  expect(router.state.location.searchStr).toContain(
+    "category=Stub+category%3ANested+stub",
+  );
+});
+
+test("asks the categories endpoint for the levels the picker shows", async () => {
+  // One request for a bounded tree, so opening a node costs no round trip. from_level is
+  // deliberately not sent: the top level is where the tree starts either way.
+  const asked: (string | null)[][] = [];
+  server.use(
+    http.get(CATEGORIES_URL, ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      asked.push([params.get("from_level"), params.get("to_level")]);
+      return collection(MOCK_CATEGORIES);
+    }),
+  );
+  renderPageAt("/");
+  await screen.findByRole("table", { name: "Expenses" });
+  await waitFor(() => {
+    expect(asked).toEqual([[null, "3"]]);
   });
 });
 
