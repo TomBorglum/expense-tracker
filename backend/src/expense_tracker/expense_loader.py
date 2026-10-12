@@ -174,13 +174,15 @@ class _Extracted(_Mapping):
 
 
 class _Imported(_Extracted):
-    """A record to load. An import states every field."""
+    """A record to load. An import states every field but `details`."""
 
     action: Literal["import"]
     amount: Annotated[Decimal, BeforeValidator(_amount)]
     currency: Annotated[str, BeforeValidator(_currency)]
     category: Annotated[str, BeforeValidator(_category)]
-    details: Annotated[str, BeforeValidator(_details)]
+    # Absent and empty are the same memo, so the key may be left out; a settlement
+    # names its counterparty in the category path and writes no details at all.
+    details: Annotated[str, BeforeValidator(_details)] = ""
 
 
 class _Discarded(_Extracted):

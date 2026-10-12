@@ -55,3 +55,11 @@ records:
       currency: DKK
       category: Car
       details: Fuel
+  - record: '29-03-2026;-240,00;"MOBILEPAY ALICE";'
+    extracted:
+      datetime: '2026-03-29T00:00:00+01:00'
+      key: MOBILEPAY ALICE
+      action: import
+      amount: '240.00'
+      currency: DKK
+      category: Settlement:Alice

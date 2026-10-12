@@ -114,6 +114,13 @@ def test_blank_details_are_accepted() -> None:
     assert record.details == ""
 
 
+def test_absent_details_are_the_same_as_blank_ones() -> None:
+    """The shape a settlement writes: the category path names the counterparty, so
+    there is no memo and the key is left out rather than written empty."""
+    (record,) = parse("x.yaml", _bent(b"details", b""))
+    assert record.details == ""
+
+
 def test_a_discarded_record_is_skipped() -> None:
     """A discard states only its two fields, and yields no expense."""
     discard = b"      datetime: " + _MOMENT + b"\n      action: discard\n"
@@ -184,7 +191,7 @@ def test_an_unknown_action_is_refused() -> None:
 
 
 def test_an_import_missing_a_field_is_refused() -> None:
-    """An import states every field, so a missing one is not an empty one."""
+    """An import states every field but `details`, so a missing one is not empty."""
     body = _month(
         b"".join(
             line

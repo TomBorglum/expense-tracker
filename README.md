@@ -523,6 +523,9 @@ records:
 **`extracted` is the whole of what this repository reads**, and only where its `action` is
 `import`. A `discard` is a record the other repository decided against, and states just the
 two fields that place it in its file; `record` and `key` are read by nothing here.
+`details` is the one import field that may be left out - a settlement names its
+counterparty in the `category` path and carries no memo - and an absent one reads as the
+empty string the column already allows.
 
 | Field | Format | Notes |
 | --- | --- | --- |
@@ -530,7 +533,7 @@ two fields that place it in its file; `record` and `key` are read by nothing her
 | `amount` | decimal | At most two decimal places; may be negative; never zero |
 | `currency` | ISO 4217 alpha-3 | Uppercase |
 | `category` | a `:`-separated path | Each level stripped; no level may be empty |
-| `details` | free text | Stripped, and may be empty |
+| `details` | free text | Stripped, and may be empty or absent |
 
 A third decimal place is refused rather than rounded away by `numeric(12, 2)` in
 silence. A negative amount is accepted, because a credit is a negative expense; a zero
