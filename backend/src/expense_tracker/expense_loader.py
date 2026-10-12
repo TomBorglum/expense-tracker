@@ -174,13 +174,14 @@ class _Extracted(_Mapping):
 
 
 class _Imported(_Extracted):
-    """A record to load. An import states every field."""
+    """A record to load. An import states every field but `details`."""
 
     action: Literal["import"]
     amount: Annotated[Decimal, BeforeValidator(_amount)]
     currency: Annotated[str, BeforeValidator(_currency)]
     category: Annotated[str, BeforeValidator(_category)]
-    details: Annotated[str, BeforeValidator(_details)]
+    # Empty where the field is absent, which is how the format writes a blank memo.
+    details: Annotated[str, BeforeValidator(_details)] = ""
 
 
 class _Discarded(_Extracted):

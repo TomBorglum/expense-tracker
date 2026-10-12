@@ -45,4 +45,3 @@ records:
       amount: '340.00'
       currency: DKK
       category: Transport:Train
-      details: Train ticket
