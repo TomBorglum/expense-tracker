@@ -12,6 +12,15 @@ updates:
       # "ci": these actions run only in CI, so label their bumps accordingly and
       # consistently with the workflow's own commits.
       prefix: "ci"
+    # Spelled out rather than inherited, on the same grounds as the npm entry below:
+    # the wait exists either way, this makes it visible and tunable. Longer for majors
+    # because an action major can change its inputs or its runtime, which a grouped
+    # bump would otherwise land unreviewed. Security updates ignore cooldown.
+    cooldown:
+      default-days: 3
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
     groups:
       actions:
         patterns:
