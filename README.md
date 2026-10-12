@@ -48,15 +48,11 @@ That includes PostgreSQL: the server is a conda-forge package like everything el
 there is nothing to install system-wide and no container to run. See
 [Database](#database).
 
-`.envrc` also runs `use sonarqube_mcp`, which exports the configuration for the
-SonarQube MCP server declared in `.mcp.json` - a container giving an editor or agent
-access to this project's SonarCloud analysis. It reads `SONARQUBE_TOKEN` and
-`SONARQUBE_ORG`; nothing else here needs them.
-
-Neither directive is built into direnv. Both come from the direnv library installed by
-[`wsl-cloud-init`](https://github.com/TomBorglum/wsl-cloud-init), whose `setup-direnv`
-action CI uses to activate this same `.envrc`. Without that library, `direnv allow`
-reports the directives as unknown commands.
+`use pixi` is not built into direnv. On a workstation it comes from the direnv library
+[`wsl-cloud-init`](https://github.com/TomBorglum/wsl-cloud-init) provisions; in CI, the
+`setup-direnv` action from [`TomBorglum/actions`](https://github.com/TomBorglum/actions)
+installs its own copy and activates this same `.envrc`. Without that library,
+`direnv allow` reports the directive as an unknown command.
 
 Its last line is `dotenv_if_exists`, which puts the database connection settings and the
 port the API serves on into the environment. That is stock direnv, and it is the **only**
@@ -1155,10 +1151,10 @@ on a `${PGPORT:?}` guard first - `backend-db-init` on its own, and `backend-dev`
 one in the `db-create` behind it, before uvicorn ever binds. Nothing falls back to a
 default.
 
-CI gets the same names the same way: `setup-direnv` (v1.4.1 or newer) activates this
-`.envrc` and forwards the resulting environment to `$GITHUB_ENV` for the steps after it.
-That makes the action's pin in `.github/workflows/ci.yml` load-bearing - it is the first
-thing to check if CI ever fails to find `PGPORT`.
+CI gets the same names the same way: `setup-direnv` activates this `.envrc` and forwards
+the resulting environment to `$GITHUB_ENV` for the steps after it. Both
+`.github/workflows/ci.yml` and `.github/workflows/update-python.yml` rely on it, and it
+is the first thing to check if CI ever fails to find `PGPORT`.
 
 One loader covers everything, including what no task wraps:
 

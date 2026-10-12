@@ -31,18 +31,7 @@ jobs:
         with:
           # Full history so SonarCloud can attribute issues to the right commits.
           fetch-depth: 0
-      # Activate the environment declared in .envrc - the same .envrc used for local
-      # development. `use pixi` exposes pixi on $GITHUB_PATH, and the action forwards the
-      # rest of the resulting environment to $GITHUB_ENV, which is how the four PG* names
-      # `dotenv_if_exists` loads reach every step below. v1.4.1 is the release that added
-      # that forwarding, so the pin may move forward but never below it; nothing else
-      # here supplies them.
-      #
-      # v1.4.4 also stopped installing direnv from the runner's apt repos, which is what
-      # hung this job for up to 37 minutes on 2026-08-19 when azure.archive.ubuntu.com
-      # degraded. It now fetches a version-pinned release binary and checks it against a
-      # recorded sha256, so the job no longer depends on that mirror at all.
-      - uses: TomBorglum/wsl-cloud-init/actions/setup-direnv@b030da6a5fec19577ac767be37f9a017f3a5aec1 # v1.4.5
+      - uses: TomBorglum/actions/setup-direnv@9f3d52c3fe0bc5903fd4b1ca2729fa78fcaf264b # v1.0.0
       # Every step below calls pixi, which forwards to the stack that owns the command
       # (poe in backend/pyproject.toml, pnpm scripts in frontend/package.json). CI knows
       # one entry point, not two.
