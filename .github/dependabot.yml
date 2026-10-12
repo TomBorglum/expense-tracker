@@ -8,11 +8,10 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "ci"
+    # Only default-days here: github-actions does not support the semver-*-days
+    # tiers, which are silently ignored rather than rejected.
     cooldown:
       default-days: 3
-      semver-major-days: 30
-      semver-minor-days: 7
-      semver-patch-days: 3
     groups:
       actions:
         patterns:
