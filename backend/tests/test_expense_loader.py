@@ -66,6 +66,19 @@ def _bent(field: bytes, value: bytes) -> bytes:
     return _month(_bend(field, value))
 
 
+def _without(field: bytes) -> bytes:
+    """`_IMPORT` with one field's line left out.
+
+    Named rather than spelt `_bend(field, b"")`, which does the same thing: that call
+    site would read as `details: ''`, the other input these tests tell apart.
+    """
+    return b"".join(
+        line
+        for line in _IMPORT.splitlines(keepends=True)
+        if not line.strip().startswith(field + b":")
+    )
+
+
 def test_a_valid_file_parses() -> None:
     records = parse("x.yaml", _month(_IMPORT))
     assert records == [
@@ -110,8 +123,24 @@ def test_a_zero_amount_is_refused(value: bytes) -> None:
 
 
 def test_blank_details_are_accepted() -> None:
+    """The data repository writes a blank memo by leaving the field out and refuses this
+    spelling; both land on the same value here, a reader being the laxer half."""
     (record,) = parse("x.yaml", _bent(b"details", b"      details: ''\n"))
     assert record.details == ""
+
+
+def test_an_import_may_leave_out_its_details() -> None:
+    """The one field a record may omit, and absent is how a blank memo is written."""
+    (record,) = parse("x.yaml", _month(_without(b"details")))
+    assert record.details == ""
+
+
+def test_a_null_details_is_refused_rather_than_read_as_absent() -> None:
+    """The default answers for a field the file does not state, not for one it states as
+    nothing: two spellings of a blank memo are the format's, three are not."""
+    body = _bent(b"details", b"      details: null\n")
+    with pytest.raises(ExpenseFileError, match="must be text, not NoneType"):
+        _ = parse("x.yaml", body)
 
 
 def test_a_discarded_record_is_skipped() -> None:
@@ -184,14 +213,8 @@ def test_an_unknown_action_is_refused() -> None:
 
 
 def test_an_import_missing_a_field_is_refused() -> None:
-    """An import states every field, so a missing one is not an empty one."""
-    body = _month(
-        b"".join(
-            line
-            for line in _IMPORT.splitlines(keepends=True)
-            if b"currency" not in line
-        )
-    )
+    """Every field but `details` is required, so a missing one is not an empty one."""
+    body = _month(_without(b"currency"))
     with pytest.raises(ExpenseFileError, match=r"currency: Field required"):
         _ = parse("x.yaml", body)
 

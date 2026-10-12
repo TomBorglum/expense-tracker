@@ -518,11 +518,22 @@ records:
       currency: DKK
       category: Building
       details: E/F Solbakken
+  - record: '03-09-2026;-340,00;"TRAIN TICKET";'
+    extracted:
+      datetime: '2026-09-03T00:00:00+02:00'
+      key: TRAIN TICKET
+      action: import
+      amount: '340.00'
+      currency: DKK
+      category: Transport:Train
 ```
 
 **`extracted` is the whole of what this repository reads**, and only where its `action` is
 `import`. A `discard` is a record the other repository decided against, and states just the
-two fields that place it in its file; `record` and `key` are read by nothing here.
+two fields that place it in its file; `record` and `key` are read by nothing here. An
+`import` states the rest, except `details`: a blank memo is written by leaving the field
+out, which is the third record above. That repository refuses `details: ''` so that one
+record has one spelling; this loader is a reader and takes either, reading both as empty.
 
 | Field | Format | Notes |
 | --- | --- | --- |
@@ -530,7 +541,7 @@ two fields that place it in its file; `record` and `key` are read by nothing her
 | `amount` | decimal | At most two decimal places; may be negative; never zero |
 | `currency` | ISO 4217 alpha-3 | Uppercase |
 | `category` | a `:`-separated path | Each level stripped; no level may be empty |
-| `details` | free text | Stripped, and may be empty |
+| `details` | free text | Optional; stripped. Absent reads as empty, and so does `''` |
 
 A third decimal place is refused rather than rounded away by `numeric(12, 2)` in
 silence. A negative amount is accepted, because a credit is a negative expense; a zero
