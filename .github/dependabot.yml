@@ -1,21 +1,13 @@
 version: 2
 updates:
-  # Keep the GitHub Actions referenced in workflows up to date, including the
-  # setup-direnv action pinned by SHA and the other pinned actions. The pixi.toml
-  # python pin is handled separately by update-python.yml, since Dependabot has no
-  # conda/pixi support.
+  # pixi.toml's python pin is not covered here: Dependabot has no conda/pixi support,
+  # so update-python.yml bumps it instead.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     commit-message:
-      # "ci": these actions run only in CI, so label their bumps accordingly and
-      # consistently with the workflow's own commits.
       prefix: "ci"
-    # Spelled out rather than inherited, on the same grounds as the npm entry below:
-    # the wait exists either way, this makes it visible and tunable. Longer for majors
-    # because an action major can change its inputs or its runtime, which a grouped
-    # bump would otherwise land unreviewed. Security updates ignore cooldown.
     cooldown:
       default-days: 3
       semver-major-days: 30
@@ -26,117 +18,41 @@ updates:
         patterns:
           - "*"
 
-  # Frontend toolchain (vite + React + Tailwind). package.json and pnpm-lock.yaml
-  # live in frontend/ alongside the sources they describe, so the directory is
-  # "/frontend". pnpm is driven through the "npm" ecosystem: Dependabot picks pnpm
-  # once it sees pnpm-lock.yaml.
-  #
-  # Two preconditions here are easy to break by accident:
-  #   - package.json must stay free of a "packageManager" field. pnpm 11 writes a
-  #     multi-document lockfile when it manages its own version, and Dependabot
-  #     cannot parse that (dependabot-core#14794). pixi.toml pins pnpm instead, and
-  #     its comment there gives the other reason to keep it out of package.json.
-  #   - The lockfile must stay at lockfileVersion 9.0, which Dependabot does parse.
-  #     That version also decides which pnpm Dependabot resolves with - it reads the
-  #     major out of the lockfile, and 9.0 lands it on pnpm 10, two behind the pin in
-  #     pixi.toml. frontend/pnpm-workspace.yaml states minimumReleaseAge for that
-  #     reason: pnpm 10 defaults it to 0, so the guard CI verifies against would not
-  #     otherwise apply to the resolution that produced the lockfile.
-  #
-  # No build output is committed here, so a bump to vite, react or tailwind needs
-  # nothing added to the Dependabot branch - CI's `pixi run frontend-build` is what proves
-  # the bundler still runs. msw is test-only, but a major bump needs its allowBuilds
-  # entry in frontend/pnpm-workspace.yaml rechecked.
+  # Two preconditions, neither checked: package.json must stay free of a
+  # "packageManager" field, or pnpm 11 writes a multi-document lockfile Dependabot
+  # cannot parse (dependabot-core#14794), and pnpm-lock.yaml must stay at
+  # lockfileVersion 9.0, which is also what lands Dependabot on pnpm 10.
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
-    # Spelled out rather than inherited: Dependabot already applies a 3-day cooldown
-    # to version updates when this block is absent, so the wait exists either way -
-    # this only makes it visible and tunable. A release younger than its cooldown is
-    # skipped by that week's run and picked up by a later one.
-    #
-    # Longer for majors because they cost the most here: a React or Vite major needs
-    # the rest of the toolchain (plugin-react, @types/*, testing-library) to catch up
-    # first, and arrives as its own PR outside the group. Security updates ignore
-    # cooldown.
-    #
-    # `default-days` must stay equal to `minimumReleaseAge` in
-    # frontend/pnpm-workspace.yaml (3 days here, 4320 minutes there), and no tier may
-    # sit below it. These windows do not only decide which versions Dependabot offers:
-    # it passes min(tier, default-days) to the resolver as
-    # `pnpm --config.minimumReleaseAge=<minutes>`, and pnpm applies that single value
-    # to everything it resolves or verifies - every other pin in package.json and
-    # every entry already in the lockfile, none of which was vetted against anything
-    # but pnpm-workspace.yaml's own value. A gap between the two numbers is a band of
-    # ages that is legal to install and illegal to update against, and a run landing
-    # in it fails with ERR_PNPM_NO_MATURE_MATCHING_VERSION instead of skipping the
-    # update. That is what killed the runs of 2026-08-21 and 2026-08-22: plugin-react
-    # 6.1.0, merged by hand at 1 day old under the old 1440, met a 4320 gate.
-    #
-    # Tiers above the floor never reach pnpm, because dependabot-core caps the gate at
-    # default-days. semver-major-days therefore holds majors back from selection
-    # without raising the gate. That same gate is what now holds the transitive
-    # versions a resolution drags along (dependabot-core#14683, #13165); they are no
-    # longer a separate mechanism with a window of their own.
+    # default-days must stay equal to minimumReleaseAge in
+    # frontend/pnpm-workspace.yaml, and no tier may sit below it. Both files carry the
+    # constraint; the mechanism is in README.md under "Package manager".
     cooldown:
       default-days: 3
       semver-major-days: 30
       semver-minor-days: 7
       semver-patch-days: 3
-    # TypeScript 7 is the native Go rewrite, and its npm package no longer ships
-    # tsserver.js or the JS compiler API. vtsls - the language server Zed drives,
-    # pinned to frontend/node_modules in .zed/settings.json - validates a tsdk by
-    # looking for tsserver.js, so it rejects the worktree copy and silently falls back
-    # to its own bundled typescript 5.9.3. The editor would then sit two majors behind
-    # the compiler CI runs, with no error shown. Confirmed upstream in
-    # zed-industries/zed#60951, #60970 and #61126.
-    #
-    # `tsc -b` itself is fine on 7, so this hold is about the editor, not CI. Moving to
-    # 7 means adopting Zed's tsgo extension, which installs its own TypeScript and
-    # cannot be pointed at node_modules, breaking the single-copy pinning used for
-    # every other tool here.
-    #
-    # Revisit when zed-extensions/tsgo#61 ("Resolve project-local TypeScript
-    # installations") ships, or when Zed drives TypeScript 7 without an extension.
-    # To unblock, delete this whole ignore entry.
-    #
-    # Note: ignore conditions suppress security updates for this package too. Fine
-    # here - typescript is a devDependency of a private package.json, and no compiler
-    # code reaches a running application.
+    # vtsls, the language server Zed drives, rejects a TypeScript 7 tsdk and silently
+    # falls back to its own copy, so this holds the editor rather than CI - `tsc -b` on
+    # 7 is fine. Revisit on zed-extensions/tsgo#61. An ignore also suppresses security
+    # updates, acceptable for a devDependency of a private package.json.
     ignore:
       - dependency-name: "typescript"
         versions:
           - ">= 7"
-    # Bump the exact pin ("4.3.3" to "4.3.4") rather than widening it to a range,
-    # per the exact-pin rule in CLAUDE.md.
     versioning-strategy: "increase"
     commit-message:
-      # Which prefix a PR gets is decided by package.json, not by this file:
-      # Dependabot reads the literal block name a package sits in, and uses "deps"
-      # if any package in the PR came from "dependencies", "chore" otherwise. That
-      # is any?, not all?, so the weekly grouped PR is "deps" whenever it carries a
-      # runtime package and "chore" when it is tooling only.
-      #
-      # The blocks follow npm's ordinary runtime/build-time convention - react,
-      # react-dom, tailwindcss and @tailwindcss/vite are runtime, the rest is
-      # tooling. vite and @vitejs/plugin-react are "chore" despite shaping the
-      # output, because a bundler bump is nothing a user of the app can act on.
-      # Splitting this way costs nothing here - package.json is private and nothing
-      # installs it from a registry, so the two blocks carry no packaging meaning of
-      # their own.
-      #
-      # Per release-please-config.json, "deps" is a visible changelog section and
-      # cuts a release; "chore" is hidden and does not.
+      # Which one a PR gets is decided in package.json, not here: "deps" if any package
+      # in it came from "dependencies", "chore" otherwise.
       prefix: "deps"
       prefix-development: "chore"
     groups:
       frontend:
         patterns:
           - "*"
-        # Minor and patch ride together in one weekly PR; majors fall outside the
-        # group and get their own PR, so a breaking React or Vite bump is reviewed
-        # and revertable on its own.
+        # Majors fall outside the group and get their own PR.
         update-types:
           - "minor"
           - "patch"
