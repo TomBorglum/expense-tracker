@@ -138,8 +138,9 @@ def test_an_import_may_leave_out_its_details() -> None:
 def test_a_null_details_is_refused_rather_than_read_as_absent() -> None:
     """The default answers for a field the file does not state, not for one it states as
     nothing: two spellings of a blank memo are the format's, three are not."""
+    body = _bent(b"details", b"      details: null\n")
     with pytest.raises(ExpenseFileError, match="must be text, not NoneType"):
-        _ = parse("x.yaml", _bent(b"details", b"      details: null\n"))
+        _ = parse("x.yaml", body)
 
 
 def test_a_discarded_record_is_skipped() -> None:
