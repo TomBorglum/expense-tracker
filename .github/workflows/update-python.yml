@@ -1,11 +1,12 @@
 name: Update Python
 
 # pixi.toml pins python with an exact conda-forge version that Dependabot cannot
-# track. This job bumps the pin to the newest STABLE conda-forge release and
-# re-solves pixi.lock, then opens a PR. Authenticates as the expense-tracker-bot
-# GitHub App (Contents + Pull requests: read/write) rather than GITHUB_TOKEN, so the
-# PR behaves like a human-opened one and can trigger any (future) required status
-# checks - events made with GITHUB_TOKEN do not start further workflow runs.
+# track. This job bumps the pin to the newest STABLE conda-forge release the workspace
+# can actually solve against, re-solves pixi.lock, then opens a PR. Authenticates as
+# the expense-tracker-bot GitHub App (Contents + Pull requests: read/write) rather than
+# GITHUB_TOKEN, so the PR behaves like a human-opened one and can trigger any (future)
+# required status checks - events made with GITHUB_TOKEN do not start further workflow
+# runs.
 
 on:
   schedule:
@@ -31,47 +32,94 @@ jobs:
 
       - uses: TomBorglum/actions/setup-direnv@9f3d52c3fe0bc5903fd4b1ca2729fa78fcaf264b # v1.0.0
 
-      - name: Check for a newer stable Python
-        id: check
+      # Move the pin to the newest stable conda-forge python this workspace can solve
+      # against, and leave pixi.toml and pixi.lock on it.
+      #
+      # The newest release is not always installable: every other exact pin in
+      # pixi.toml needs a build for it, and a C-extension package lags a new CPython
+      # ABI by weeks (python 3.15.0 against pydantic-core 2.46.4, which has no cp315
+      # build, is what this job hit). So candidates are tried newest first and the
+      # first that solves wins, rather than the newest being assumed installable.
+      #
+      # One candidate per minor, its highest patch, because the blocker is usually the
+      # ABI and so is per minor - that is also what stops a run spending all its
+      # attempts on 3.15.x patches and never reaching 3.14.8.
+      - name: Select the newest installable Python
+        id: select
+        env:
+          MAX_ATTEMPTS: "5"
         run: |
           set -euo pipefail
           manifest="pixi.toml"
           current="$(grep -oP '^python\s*=\s*"==\K[0-9]+\.[0-9]+\.[0-9]+' "$manifest")"
 
-          # Newest STABLE conda-forge python: the .versions list is unsorted and
-          # includes pre-releases (e.g. 3.15.0a8), so filter to X.Y.Z and version-sort.
-          latest="$(curl -fsSL --proto '=https' \
-            "https://api.anaconda.org/package/conda-forge/python" \
-            | jq -r '.versions[]' \
-            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
-            | sort -V | tail -n1)"
-          echo "current=$current  latest=$latest"
+          # Stable X.Y.Z only: the .versions list is unsorted and carries pre-releases
+          # (e.g. 3.15.0a8). `sort -V` first so awk's last write per minor is its
+          # highest patch.
+          mapfile -t available < <(
+            curl -fsSL --proto '=https' \
+              "https://api.anaconda.org/package/conda-forge/python" \
+              | jq -r '.versions[]' \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V \
+              | awk -F. '{ best[$1"."$2] = $0 } END { for (k in best) print best[k] }' \
+              | sort -Vr
+          )
 
-          # Only ever move forward (guards against a yanked/regressed index).
-          newest="$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n1)"
-          if [[ "$current" == "$latest" || "$newest" != "$latest" ]]; then
+          # Strictly newer than the pin, which is what keeps this from ever moving
+          # backwards onto a yanked or regressed index.
+          candidates=()
+          for v in "${available[@]}"; do
+            [[ "$v" == "$current" ]] && continue
+            if [[ "$(printf '%s\n%s\n' "$v" "$current" | sort -V | tail -n1)" == "$v" ]]; then
+              candidates+=("$v")
+            fi
+          done
+
+          if (( ${#candidates[@]} == 0 )); then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Already on the latest stable ($current); nothing to do."
+            echo "Already on the latest stable ($current); nothing to do." \
+              >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          skipped=()
+          for v in "${candidates[@]:0:$MAX_ATTEMPTS}"; do
+            echo "::group::pixi lock against python $v"
+            sed -i -E "s|^(python[[:space:]]*=[[:space:]]*)\"==[0-9.]+\"|\1\"==${v}\"|" "$manifest"
+            if pixi lock; then
+              echo "::endgroup::"
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "version=$v" >> "$GITHUB_OUTPUT"
+              printf 'Selected python **%s** (from %s).\n' "$v" "$current" \
+                >> "$GITHUB_STEP_SUMMARY"
+              if (( ${#skipped[@]} )); then
+                echo "skipped=${skipped[*]}" >> "$GITHUB_OUTPUT"
+                printf 'Skipped, no solution with the current pins: %s\n' "${skipped[*]}" \
+                  >> "$GITHUB_STEP_SUMMARY"
+              fi
+              exit 0
+            fi
+            echo "::endgroup::"
+            skipped+=("$v")
+            # pixi lock rewrites pixi.lock before it fails, so restore both halves
+            # before trying the next candidate.
+            git checkout -- "$manifest" pixi.lock
+          done
 
-      - name: Apply the bump
-        if: steps.check.outputs.changed == 'true'
-        env:
-          LATEST: ${{ steps.check.outputs.latest }}
-        run: |
-          set -euo pipefail
-          # Rewrite the exact pin (keep the == exact-pin convention), then re-solve
-          # the lockfile without installing.
-          sed -i -E "s|^(python[[:space:]]*=[[:space:]]*)\"==[0-9.]+\"|\1\"==${LATEST}\"|" pixi.toml
-          pixi lock
+          # Nothing newer solves. Deliberately a success: the blocker is a build this
+          # repo does not own and cannot produce, it resolves upstream, and a red run
+          # every Monday until then is noise rather than signal. The summary is where
+          # it stays visible.
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          {
+            printf 'No newer python solves against the current pins; staying on %s.\n' "$current"
+            printf 'Tried, newest first: %s\n' "${skipped[*]}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Resolve the bot's commit identity
         id: bot
-        if: steps.check.outputs.changed == 'true'
+        if: steps.select.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SLUG: ${{ steps.app-token.outputs.app-slug }}
@@ -84,7 +132,7 @@ jobs:
           echo "email=${id}+${SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
 
       - name: Create pull request
-        if: steps.check.outputs.changed == 'true'
+        if: steps.select.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -93,9 +141,12 @@ jobs:
           branch: deps/update-python
           delete-branch: true
           base: main
-          commit-message: "deps: bump python to ${{ steps.check.outputs.latest }}"
-          title: "deps: bump python to ${{ steps.check.outputs.latest }}"
+          commit-message: "deps: bump python to ${{ steps.select.outputs.version }}"
+          title: "deps: bump python to ${{ steps.select.outputs.version }}"
           body: |
-            Automated bump of the `pixi.toml` python pin to the newest stable
-            conda-forge release **${{ steps.check.outputs.latest }}**, with
-            `pixi.lock` re-solved to match.
+            Automated bump of the `pixi.toml` python pin to
+            **${{ steps.select.outputs.version }}**, the newest stable conda-forge
+            release this workspace solves against, with `pixi.lock` re-solved to match.
+
+            Newer releases skipped because no solution exists with the current pins:
+            `${{ steps.select.outputs.skipped || 'none' }}`.
