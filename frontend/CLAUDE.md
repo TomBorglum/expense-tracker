@@ -38,8 +38,8 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   Pinned by "adds a line per category when the grouping was asked for".
 - **The surface is `bg-base-200 text-base-content` on `<html>` in `index.html`.** daisyUI
   paints `base-100` on `:root`, so that is the one background covering the whole canvas.
-  **Every colour is referenced by role**, never a hard-coded shade. The two themes and why
-  no toggle exists are in [`README.md`](../README.md#frontend).
+  **Every colour is referenced by role**, never a hard-coded shade. The one theme, `dim`,
+  and why there is no toggle are in [`README.md`](../README.md#frontend).
 - **The calendar is themed by daisyUI, and `@daypicker/react/style.css` is deliberately not
   imported.** daisyUI ships a first-party theme keyed on the `react-day-picker` class,
   written in role tokens. **Importing the package's own stylesheet would silently beat it**:

@@ -625,16 +625,20 @@ A React 19 SPA built by vite and styled with Tailwind CSS v4, configured in CSS 
 `frontend/src/styles/app.css` - there is no `tailwind.config.js`.
 
 The palette and the component classes come from [daisyUI](https://daisyui.com), enabled
-as a `@plugin` in that same stylesheet. Two themes are named and the operating system
-picks between them: `nord --default` is the baseline, and `dim --prefersdark` takes over
-under `prefers-color-scheme: dark`. There is no `data-theme` attribute, no theme
-provider, no toggle, and no `dark:` variant in `src/` - colours are written by role
-(`bg-base-100`, `text-base-content`, `alert-error`) and the two themes repoint them.
+as a `@plugin` in that same stylesheet. One theme is named and nothing switches away from
+it: `dim --default`, which daisyUI binds at `:where(:root)` so it applies whatever the
+operating system asks for. There is no `data-theme` attribute, no `--prefersdark`, no
+theme provider, no toggle, and no `dark:` variant in `src/` - colours are written by role
+(`bg-base-100`, `text-base-content`, `alert-error`) and the theme points them at its own
+palette.
 
-The pair is chosen to match: both sit in the same desaturated blue-grey family (base hues
-260.7 and 264.1), and both are soft - `dim` is the lightest dark theme daisyUI ships, and
-`nord` is one of the few light ones that stops short of pure white. Swapping either half
-means checking that still holds.
+The app is dark-only by choice, and `dim` is the soft end of what daisyUI ships - the
+lightest of its dark themes, a desaturated blue-grey rather than black. The theme
+declares `color-scheme: dark` itself, which is what keeps browser-painted UI - scrollbars,
+native `<select>` popups, form controls - in step. Because that only reaches the browser
+with the stylesheet, `index.html` repeats it as `<meta name="color-scheme" content="dark">`
+so the first paint is not a white canvas. There is no `theme-color` tag: it takes a literal
+hex, not a role token. Swapping the theme means checking all of that still holds.
 
 `pixi run frontend-build` writes to `frontend/dist/`, vite's default. It is **gitignored**
 and nothing in this repo consumes it. CI runs the build as a gate because tsc and
