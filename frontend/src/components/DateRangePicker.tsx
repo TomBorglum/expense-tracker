@@ -22,9 +22,9 @@ const defaultClassNames = getDefaultClassNames();
 //
 // The dropdowns are real <select>s, and daisyUI leaves them transparent because they sit
 // invisible over the caption. A browser paints a native popup from the control's own
-// colours, so a transparent one comes up on white while still taking the inherited text
-// colour - unreadable under dim. The options carry it too, because the select's colour
-// alone does not reach them in every browser.
+// colours, so a transparent one comes up on white while still taking the inherited light
+// text colour - unreadable. The options carry it too, because the select's colour alone
+// does not reach them in every browser.
 //
 // daisyUI writes the calendar at 0.75rem; text-sm brings it to the 0.875rem the controls,
 // the captions and the table use. Four names carry it: the ordinary day numbers follow the

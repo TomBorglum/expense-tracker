@@ -10,15 +10,13 @@
 @source "../../index.html";
 @source "../";
 
-/* daisyUI supplies the palette and the component classes. Two themes and no switch:
-   --default binds nord at :where(:root), --prefersdark binds dim at :root:not([data-theme])
-   inside @media (prefers-color-scheme: dark), so the OS setting picks. Each theme
-   declares its own color-scheme, which is what makes the scrollbar follow. No
-   data-theme attribute, no toggle, and no dark: variant anywhere in src/. */
+/* daisyUI supplies the palette and the component classes. One theme and no switch: dim,
+   bound as --default at :where(:root), so it applies whatever the OS asks for. The theme
+   declares its own color-scheme: dark, which is what makes the scrollbar follow. No
+   data-theme attribute, no toggle, no --prefersdark, and no dark: variant anywhere in
+   src/. */
 @plugin "daisyui" {
-  themes:
-    nord --default,
-    dim --prefersdark;
+  themes: dim --default;
 }
 
 /* daisyUI gives .input and .select no hover state at all - only .btn has one - so the
