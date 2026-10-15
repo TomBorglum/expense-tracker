@@ -16,9 +16,14 @@ python = "==3.14.8"
 fastapi-core = "==0.143.2"
 uvicorn = "==0.54.0"
 # The ORM and the driver. asyncpg speaks the PostgreSQL wire protocol directly, so this
-# pair adds greenlet and nothing else - no libpq, no client binaries, no server.
+# pair pulls in no libpq, no client binaries and no server.
 sqlalchemy = "==2.1.4"
 asyncpg = "==0.31.0"
+# What sqlalchemy.ext.asyncio runs its sync-to-async bridge on. SQLAlchemy declares it
+# under the `asyncio` extra and 2.1 no longer resolves it on its own, and conda has no
+# extras - the same reason fastapi-core is spelled out above. Without it every import of
+# the app raises ImportError before a single test collects.
+greenlet = "==3.5.6"
 # Resolved here by fastapi-core anyway; declared because create_app() imports it directly.
 pydantic = "==2.14.1"
 # Resolved by pydantic, declared on the same terms: expense_loader raises its

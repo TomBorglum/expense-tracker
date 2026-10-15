@@ -90,7 +90,7 @@ def _under(path: str) -> ColumnElement[bool]:
     )
 
 
-def _at_level(depth: int) -> Select[tuple[str]]:
+def _at_level(depth: int) -> Select[str]:
     """Every stored category cut to `depth` levels, over the rows that go that deep."""
     levels = func.string_to_array(Expense.category, SEPARATOR, type_=ARRAY(Text))
     return (

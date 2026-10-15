@@ -89,7 +89,7 @@ nobody can bypass it, so a non-compliant merge is refused rather than merely dis
   `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
   Actions by SHA with a version comment.
 - **Every suppression carries a reason** beside the pragma: a comment next to
-  `# pyright: ignore[...]` (see `backend/src/expense_tracker/__init__.py`), or on/above
+  `# pyright: ignore[...]` (see `backend/tests/test_date_range.py`), or on/above
   an `// eslint-disable-next-line <rule>`. A bare disable is not acceptable.
 
 ## Commands

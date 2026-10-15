@@ -155,7 +155,7 @@ def create_app() -> FastAPI:
 
     # Registered before the CORS middleware below, which makes it the inner of the two.
     @app.middleware("http")
-    async def add_security_headers(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def add_security_headers(
         request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
         response = await call_next(request)
@@ -168,7 +168,7 @@ def create_app() -> FastAPI:
     # Read-only: rows arrive through `pixi run backend-load-expenses` and nowhere
     # else, so there is no POST, PUT or DELETE.
     @app.get("/api/expenses")
-    async def expenses(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def expenses(
         expenses: Annotated[ExpenseRepository, Depends(provide_expense_repository)],
         currencies: Annotated[CurrencyRepository, Depends(provide_currency_repository)],
         # A bare scalar default is a query parameter to FastAPI. Omitting it is the
@@ -202,7 +202,7 @@ def create_app() -> FastAPI:
 
     # The same rows /api/expenses lists, summed. Read-only for the same reason.
     @app.get("/api/expenses/totals")
-    async def totals(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def totals(
         expenses: Annotated[ExpenseRepository, Depends(provide_expense_repository)],
         currencies: Annotated[CurrencyRepository, Depends(provide_currency_repository)],
         # period is required, but typed with a default like the rest: a parameter
@@ -237,7 +237,7 @@ def create_app() -> FastAPI:
     # The categories the rows /api/expenses lists fall in, once each. Read-only for the
     # same reason.
     @app.get("/api/expenses/categories")
-    async def categories(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def categories(
         expenses: Annotated[ExpenseRepository, Depends(provide_expense_repository)],
         # str rather than int, for the reason the dates are str: an int annotation hands
         # the refusal to FastAPI, whose body is a list of errors rather than the
@@ -262,7 +262,7 @@ def create_app() -> FastAPI:
     # Read-only: rates arrive through `pixi run backend-load-currencies` and nowhere
     # else.
     @app.get("/api/currencies")
-    async def currencies(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def currencies(
         currencies: Annotated[CurrencyRepository, Depends(provide_currency_repository)],
     ) -> JSONResponse:
         payload = [
@@ -282,7 +282,7 @@ def create_app() -> FastAPI:
     # the repository module stay free of fastapi. Registered handlers run inside the
     # middleware above, so this response still collects the security headers.
     @app.exception_handler(ExpensesUnavailableError)
-    async def handle_expenses_unavailable(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def handle_expenses_unavailable(
         _request: Request, _exc: Exception
     ) -> JSONResponse:
         # Neither argument is used: the detail is the same either way, so a client
@@ -291,7 +291,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"detail": "expenses unavailable"}, status_code=503)
 
     @app.exception_handler(CurrenciesUnavailableError)
-    async def handle_currencies_unavailable(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def handle_currencies_unavailable(
         _request: Request, _exc: Exception
     ) -> JSONResponse:
         # The expenses handler's twin, and separate for the same reason the
@@ -299,7 +299,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"detail": "currencies unavailable"}, status_code=503)
 
     @app.exception_handler(ConversionError)
-    async def handle_conversion_error(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def handle_conversion_error(
         _request: Request, exc: Exception
     ) -> JSONResponse:
         # This one reads the exception, unlike the two above: the message is about the
@@ -308,7 +308,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
     @app.exception_handler(DateRangeError)
-    async def handle_date_range_error(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def handle_date_range_error(
         _request: Request, exc: Exception
     ) -> JSONResponse:
         # The conversion handler's twin, and reading its exception for the same
@@ -316,7 +316,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
     @app.exception_handler(AggregationError)
-    async def handle_aggregation_error(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def handle_aggregation_error(
         _request: Request, exc: Exception
     ) -> JSONResponse:
         # Reads its exception, like the two above and for the same reason: the message
@@ -324,14 +324,14 @@ def create_app() -> FastAPI:
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
     @app.exception_handler(CategoryFilterError)
-    async def handle_category_filter_error(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def handle_category_filter_error(
         _request: Request, exc: Exception
     ) -> JSONResponse:
         # The fourth of the kind, reading its exception for the same reason.
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
     @app.exception_handler(LevelRangeError)
-    async def handle_level_range_error(  # pyright: ignore[reportUnusedFunction]  # registered via decorator
+    async def handle_level_range_error(
         _request: Request, exc: Exception
     ) -> JSONResponse:
         # The fifth of the kind, reading its exception for the same reason.
