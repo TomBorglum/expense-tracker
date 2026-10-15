@@ -10,27 +10,32 @@ platforms = ["linux-64"]
 # Runtime LIBRARIES, folded into every environment. The app itself is installed per
 # environment, in the two blocks below.
 [dependencies]
-python = "==3.14.7"
+python = "==3.14.8"
 # fastapi-core, not fastapi: on conda-forge `fastapi` is the `fastapi[standard]` bundle
 # and drags uvicorn-standard, jinja2, python-multipart, email_validator and fastapi-cli in.
-fastapi-core = "==0.141.1"
-uvicorn = "==0.52.0"
+fastapi-core = "==0.143.2"
+uvicorn = "==0.54.0"
 # The ORM and the driver. asyncpg speaks the PostgreSQL wire protocol directly, so this
-# pair adds greenlet and nothing else - no libpq, no client binaries, no server.
-sqlalchemy = "==2.0.51"
+# pair pulls in no libpq, no client binaries and no server.
+sqlalchemy = "==2.1.4"
 asyncpg = "==0.31.0"
+# What sqlalchemy.ext.asyncio runs its sync-to-async bridge on. SQLAlchemy declares it
+# under the `asyncio` extra and 2.1 no longer resolves it on its own, and conda has no
+# extras - the same reason fastapi-core is spelled out above. Without it every import of
+# the app raises ImportError before a single test collects.
+greenlet = "==3.5.6"
 # Resolved here by fastapi-core anyway; declared because create_app() imports it directly.
-pydantic = "==2.13.4"
+pydantic = "==2.14.1"
 # Resolved by pydantic, declared on the same terms: expense_loader raises its
 # PydanticCustomError directly, so that a refusal reads as the loader's own message.
-pydantic-core = "==2.46.4"
+pydantic-core = "==2.50.1"
 # What expense_loader parses $EXPENSE_DATA_DIR's month files with. Already in the lock as a
 # poethepoet dependency; declared because that module imports it, and here rather than in a
 # feature because the prod wheel ships it.
 pyyaml = "==6.0.3"
 # What config.py validates the database settings with. Only the BaseSettings half is used;
 # loading backend/.env is direnv's job (`dotenv_if_exists` in .envrc), never the app's.
-pydantic-settings = "==2.15.0"
+pydantic-settings = "==2.16.0"
 
 # The app in two flavours: editable for development, a hatchling-built wheel for prod.
 # See backend/CLAUDE.md.
@@ -44,25 +49,25 @@ expense-tracker = { path = "backend", editable = false }
 # prod environment can exclude them.
 [feature.test.dependencies]
 pytest = "==9.1.1"
-pytest-cov = "==7.0.0"
+pytest-cov = "==7.1.0"
 # What starlette's TestClient runs on. httpx2 rather than httpx: starlette imports
 # `httpx2 as httpx` under TYPE_CHECKING, so plain httpx types the client as Unknown and
 # basedpyright fails the gate.
-httpx2 = "==2.9.1"
-basedpyright = "==1.39.8"
-ruff = "==0.15.21"
+httpx2 = "==2.13.1"
+basedpyright = "==1.40.2"
+ruff = "==0.17.0"
 # The backend's task runner, reading [tool.poe.tasks] from backend/pyproject.toml.
-poethepoet = "==0.41.0"
+poethepoet = "==0.49.0"
 # Runs the frontend toolchain and the language servers Zed is pinned to. Test feature,
 # which is what keeps the prod environment Node-free.
-nodejs = "==26.5.0"
+nodejs = "==26.10.0"
 # Pinned here rather than by a "packageManager" field in package.json: pnpm's pmOnFail
 # defaults to "download", so that field would fetch its own version and bypass this pin.
-pnpm = "==11.18.0"
+pnpm = "==12.4.1"
 # The server, and the initdb/pg_ctl/psql/createdb binaries the db-* poe tasks drive.
 # Development and CI only: keeping it out of [dependencies] is what keeps it - and libpq,
 # icu, krb5, openldap and liburing behind it - out of the prod environment.
-postgresql = "==18.4"
+postgresql = "==18.6"
 
 # No [activation.env], deliberately: the connection settings are declared once, in
 # backend/.env. See backend/CLAUDE.md.
@@ -71,7 +76,7 @@ postgresql = "==18.4"
 # a "ui" extra, and conda has no extras, so the recipe still carries both as hard
 # dependencies plus nox. From PyPI it declares click, grimp, rich and typing-extensions.
 [feature.test.pypi-dependencies]
-import-linter = "==2.13"
+import-linter = "==2.15"
 
 # Forwarders, in the test feature so prod has neither poe nor pnpm to forward to. Each
 # names a task defined elsewhere and sets the cwd its runner needs; no command body lives
