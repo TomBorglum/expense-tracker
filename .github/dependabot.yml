@@ -1,7 +1,8 @@
 version: 2
 updates:
-  # pixi.toml's python pin is not covered here: Dependabot has no pixi ecosystem, and
-  # its conda one reads only environment.yml. update-python.yml bumps it instead.
+  # pixi.toml is not covered here: Dependabot has no pixi ecosystem, and its conda one
+  # reads only environment.yml. update-pixi-dependencies.yml bumps every pin in it
+  # instead, python included.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

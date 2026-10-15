@@ -83,8 +83,16 @@ only hidden types will not open a release PR until a `feat`/`fix`/`deps` lands.
 
 **If the change alters what a user receives when they run the application, it is
 `deps:` (or `feat`/`fix`); if it only touches the build or CI, it is `ci:`/`chore:`.**
-That is why `update-python.yml`, which bumps the shipped `pixi.toml` python pin, uses
-`deps:`, while Dependabot's GitHub Actions bumps use `ci:`.
+That is why Dependabot's GitHub Actions bumps use `ci:`.
+
+`update-pixi-dependencies.yml` is the one standing exception, and a deliberate one. The
+reusable workflow it calls commits a single `deps: update pixi dependencies` whatever
+moved, so a run that bumped only `ruff` or `pnpm` lands as `deps:` and cuts a patch
+release exactly as a `python` or `sqlalchemy` bump does. That subject is not one of the
+workflow's inputs, and a single `pixi upgrade` can move runtime libraries and dev tooling
+in the same solve, so no correct split is available to it. Over-reporting a tooling bump
+is the cheaper error: the alternative hides a shipped dependency change from the
+changelog.
 
 ## Breaking changes
 

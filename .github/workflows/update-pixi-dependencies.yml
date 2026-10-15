@@ -1,0 +1,36 @@
+name: Update pixi dependencies
+
+# Dependabot has no pixi ecosystem, so nothing bumps the versions pinned in pixi.toml.
+# This calls the reusable workflow that does: it takes pixi from .envrc's `use pixi` line,
+# runs `pixi upgrade`, and opens one PR holding exactly pixi.toml and pixi.lock.
+# Authenticates as the expense-tracker-bot GitHub App rather than GITHUB_TOKEN, so the PR
+# can trigger the required status checks - events made with GITHUB_TOKEN start no further
+# workflow runs.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A dispatch must not race the schedule onto the same deps/pixi branch. cancel-in-progress
+# is false deliberately: cancelling a run that has already pushed the branch leaves a
+# half-made pull request, and GitHub warns against cancelling across a caller/called
+# workflow pair, which report the same name in github.workflow.
+concurrency:
+  group: update-pixi-dependencies
+  cancel-in-progress: false
+
+jobs:
+  # Every input left at its default: the .envrc and pixi.toml are both at the root, the
+  # default exact-version pinning writes the `==` form this workspace uses, deps/pixi fits
+  # the branch-naming rule, a scheduled caller is not in detached HEAD so base is implied,
+  # and .envrc needs no stubbed directives - `use pixi` and `dotenv_if_exists` are both
+  # defined by setup-direnv and direnv itself.
+  update:
+    uses: TomBorglum/workflows/.github/workflows/update-pixi-dependencies.yml@4ffb14cb79301f3def270fe8837a9570dcf07eef # v1.0.0
+    secrets:
+      app-client-id: ${{ secrets.AUTOMATION_APP_CLIENT_ID }}
+      app-private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
