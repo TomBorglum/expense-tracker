@@ -1167,9 +1167,11 @@ one in the `db-create` behind it, before uvicorn ever binds. Nothing falls back 
 default.
 
 CI gets the same names the same way: `setup-direnv` activates this `.envrc` and forwards
-the resulting environment to `$GITHUB_ENV` for the steps after it. Both
-`.github/workflows/ci.yml` and `.github/workflows/update-python.yml` rely on it, and it
-is the first thing to check if CI ever fails to find `PGPORT`.
+the resulting environment to `$GITHUB_ENV` for the steps after it.
+`.github/workflows/ci.yml` calls it directly;
+`.github/workflows/update-pixi-dependencies.yml` reaches it through the reusable workflow
+it delegates to, which activates this same `.envrc` for the pixi version its `use pixi`
+line pins. It is the first thing to check if CI ever fails to find `PGPORT`.
 
 One loader covers everything, including what no task wraps:
 
