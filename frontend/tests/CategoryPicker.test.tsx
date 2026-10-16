@@ -23,18 +23,34 @@ function checkbox(name: string) {
   return screen.getByRole<HTMLInputElement>("checkbox", { name });
 }
 
+// A node's disclosure button, named by the verb it would perform - so the query says
+// both which node and which way it is currently open.
+function twisty(verb: "Collapse" | "Expand", name: string) {
+  return screen.getByRole<HTMLButtonElement>("button", { name: `${verb} ${name}` });
+}
+
+function twisties() {
+  return screen
+    .queryAllByRole("button", { name: /^(Collapse|Expand) / })
+    .map((button) => button.getAttribute("aria-label"));
+}
+
 function checkboxes() {
   return screen
     .queryAllByRole<HTMLInputElement>("checkbox")
     .map((box) => [box.labels?.[0]?.textContent, box.checked]);
 }
 
+// The indent sits on the row rather than on the label: the twisty is outside the label,
+// so the two share a row element that carries the depth.
 function indents() {
   return screen
     .queryAllByRole<HTMLInputElement>("checkbox")
     .map((box) => [
       box.labels?.[0]?.textContent,
-      [...(box.labels?.[0]?.classList ?? [])].find((name) => name.startsWith("pl-")),
+      [...(box.labels?.[0]?.parentElement?.classList ?? [])].find((name) =>
+        name.startsWith("pl-"),
+      ),
     ]);
 }
 
@@ -82,14 +98,72 @@ test("keeps the list out of the document until it is opened", async () => {
   expect(
     screen.getByRole("button", { name: /^Categories /, expanded: true }),
   ).toBeTruthy();
-  // One box per option, in walk order rather than the order given, labelled by its own
-  // level and ticked where the selection says so.
+  // One box per option at the roots, in walk order rather than the order given, labelled
+  // by its own level and ticked where the selection says so. Fuel is not among them: the
+  // panel opens at the roots, and Car being ticked says nothing about Car's children.
   expect(checkboxes()).toEqual([
     ["Car", true],
-    ["Fuel", false],
     ["Car2024", false],
     ["Groceries", false],
   ]);
+});
+
+test("shows a branch on its twisty, and hides it again", async () => {
+  renderPicker([]);
+  await userEvent.click(trigger());
+  expect(screen.queryByRole("checkbox", { name: "Fuel" })).toBeNull();
+
+  await userEvent.click(twisty("Expand", "Car"));
+
+  expect(checkbox("Fuel")).toBeTruthy();
+  expect(twisty("Collapse", "Car").getAttribute("aria-expanded")).toBe("true");
+
+  await userEvent.click(twisty("Collapse", "Car"));
+
+  expect(screen.queryByRole("checkbox", { name: "Fuel" })).toBeNull();
+});
+
+test("offers a twisty only where there are children to disclose", async () => {
+  // Car is the one option with any; a leaf keeps the width and offers no control.
+  renderPicker([]);
+  await userEvent.click(trigger());
+  expect(twisties()).toEqual(["Expand Car"]);
+});
+
+test("opens the branch a selected category sits in", async () => {
+  // Otherwise the trigger would read "Car:Fuel" over a list with nothing ticked in it,
+  // and there would be no way to untick it.
+  renderPicker(["Car:Fuel"]);
+  await userEvent.click(trigger());
+  expect(checkboxes()).toEqual([
+    ["Car", false],
+    ["Fuel", true],
+    ["Car2024", false],
+    ["Groceries", false],
+  ]);
+});
+
+test("lets the parent of a selected category be collapsed again", async () => {
+  // What the map of clicks buys over a set of open paths: a set would hold this branch
+  // open for as long as the selection lasted, and the twisty would do nothing.
+  renderPicker(["Car:Fuel"]);
+  await userEvent.click(trigger());
+
+  await userEvent.click(twisty("Collapse", "Car"));
+
+  expect(screen.queryByRole("checkbox", { name: "Fuel" })).toBeNull();
+  expect(twisty("Expand", "Car")).toBeTruthy();
+});
+
+test("keeps a branch expanded across a close and a reopen", async () => {
+  renderPicker([]);
+  await userEvent.click(trigger());
+  await userEvent.click(twisty("Expand", "Car"));
+
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(trigger());
+
+  expect(checkbox("Fuel")).toBeTruthy();
 });
 
 test("renders a child under its parent rather than where the list put it", async () => {
@@ -97,6 +171,7 @@ test("renders a child under its parent rather than where the list put it", async
   // and still sits at the root, which is what a contiguity walk would get wrong.
   renderPicker([]);
   await userEvent.click(trigger());
+  await userEvent.click(twisty("Expand", "Car"));
   expect(indents()).toEqual([
     ["Car", "pl-0"],
     ["Fuel", "pl-4"],
@@ -108,6 +183,7 @@ test("renders a child under its parent rather than where the list put it", async
 test("reports a child by its whole path, not by the level it shows", async () => {
   const onChange = renderPicker([]);
   await userEvent.click(trigger());
+  await userEvent.click(twisty("Expand", "Car"));
   await userEvent.click(checkbox("Fuel"));
   expect(onChange.mock.calls).toEqual([[["Car:Fuel"]]]);
 });
@@ -117,6 +193,7 @@ test("ticks a parent without touching its children", async () => {
   // redundant - and a parent beside its own child is a request in its own right.
   const onChange = renderPicker([]);
   await userEvent.click(trigger());
+  await userEvent.click(twisty("Expand", "Car"));
   await userEvent.click(checkbox("Car"));
   expect(onChange.mock.calls).toEqual([[["Car"]]]);
   expect(checkbox("Fuel").checked).toBe(false);
@@ -129,6 +206,19 @@ test("reports the selection in option order, whatever order it was ticked in", a
   await userEvent.click(trigger());
   await userEvent.click(checkbox("Car"));
   expect(onChange.mock.calls).toEqual([[["Car", "Groceries"]]]);
+});
+
+test("reports a tick inside a collapsed branch rather than dropping it", async () => {
+  // The order the selection is reported in comes from the whole tree, not from the rows
+  // on screen - otherwise collapsing a branch would quietly take its ticks out of the
+  // URL on the next change.
+  const onChange = renderPicker(["Car:Fuel"]);
+  await userEvent.click(trigger());
+  await userEvent.click(twisty("Collapse", "Car"));
+
+  await userEvent.click(checkbox("Groceries"));
+
+  expect(onChange.mock.calls).toEqual([[["Car:Fuel", "Groceries"]]]);
 });
 
 test("reports the selection without a category that was unticked", async () => {
@@ -191,11 +281,18 @@ test("closes again on a second click of the trigger", async () => {
 });
 
 test("can be worked from the keyboard", async () => {
-  // Tab reaches the first box from the trigger and Space ticks it: the disclosure
-  // pattern leaves focus on the trigger when it opens.
+  // Tab reaches the first row's controls from the trigger, its twisty before its box,
+  // and Space works either: the disclosure pattern leaves focus on the trigger when it
+  // opens, and APG asks Tab and Space of a twisty and nothing more.
   const onChange = renderPicker([]);
   await userEvent.click(trigger());
   await userEvent.tab();
+  expect(document.activeElement).toBe(twisty("Expand", "Car"));
+  await userEvent.keyboard(" ");
+  expect(document.activeElement).toBe(twisty("Collapse", "Car"));
+
+  await userEvent.tab();
+
   expect(document.activeElement).toBe(checkbox("Car"));
   await userEvent.keyboard(" ");
   expect(onChange.mock.calls).toEqual([[["Car"]]]);
@@ -212,7 +309,8 @@ test("shows a category nobody offered rather than silently dropping it", async (
   // Reachable by typing a name into the address bar: the URL is passed to the backend
   // unchecked, so the control has to agree with the request that is in flight.
   // A path, because that is what the address bar carries: it has no parent in the tree
-  // to sit under, so it is labelled in full and listed flat, ahead of the rest.
+  // to sit under, so it is labelled in full, listed flat ahead of the rest, and has
+  // nothing to disclose.
   renderPicker(
     ["Travel:Spain"],
     [
@@ -227,4 +325,5 @@ test("shows a category nobody offered rather than silently dropping it", async (
     ["Car", "pl-0"],
     ["Groceries", "pl-0"],
   ]);
+  expect(twisties()).toEqual([]);
 });

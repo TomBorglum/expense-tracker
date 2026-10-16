@@ -88,6 +88,12 @@ async function categoryTriggerEnabled() {
   });
 }
 
+// The panel opens at the roots, so a nested stub has to be disclosed before it is there
+// to read or tick. Named by the verb, which is also what says it is currently shut.
+async function expand(name: string) {
+  await userEvent.click(screen.getByRole("button", { name: `Expand ${name}` }));
+}
+
 function requestedCurrencies(requested: Record<string, string | null>[]) {
   return requested.map((params) => params.currency);
 }
@@ -327,6 +333,7 @@ test("offers the categories the backend lists, labelled by their own level", asy
   await screen.findByRole("table", { name: "Expenses" });
   await categoryTriggerEnabled();
   await userEvent.click(categoryTrigger());
+  await expand("Stub category");
   const names = screen
     .getAllByRole("checkbox")
     .map((box) => (box as HTMLInputElement).labels?.[0]?.textContent);
@@ -396,6 +403,7 @@ test("requests a nested category by its whole path", async () => {
   await screen.findByRole("table", { name: "Expenses" });
   await categoryTriggerEnabled();
   await userEvent.click(categoryTrigger());
+  await expand("Stub category");
   await userEvent.click(screen.getByRole("checkbox", { name: "Nested stub" }));
   await waitFor(() => {
     expect(requested.at(-1)).toEqual(["Stub category:Nested stub"]);
