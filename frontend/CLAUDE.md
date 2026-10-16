@@ -89,22 +89,11 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   coerces `?from_date=2026` to a number, and the `With` helpers work per value. One value
   parses to a bare string, so `router.state.location.search` is not the validated search;
   assert on `searchStr`. Pinned by "spells a list as a key repeated once per value".
-- **`src/routeTree.gen.ts` is committed and never hand-edited.** It is runtime source, not
-  a build artifact: every gate except `frontend-build` reads it and none can produce it.
-  **Two independent checks keep it in step.** Adding a route file is caught by
-  `frontend-typecheck`, since `createFileRoute("/new")` is not assignable until the tree
-  names `/new`, so `pnpm run build` cannot regenerate after adding one - use `pnpm exec
-  vite build`. A rename or deletion typechecks fine against a stale tree, and is caught
-  instead by `ci.yml`'s `git diff --exit-code` step after `frontend-build`, the one gate
-  that runs vite.
-- **The generated tree is excluded from prettier, coverage and Sonar, and `globalIgnores`
-  must not make eslint a fourth.** The three exclusions are in the root
-  [`CLAUDE.md`](../CLAUDE.md) table. Its own blanket `/* eslint-disable */` is enough, and
-  an ignore *pattern* additionally makes eslint answer "File ignored because of a matching
-  ignore pattern" whenever an editor hands it the file, which `--no-warn-ignored` cannot
-  reach. **The prettier exclusion is not a preference**: `router-generator` calls
-  `prettier.format` with explicit options and never resolves `.prettierrc.json`, so the
-  file lands at `printWidth` 80 against this repo's 88.
+- **`src/routeTree.gen.ts` is committed and never hand-edited**, and `globalIgnores` must
+  not make eslint a fourth exclusion beside prettier, coverage and Sonar. Why each holds
+  is in [`README.md`](../README.md#routing) and the root [`CLAUDE.md`](../CLAUDE.md)
+  table. The one thing neither says: **`pnpm run build` cannot regenerate it** after a
+  route file is added, typecheck failing first - use `pnpm exec vite build`.
 - **`src/components/` is the router-free layer, not `src/routes/`.** Under file-based
   routing the route and its page are the same module: `routes/index.tsx` holds
   `validateSearch` and the component and reads the URL through **`Route.useSearch()`**.
@@ -136,7 +125,11 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   path order is nearly pre-order, but a level name starting below `:` interleaves, so a
   contiguity walk nests a root under the wrong parent. **Ticking a parent leaves its
   children alone** - the backend reads a node as its whole subtree, so auto-ticking only
-  builds the overlap its longest-prefix rule then resolves. `CategoryPicker.test.tsx`.
+  builds the overlap its longest-prefix rule then resolves. **Only the render filters a
+  collapsed row away**: the walk covers the whole tree and reports the selection in its
+  order, so a tick out of sight would leave the URL. **Expansion is a map of twisty
+  clicks, never a set of open paths** - a set holds a selection's ancestors open and
+  their own twisties inert. `CategoryPicker.test.tsx`.
 - **The date range is always bounded, and every `navigate` carries the whole search.**
   No clear button and no unbounded mode: `DateRangePicker` holds a half-picked range in
   local state and reports nothing until both ends are set, an empty bound being malformed
