@@ -50,14 +50,17 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
             sight because the page already shows the same word as its heading. */}
         <caption className="sr-only">Expenses</caption>
         {/* Amount and Currency carry the widths the totals table gives them, so the two
-            views size those columns alike. Details is the one column left unsized and
-            takes everything the fixed layout has not spent - under table-fixed a second
-            unsized column would halve that. The min width is what the wrapper's
-            overflow-auto scrolls once there is no room left. */}
+            views size those columns alike. Category is the one column left unsized, as in
+            the totals table, and takes everything the fixed layout has not spent: a path
+            is a level deeper than the last with nothing bounding its depth, and a fixed
+            160px wrapped the longer ones. Details is pinned instead and a long memo wraps
+            - under table-fixed a second unsized column would halve the slack. The min
+            width is what the wrapper's overflow-auto scrolls once there is no room
+            left. */}
         <colgroup>
           <col className="w-32" />
-          <col className="w-40" />
           <col />
+          <col className="w-40" />
           <col className="w-40" />
           <col className="w-24" />
         </colgroup>
