@@ -4,12 +4,14 @@ import calendar
 import datetime
 from collections import defaultdict
 from collections.abc import Sequence
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import NamedTuple
 
 from .date_range import DateRange
 from .expense_repository import ExpenseRecord
+
+_CENTS = Decimal("0.01")
 
 
 class AggregationError(Exception):
@@ -39,6 +41,9 @@ class TotalRecord(NamedTuple):
     currency: str | None
     # The record's own path, or None when the request did not group at all.
     category: str | None
+    # The mean of this currency's totals over the periods so far, or None on a grouped
+    # row.
+    running_average: Decimal | None
 
 
 def parse_period(value: str | None) -> Period:
@@ -94,20 +99,69 @@ def aggregate(
     for (period_key, currency, category), amount in sums.items():
         grouped[period_key].append((currency, category, amount))
     totals: list[TotalRecord] = []
+    # Carried across the walk, so a period's average covers every period before it.
+    running: defaultdict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     # The walk supplies the period order, so only the rows within one are sorted here.
-    for period_key in _period_keys(expenses, period):
+    for periods, period_key in enumerate(_period_keys(expenses, period), start=1):
         start, end = _clamp(_period_bounds(period_key, period), dates)
         rows = sorted(grouped[period_key], key=lambda row: (row[1] or "", row[0]))
+        for currency, _category, amount in rows:
+            running[currency] += amount
+        # Rebuilt each period, the divisor being how many have passed: an average moves
+        # even where the total behind it does not. Empty when the request grouped, which
+        # is what leaves a grouped row and a grouped gap row carrying none.
+        averages: dict[str, Decimal] = (
+            {}
+            if grouping is not None
+            else {
+                currency: _mean(total, periods) for currency, total in running.items()
+            }
+        )
         if not rows:
-            # A period nobody spent in is still a row, carrying the span and nothing
-            # else: absent says "none recorded" where 0.00 would say "these cancelled
-            # out", which a month of credits can genuinely do.
-            totals.append(TotalRecord(period_key, start, end, None, None, None))
+            totals.extend(_gap(period_key, start, end, averages))
         totals.extend(
-            TotalRecord(period_key, start, end, amount, currency, category)
+            TotalRecord(
+                period_key,
+                start,
+                end,
+                amount,
+                currency,
+                category,
+                averages.get(currency),
+            )
             for currency, category, amount in rows
         )
     return totals
+
+
+def _gap(
+    period_key: str,
+    start: datetime.date,
+    end: datetime.date,
+    averages: dict[str, Decimal],
+) -> list[TotalRecord]:
+    """What a period nobody spent in sends: one row per average, or one bare row."""
+    # A period nobody spent in is still a row, carrying the span: absent says "none
+    # recorded" where 0.00 would say "these cancelled out", which a month of credits can
+    # genuinely do. Ungrouped it names the average of every currency seen so far, which
+    # is the one figure an empty period does have.
+    if not averages:
+        return [TotalRecord(period_key, start, end, None, None, None, None)]
+    return [
+        TotalRecord(period_key, start, end, None, currency, None, average)
+        for currency, average in sorted(averages.items())
+    ]
+
+
+def _mean(total: Decimal, periods: int) -> Decimal:
+    """The total spread over the periods it covers, at two places."""
+    # ROUND_HALF_UP spelled out: Decimal rounds half to even by default.
+    mean = (total / periods).quantize(_CENTS, rounding=ROUND_HALF_UP)
+    # A cumulative credit too small to show at this scale quantizes to -0.00, which a
+    # sum cannot reach and a division can.
+    if mean == 0:
+        mean = abs(mean)
+    return mean
 
 
 def _period_key(day: datetime.date, period: Period) -> str:

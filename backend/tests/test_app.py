@@ -632,6 +632,85 @@ def test_total_amounts_are_strings_not_numbers(
     assert [row.amount for row in body] == ["7.25", "125.50", "10.00"]
 
 
+def test_running_averages_are_strings_not_numbers(
+    same_period_expenses_client: TestClient,
+) -> None:
+    """5.00 must not arrive as 5, the twin of the amount assertion above.
+
+    66.38 carries the other half of the rule: 132.75 over two months is 66.375, which
+    ROUND_HALF_UP takes up rather than to even.
+    """
+    body = _TOTALS.validate_json(
+        same_period_expenses_client.get(
+            "/api/expenses/totals", params={"period": "month"}
+        ).content
+    ).items
+    assert [row.running_average for row in body] == ["7.25", "66.38", "5.00"]
+
+
+def test_an_empty_month_pulls_the_running_average_down(
+    gapped_expenses_client: TestClient,
+) -> None:
+    """The figure the view exists to show: 100.00, then nothing, then 300.00.
+
+    February counts 0 towards the sum and 1 towards the divisor, so the average halves
+    before March lifts it again. 400.00 over three months is 133.33.
+    """
+    body = _RAW_ROWS.validate_json(
+        gapped_expenses_client.get(
+            "/api/expenses/totals", params={"period": "month"}
+        ).content
+    ).items
+    assert [(row["period"], row.get("running_average")) for row in body] == [
+        ("2026-01", "100.00"),
+        ("2026-02", "50.00"),
+        ("2026-03", "133.33"),
+    ]
+
+
+def test_an_ungrouped_period_with_no_expenses_carries_its_average(
+    gapped_expenses_client: TestClient,
+) -> None:
+    """February holds nothing, so it names its currency and average and no amount.
+
+    Read as plain dicts for the reason its grouped twin gives: running_average is
+    optional on the payload model, so validating proves nothing about the key.
+    """
+    response = gapped_expenses_client.get(
+        "/api/expenses/totals", params={"period": "month"}
+    )
+    assert response.status_code == 200
+    body = _RAW_ROWS.validate_json(response.content).items
+    assert body[1] == {
+        "period": "2026-02",
+        "from_date": "2026-02-01",
+        "to_date": "2026-02-28",
+        "currency": "DKK",
+        "running_average": "50.00",
+    }
+
+
+def test_totals_drop_the_running_average_when_they_were_grouped_by(
+    gapped_expenses_client: TestClient,
+) -> None:
+    """Absent, not null and not 0.00: the average is the period's, not a path's.
+
+    The gap row keeps carrying its span alone, which is what it carried before the
+    average existed.
+    """
+    response = gapped_expenses_client.get(
+        "/api/expenses/totals", params={"period": "month", "group_by": "category"}
+    )
+    assert response.status_code == 200
+    body = _RAW_ROWS.validate_json(response.content).items
+    assert all("running_average" not in row for row in body)
+    assert body[1] == {
+        "period": "2026-02",
+        "from_date": "2026-02-01",
+        "to_date": "2026-02-28",
+    }
+
+
 def test_totals_are_an_empty_list_when_nothing_is_loaded(
     empty_expenses_client: TestClient,
 ) -> None:

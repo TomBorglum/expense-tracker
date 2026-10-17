@@ -102,7 +102,7 @@ error state until something answers on 8000.
 | `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
 | `GET /api/expenses?category=Food&category=Housing` | Only the expenses in either category, or under it |
 | `GET /api/expenses/categories` | `[{"category", "name", "parent"}, ...]` - the `CategoryPayload` model, every category at the levels asked for, once each, in path order; takes `from_level` and `to_level` |
-| `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and `category` too |
+| `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category", "running_average"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and `category` too |
 | `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
 **Every body is an object holding `items`**, so each shape above is what fills that
@@ -318,8 +318,8 @@ to the category list, and there is no way to ask for a sum rolled up to an ances
 
 The response is a **dense calendar**: one row per period from the oldest matching expense
 to the newest, whether or not anything was spent in it. `period`, `from_date` and
-`to_date` are on every row; `amount`, `currency` and `category` are present with a value
-or **absent altogether**, never `null` and never `""`.
+`to_date` are on every row; `amount`, `currency`, `category` and `running_average` are
+present with a value or **absent altogether**, never `null` and never `""`.
 
 That absence carries meaning, and credits are why. A credit - a refund, a reimbursement,
 a share paid back - is a negative expense, so a period can hold rows that cancel each
@@ -341,6 +341,42 @@ then converting, and only the first makes a total equal what a reader adds up fr
 `backend/src/expense_tracker/aggregation.py` in Python rather than in a SQL `GROUP BY`,
 and why it needs no repository method of its own. A bad `period` or `group_by` is a `422`
 carrying the same plain-string `detail` as the refusals above.
+
+### The running average
+
+**`running_average` is the mean of this currency's totals over every period up to and
+including this one** - what the typical month costs, as the calendar fills in. The first
+period's average is its own total, there being nothing before it to average with, and
+`?period=` names the grain for both figures:
+
+| Period | Total | Running average |
+| --- | --- | --- |
+| January | `300.00` | `300.00` |
+| February | nothing recorded | `150.00` |
+| March | `150.00` | `150.00` |
+
+**A period nobody spent in counts**, 0 towards the sum and 1 towards the divisor, which
+is the whole reason February reads `150.00` there rather than keeping January's figure.
+That is also what the gap row gained: it names the currency and the average and still
+sends **no `amount`**, so "none recorded" stays distinguishable from a month of credits
+that netted to `0.00`. A period nobody spent in sends one such row per currency already
+seen - a currency first spent later has no average there, zero of nothing being a
+different claim from a month before it was ever spent.
+
+**The divisor is the period's place in the calendar, not the series' own length.** A
+currency arriving in March still divides by three, which is what makes the averages under
+a period add up the way the totals do. The quotient is quantized to cents with
+`ROUND_HALF_UP`, like a conversion, so `average x n` no longer re-multiplies to the
+running total exactly: it is a figure to read rather than one to reconcile. A cumulative
+credit too small to show at that scale would quantize to `-0.00`, which a sum cannot
+reach and a division can, so it is normalised to `0.00`.
+
+**`?group_by=category` rows carry no average at all.** It is a period's figure, and a
+grouped row sums under a path instead; the frontend takes a period's subtotal from the
+ungrouped request for the same reason. The calendar's extent is unchanged - still the
+oldest matching expense to the newest, never the requested range - so a range reaching
+past the data neither invents leading periods nor trails off into future ones with a
+sinking average.
 
 All four endpoints are read-only over HTTP. Rows arrive through
 `pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere else,
