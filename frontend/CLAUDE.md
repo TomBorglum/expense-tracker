@@ -13,6 +13,12 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   a day early west of Greenwich. A period is headed by its bounds, never its `YYYY-MM`.
   **A negative is a credit, `+` in `CREDIT_CLASS`**, rewritten by `src/amounts.ts` alone.
   Pinned by `amounts.test.ts` and "shows an alert when an amount arrives as a number".
+- **The expenses table merges category and details into one cell, path over memo.** Four
+  columns, the merged one unsized and holding the fixed layout's slack. A blank memo
+  renders **no second line** rather than a dash or an empty one, and the memo carries no
+  `sr-only` label: it is announced under the Category header, as it reads on screen. Pinned
+  by "stacks a memo under the category path and renders no second line without one"; the
+  `text-base-content/60` dim is by eye, as every appearance rule here is.
 - **A `Date` is never built from a string and never named through UTC.** The picker deals in
   `Date` objects and the API in bare `YYYY-MM-DD`, so `src/dates.ts` is the one crossing
   point, built from `getFullYear`/`getMonth`/`getDate`. **No code in `src/` calls

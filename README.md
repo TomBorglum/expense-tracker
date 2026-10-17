@@ -646,8 +646,9 @@ vitest never exercise the bundler, but keeps nothing from it.
 
 `GET /api/expenses` is the app's main read, fetched at runtime with
 [TanStack Query](https://tanstack.com/query) in `frontend/src/api/expenses.ts` and
-rendered by `frontend/src/components/ExpensesTable.tsx` as one table of amount, currency,
-date, category and details. Nothing generates a client from a schema, so the payload
+rendered by `frontend/src/components/ExpensesTable.tsx` as one table of date, category,
+amount and currency, where the category cell carries the expense's details on a second
+line beneath its path - a blank memo being a line that is simply not there. Nothing generates a client from a schema, so the payload
 *shape* is written out by hand on both sides and the two must be changed together; a
 mismatch shows up as a 404 or a failed shape guard at runtime. Every field is a string on
 the wire - `amount` included, because JSON has no decimal type - so the guard rejects a

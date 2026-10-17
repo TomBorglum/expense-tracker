@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -38,17 +38,43 @@ test("renders every expense the API serves, in the order it sends them", async (
   renderExpensesTable();
   await screen.findByRole("table", { name: "Expenses" });
   // Column order is pinned here too: the cells come back in document order, so a
-  // reordered header would have to reorder these to keep passing.
+  // reordered header would have to reorder these to keep passing. The category cell
+  // holds two lines, which textContent runs together with nothing between them.
   const cells = screen.getAllByRole("cell");
   expect(cells.map((cell) => cell.textContent)).toEqual(
     MOCK_EXPENSES.flatMap((expense) => [
       expense.date,
-      expense.category,
-      expense.details,
+      `${expense.category}${expense.details}`,
       displayAmount(expense.amount).text,
       expense.currency,
     ]),
   );
+});
+
+test("heads the merged column Category, with no Details column beside it", async () => {
+  renderExpensesTable();
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(
+    screen.getAllByRole("columnheader").map((header) => header.textContent),
+  ).toEqual(["Date", "Category", "Amount", "Currency"]);
+});
+
+test("stacks a memo under the category path and renders no second line without one", async () => {
+  renderExpensesTable();
+  await screen.findByRole("table", { name: "Expenses" });
+  // Scoped per row rather than indexed off one flat cell list, so each assertion names
+  // the row it is about and a column added later cannot shift it onto another cell.
+  const [blank, annotated] = screen.getAllByRole("row").slice(1);
+  // MOCK_EXPENSES opens with a row whose details are "", which the contract allows.
+  const withoutMemo = within(blank).getAllByRole("cell")[1];
+  expect(withoutMemo.textContent).toBe("Other stub category");
+  // The one thing the text cannot tell apart: no second line, rather than an empty one.
+  expect(withoutMemo.childElementCount).toBe(1);
+  const lines = within(annotated).getAllByRole("cell")[1].children;
+  expect([...lines].map((line) => line.textContent)).toEqual([
+    "Stub category",
+    "Stub details",
+  ]);
 });
 
 test("shows a negative amount as a credit and spending as it arrives", async () => {
@@ -121,9 +147,10 @@ test("shows an empty ledger as a row rather than an alert", async () => {
   server.use(http.get(EXPENSES_URL, () => collection([])));
   renderExpensesTable();
   await screen.findByRole("table", { name: "Expenses" });
-  expect(screen.getByRole("cell").textContent).toBe(
-    "No expenses match the selected criteria.",
-  );
+  const empty = screen.getByRole<HTMLTableCellElement>("cell");
+  expect(empty.textContent).toBe("No expenses match the selected criteria.");
+  // One cell across the four columns, so the row spans the table rather than part of it.
+  expect(empty.colSpan).toBe(4);
 });
 
 test("asks the API for the parameters it was given", async () => {
