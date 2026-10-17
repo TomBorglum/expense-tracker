@@ -690,10 +690,10 @@ def test_a_level_nobody_goes_that_deep_is_still_an_empty_list(tmp_path: Path) ->
     assert _CATEGORIES.validate_json(response.content).items == []
 
 
-def test_totals_group_on_the_deepest_selected_node(tmp_path: Path) -> None:
-    """The partition claim end to end, through the real WHERE clause: Alice's subtree
-    sums to 500 under her own node, Settlement keeps Bob's 400, and the two add up to
-    the 900 the same request returns when it is not grouped at all."""
+def test_totals_name_the_same_paths_the_list_endpoint_shows(tmp_path: Path) -> None:
+    """The resolution claim end to end, through the real WHERE clause: the three rows
+    /api/expenses lists for this selection are the three rows it totals, each under its
+    own path, and they add up to the 900 the same request returns ungrouped."""
     _load_a_tree(tmp_path)
 
     with TestClient(create_app()) as client:
@@ -717,8 +717,9 @@ def test_totals_group_on_the_deepest_selected_node(tmp_path: Path) -> None:
 
     rows = _TOTALS.validate_json(grouped.content).items
     assert [(row.amount, row.category) for row in rows] == [
-        ("400.00", "Settlement"),
-        ("500.00", "Settlement:Alice"),
+        ("200.00", "Settlement:Alice"),
+        ("300.00", "Settlement:Alice:Spain"),
+        ("400.00", "Settlement:Bob"),
     ]
     assert [row.amount for row in _TOTALS.validate_json(ungrouped.content).items] == [
         "900.00"

@@ -930,7 +930,7 @@ def test_the_level_parameters_reach_only_the_categories_endpoint(
     client: TestClient, requested_ranges: _Ranges
 ) -> None:
     """Depth is a property of the category list, not of the expenses or their totals -
-    where the grain comes from ?category= instead. FastAPI drops a parameter a route
+    which carry whatever path their records carry. FastAPI drops a parameter a route
     does not declare, so both of these are the request without it."""
     assert client.get("/api/expenses", params={"from_level": "2"}).status_code == 200
     totals = client.get(
@@ -940,10 +940,11 @@ def test_the_level_parameters_reach_only_the_categories_endpoint(
     assert requested_ranges == [UNBOUNDED, UNBOUNDED]
 
 
-def test_totals_group_on_the_top_level_when_no_category_is_selected(
+def test_totals_name_the_path_their_records_carry(
     nested_expenses_client: TestClient,
 ) -> None:
-    """The whole subtree rolled up, which is what the page shows before anyone picks."""
+    """The grain is the record's own path, so a totals row names what an expenses row
+    names - the whole tree listed at its own depth rather than rolled up."""
     response = nested_expenses_client.get(
         "/api/expenses/totals", params={"period": "month", "group_by": "category"}
     )
@@ -951,13 +952,17 @@ def test_totals_group_on_the_top_level_when_no_category_is_selected(
     body = _TOTALS.validate_json(response.content).items
     assert [(row.amount, row.category) for row in body] == [
         ("10.00", "Groceries"),
-        ("175.00", "Settlement"),
+        ("100.00", "Settlement:Alice"),
+        ("50.00", "Settlement:Alice:Spain"),
+        ("25.00", "Settlement:Bob"),
     ]
 
 
-def test_totals_group_on_the_selected_path(
+def test_a_selection_narrows_the_rows_rather_than_the_grain(
     nested_expenses_client: TestClient,
 ) -> None:
+    """?category= filters and nothing more. The fake applies no filter, so the rows are
+    the unfiltered ones - which is the claim: selecting changed no path."""
     response = nested_expenses_client.get(
         "/api/expenses/totals",
         params={"period": "month", "group_by": "category", "category": "Settlement"},
@@ -966,15 +971,17 @@ def test_totals_group_on_the_selected_path(
     body = _TOTALS.validate_json(response.content).items
     assert [(row.amount, row.category) for row in body] == [
         ("10.00", "Groceries"),
-        ("175.00", "Settlement"),
+        ("100.00", "Settlement:Alice"),
+        ("50.00", "Settlement:Alice:Spain"),
+        ("25.00", "Settlement:Bob"),
     ]
 
 
-def test_totals_split_a_selected_child_out_of_its_selected_parent(
+def test_selecting_a_parent_and_its_child_changes_no_row(
     nested_expenses_client: TestClient,
 ) -> None:
-    """The deepest selected ancestor wins, so Settlement keeps only what Alice did not
-    take - and the two still add to the 175 it held on its own above."""
+    """There is no ancestor rule left to resolve an overlapping selection with: each
+    record sums under its own path however many of its ancestors were ticked."""
     response = nested_expenses_client.get(
         "/api/expenses/totals",
         params=[
@@ -988,8 +995,9 @@ def test_totals_split_a_selected_child_out_of_its_selected_parent(
     body = _TOTALS.validate_json(response.content).items
     assert [(row.amount, row.category) for row in body] == [
         ("10.00", "Groceries"),
-        ("25.00", "Settlement"),
-        ("150.00", "Settlement:Alice"),
+        ("100.00", "Settlement:Alice"),
+        ("50.00", "Settlement:Alice:Spain"),
+        ("25.00", "Settlement:Bob"),
     ]
 
 

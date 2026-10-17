@@ -19,11 +19,6 @@ def split_path(path: str) -> tuple[str, ...]:
     return tuple(path.split(SEPARATOR))
 
 
-def top_level(path: str) -> str:
-    """The outermost level alone, which is the whole of a depth-1 path."""
-    return split_path(path)[0]
-
-
 def path_parent(path: str) -> str | None:
     """The path minus its last level, or None for a depth-1 path, which has none."""
     levels = split_path(path)
@@ -40,19 +35,6 @@ def path_name(path: str) -> str:
 def strip_path(path: str) -> str:
     """Each level stripped, which is what strip() meant when a path held one level."""
     return SEPARATOR.join(level.strip() for level in path.split(SEPARATOR))
-
-
-def deepest_ancestor(path: str, selected: frozenset[str]) -> str | None:
-    """The deepest selected path this one sits under, or None if it sits under none."""
-    # The path's own ancestors, deepest first, rather than a scan of `selected`: two
-    # distinct paths of equal length cannot both be ancestors of one path, so no tie is
-    # possible, and walking needs no argument that none is.
-    levels = split_path(path)
-    for depth in range(len(levels), 0, -1):
-        candidate = SEPARATOR.join(levels[:depth])
-        if candidate in selected:
-            return candidate
-    return None
 
 
 @dataclass(frozen=True)

@@ -303,9 +303,9 @@ def refunded_expenses_client(app: FastAPI) -> TestClient:
 def nested_expenses_client(app: FastAPI) -> TestClient:
     """One month of category paths: a subtree of three, beside a depth-1 category.
 
-    Alice's 100 and her Spain trip's 50 sit under Settlement:Alice, Bob's 25 under
-    Settlement, so grouping on Settlement is 175 and splitting Alice out of it leaves 25
-    - which is what makes the groups a partition rather than a roll-up.
+    Four distinct paths at three depths, so grouping returns four rows naming each one
+    - and the 100 and the 50 under Settlement:Alice are what shows that a parent and
+    its child stay apart.
     """
     app.dependency_overrides[provide_expense_repository] = lambda: (
         _FakeExpenseRepository(

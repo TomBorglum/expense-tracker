@@ -300,21 +300,21 @@ grain-neutral `period`. Rows are keyed by `(period, currency)`, and `?group_by=c
 adds a third part to that key. **`currency` stays in the key whatever was asked for** -
 DKK added to EUR is a number that means nothing.
 
-**`?group_by=` is only a toggle; the grain of that third part comes from `?category=`.**
-A row sums under the **deepest** selected path it sits under, so the groups partition the
-expenses rather than counting one of them twice. Say Alice's settlement is 150 and Bob's
-is 25:
+**`?group_by=` is only a toggle: a row sums under the path its expenses carry.** The
+difference between this endpoint and the list is the aggregation, not the resolution - a
+totals row names exactly what an expenses row names. `?category=` narrows which rows
+arrive and chooses no grain. Say Alice's settlement is 150 and Bob's is 25:
 
 | Selection | Rows |
 | --- | --- |
-| nothing | `Settlement` 175 - every path rolled up to its top level |
-| `Settlement` | `Settlement` 175 |
-| `Settlement` and `Settlement:Alice` | `Settlement:Alice` 150, `Settlement` 25 |
+| nothing | `Settlement:Alice` 150, `Settlement:Bob` 25, and every other path |
+| `Settlement` | `Settlement:Alice` 150, `Settlement:Bob` 25 |
+| `Settlement` and `Settlement:Alice` | the same two rows |
 
-The last one is worth reading twice: with Alice selected separately, the `Settlement` row
-holds what she did not take. The two still add to the 175 the same request returns
-ungrouped, which is what "partition" buys. There is **no level parameter here** - depth
-belongs to the category list, and the selection is what says how finely to cut a sum.
+The third one is worth reading twice: ticking an ancestor as well changes nothing, there
+being no rule left that resolves an overlap. The rows under a period still add to what
+the same request returns ungrouped. There is **no level parameter here** - depth belongs
+to the category list, and there is no way to ask for a sum rolled up to an ancestor.
 
 The response is a **dense calendar**: one row per period from the oldest matching expense
 to the newest, whether or not anything was spent in it. `period`, `from_date` and

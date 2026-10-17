@@ -12,7 +12,6 @@ from expense_tracker.aggregation import (
     parse_grouping,
     parse_period,
 )
-from expense_tracker.category_filter import CategoryFilter
 from expense_tracker.date_range import UNBOUNDED, DateRange
 from expense_tracker.expense_repository import ExpenseRecord
 
@@ -46,7 +45,6 @@ def test_expenses_in_one_month_become_one_total() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-        None,
     )
     assert totals == [
         TotalRecord(
@@ -70,7 +68,6 @@ def test_a_month_boundary_splits_a_total() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-        None,
     )
     assert [total.period for total in totals] == ["2026-02", "2026-03"]
 
@@ -82,7 +79,6 @@ def test_a_single_digit_month_is_zero_padded() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-        None,
     )
     assert totals[0].period == "2026-09"
 
@@ -97,7 +93,6 @@ def test_two_currencies_in_one_month_stay_two_totals() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-        None,
     )
     assert [(total.amount, total.currency) for total in totals] == [
         (Decimal("100.00"), "DKK"),
@@ -114,7 +109,6 @@ def test_categories_are_summed_together_when_they_are_not_grouped_by() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-        None,
     )
     assert [(total.amount, total.category) for total in totals] == [
         (Decimal("125.50"), None)
@@ -130,7 +124,6 @@ def test_grouping_by_category_splits_the_same_month() -> None:
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-        None,
     )
     assert [(total.amount, total.category) for total in totals] == [
         (Decimal("25.50"), "Food"),
@@ -148,7 +141,6 @@ def test_a_total_carries_two_decimal_places() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-        None,
     )
     assert str(totals[0].amount) == "1250.50"
 
@@ -160,7 +152,6 @@ def test_cents_are_exact_over_many_rows() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-        None,
     )
     assert totals[0].amount == Decimal("1.00")
 
@@ -176,7 +167,6 @@ def test_rows_come_back_oldest_period_first_then_category_then_currency() -> Non
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-        None,
     )
     assert [(t.period, t.category, t.currency) for t in totals] == [
         ("2026-02", "Food", "DKK"),
@@ -187,7 +177,7 @@ def test_rows_come_back_oldest_period_first_then_category_then_currency() -> Non
 
 
 def test_nothing_to_total_is_an_empty_list() -> None:
-    assert aggregate([], Period.MONTH, Grouping.CATEGORY, UNBOUNDED, None) == []
+    assert aggregate([], Period.MONTH, Grouping.CATEGORY, UNBOUNDED) == []
 
 
 def test_nothing_to_total_is_an_empty_list_whatever_the_range_was() -> None:
@@ -198,7 +188,6 @@ def test_nothing_to_total_is_an_empty_list_whatever_the_range_was() -> None:
             Period.MONTH,
             None,
             DateRange(datetime.date(2026, 1, 1), datetime.date(2026, 12, 31)),
-            None,
         )
         == []
     )
@@ -211,7 +200,6 @@ def test_a_period_spans_its_whole_calendar_month() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-        None,
     )
     assert _spans(totals) == [("2026-03", "2026-03-01", "2026-03-31")]
 
@@ -222,7 +210,6 @@ def test_a_thirty_day_month_ends_on_the_thirtieth() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-        None,
     )
     assert _spans(totals) == [("2026-04", "2026-04-01", "2026-04-30")]
 
@@ -234,7 +221,6 @@ def test_a_leap_february_ends_on_the_twenty_ninth() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-        None,
     )
     assert _spans(totals) == [("2028-02", "2028-02-01", "2028-02-29")]
 
@@ -252,7 +238,6 @@ def test_a_month_nobody_spent_in_is_still_a_row() -> None:
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-        None,
     )
     assert totals[1] == TotalRecord(
         "2026-02",
@@ -280,7 +265,6 @@ def test_a_month_whose_refunds_cancel_its_spending_is_a_zero_and_not_a_gap() -> 
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-        None,
     )
     assert totals == [
         TotalRecord(
@@ -307,7 +291,6 @@ def test_a_netted_month_is_positive_zero() -> None:
             Period.MONTH,
             None,
             UNBOUNDED,
-            None,
         )
         assert str(totals[0].amount) == "0.00"
 
@@ -322,7 +305,6 @@ def test_a_category_holding_only_a_refund_totals_negative() -> None:
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-        None,
     )
     assert [(total.category, total.amount) for total in totals] == [
         ("Housing", Decimal("1250.00")),
@@ -339,7 +321,6 @@ def test_a_gap_of_several_months_is_filled_contiguously() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-        None,
     )
     assert [total.period for total in totals] == [
         "2025-12",
@@ -357,7 +338,6 @@ def test_a_bound_inside_a_period_narrows_it() -> None:
         Period.MONTH,
         None,
         DateRange(datetime.date(2026, 3, 12), datetime.date(2026, 3, 14)),
-        None,
     )
     assert _spans(totals) == [("2026-03", "2026-03-12", "2026-03-14")]
 
@@ -372,7 +352,6 @@ def test_a_bound_outside_a_period_leaves_it_whole() -> None:
         Period.MONTH,
         None,
         DateRange(datetime.date(2026, 1, 12), datetime.date(2026, 3, 14)),
-        None,
     )
     assert _spans(totals) == [
         ("2026-01", "2026-01-12", "2026-01-31"),
@@ -388,7 +367,6 @@ def test_a_bound_on_a_period_edge_narrows_nothing() -> None:
         Period.MONTH,
         None,
         DateRange(datetime.date(2026, 3, 1), datetime.date(2026, 3, 31)),
-        None,
     )
     assert _spans(totals) == [("2026-03", "2026-03-01", "2026-03-31")]
 
@@ -405,7 +383,6 @@ def test_a_range_that_cannot_touch_a_period_leaves_it_whole() -> None:
         Period.MONTH,
         None,
         DateRange(datetime.date(2026, 1, 1), datetime.date(2026, 1, 31)),
-        None,
     )
     assert _spans(totals) == [("2026-03", "2026-03-01", "2026-03-31")]
 
@@ -416,7 +393,6 @@ def test_an_unbounded_range_clamps_nothing() -> None:
         Period.MONTH,
         None,
         DateRange(None, None),
-        None,
     )
     assert _spans(totals) == [("2026-03", "2026-03-01", "2026-03-31")]
 
@@ -427,7 +403,6 @@ def test_one_open_bound_clamps_only_the_other_end() -> None:
         Period.MONTH,
         None,
         DateRange(datetime.date(2026, 3, 9), None),
-        None,
     )
     assert _spans(totals) == [("2026-03", "2026-03-09", "2026-03-31")]
 
@@ -486,110 +461,65 @@ def _settlements() -> list[ExpenseRecord]:
     ]
 
 
-def test_a_depth_one_category_is_still_grouped_under_itself() -> None:
-    """The identity the backward-compatibility claim rests on: over categories that
-    carry no path, grouping on the top level is grouping on the category."""
+def test_a_depth_one_category_is_grouped_under_itself() -> None:
+    """A category carrying no path is its own group, which is the one depth at which
+    this grain and a rolled-up one cannot be told apart."""
     totals = aggregate(
         [_expense("100.00", _MARCH, category="Housing")],
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-        None,
     )
     assert [(total.amount, total.category) for total in totals] == [
         (Decimal("100.00"), "Housing")
     ]
 
 
-def test_paths_with_no_filter_are_grouped_under_their_top_level() -> None:
-    """Nothing selected is the whole tree rolled up to its outermost level, which is
-    what the totals page shows before anyone picks a category."""
-    totals = aggregate(_settlements(), Period.MONTH, Grouping.CATEGORY, UNBOUNDED, None)
+def test_every_path_is_its_own_group() -> None:
+    """The grain is the record's own path at every depth, so a total names exactly what
+    the expenses it came from name. Nothing is rolled up into an ancestor."""
+    totals = aggregate(_settlements(), Period.MONTH, Grouping.CATEGORY, UNBOUNDED)
     assert [(total.amount, total.category) for total in totals] == [
         (Decimal("10.00"), "Groceries"),
-        (Decimal("175.00"), "Settlement"),
-    ]
-
-
-def test_the_selected_path_is_the_grain() -> None:
-    """Selecting a node groups its whole subtree under it, descendants included."""
-    totals = aggregate(
-        _settlements(),
-        Period.MONTH,
-        Grouping.CATEGORY,
-        UNBOUNDED,
-        categories=CategoryFilter(frozenset({"Settlement"})),
-    )
-    assert [(total.amount, total.category) for total in totals] == [
-        (Decimal("10.00"), "Groceries"),
-        (Decimal("175.00"), "Settlement"),
-    ]
-
-
-def test_a_selected_child_is_split_out_of_its_selected_parent() -> None:
-    """The deepest selected ancestor wins, so the groups partition the rows: Alice and
-    her Spain trip leave Settlement holding Bob alone, and the two add up to what
-    Settlement held on its own above."""
-    totals = aggregate(
-        _settlements(),
-        Period.MONTH,
-        Grouping.CATEGORY,
-        UNBOUNDED,
-        categories=CategoryFilter(frozenset({"Settlement", "Settlement:Alice"})),
-    )
-    assert [(total.amount, total.category) for total in totals] == [
-        (Decimal("10.00"), "Groceries"),
-        (Decimal("25.00"), "Settlement"),
-        (Decimal("150.00"), "Settlement:Alice"),
-    ]
-    assert sum(total.amount for total in totals if total.amount is not None) == Decimal(
-        "185.00"
-    )
-
-
-def test_two_selected_siblings_stay_two_groups() -> None:
-    totals = aggregate(
-        _settlements(),
-        Period.MONTH,
-        Grouping.CATEGORY,
-        UNBOUNDED,
-        categories=CategoryFilter(frozenset({"Settlement:Alice", "Settlement:Bob"})),
-    )
-    assert [(total.amount, total.category) for total in totals] == [
-        (Decimal("10.00"), "Groceries"),
-        (Decimal("150.00"), "Settlement:Alice"),
+        (Decimal("100.00"), "Settlement:Alice"),
+        (Decimal("50.00"), "Settlement:Alice:Spain"),
         (Decimal("25.00"), "Settlement:Bob"),
     ]
 
 
-def test_a_record_under_nothing_selected_falls_back_to_its_top_level() -> None:
-    """Unreachable through the real repository, whose clause only returns rows under a
-    selected path - but the HTTP suite's fake records the filter and applies nothing,
-    the same case the period clamp is written for. Bob and Groceries are grouped under
-    their own top level rather than dropped or raised over."""
-    totals = aggregate(
-        _settlements(),
-        Period.MONTH,
-        Grouping.CATEGORY,
-        UNBOUNDED,
-        categories=CategoryFilter(frozenset({"Settlement:Alice"})),
-    )
+def test_a_child_is_not_folded_into_its_parent() -> None:
+    """Alice's own 100 and her Spain trip's 50 stay two rows rather than one 150, and
+    the rows still add to what the same request returns ungrouped."""
+    grouped = aggregate(_settlements(), Period.MONTH, Grouping.CATEGORY, UNBOUNDED)
+    assert [
+        (total.amount, total.category)
+        for total in grouped
+        if total.category is not None and total.category.startswith("Settlement:Alice")
+    ] == [
+        (Decimal("100.00"), "Settlement:Alice"),
+        (Decimal("50.00"), "Settlement:Alice:Spain"),
+    ]
+    ungrouped = aggregate(_settlements(), Period.MONTH, None, UNBOUNDED)
+    assert [total.amount for total in ungrouped] == [Decimal("185.00")]
+
+
+def test_narrowing_the_records_leaves_the_grain_alone() -> None:
+    """What ?category= does is drop records, never change what the rest sum under: the
+    Settlement rows here are the ones the whole set returned, minus Groceries."""
+    settlements = [
+        record for record in _settlements() if record.category != "Groceries"
+    ]
+    totals = aggregate(settlements, Period.MONTH, Grouping.CATEGORY, UNBOUNDED)
     assert [(total.amount, total.category) for total in totals] == [
-        (Decimal("10.00"), "Groceries"),
-        (Decimal("25.00"), "Settlement"),
-        (Decimal("150.00"), "Settlement:Alice"),
+        (Decimal("100.00"), "Settlement:Alice"),
+        (Decimal("50.00"), "Settlement:Alice:Spain"),
+        (Decimal("25.00"), "Settlement:Bob"),
     ]
 
 
-def test_an_ungrouped_request_names_no_category_whatever_was_selected() -> None:
-    """The grain comes from the selection only when ?group_by=category asked for one."""
-    totals = aggregate(
-        _settlements(),
-        Period.MONTH,
-        None,
-        UNBOUNDED,
-        categories=CategoryFilter(frozenset({"Settlement"})),
-    )
+def test_an_ungrouped_request_names_no_category() -> None:
+    """A row carries a path only when ?group_by=category asked for one."""
+    totals = aggregate(_settlements(), Period.MONTH, None, UNBOUNDED)
     assert [(total.amount, total.category) for total in totals] == [
         (Decimal("185.00"), None)
     ]
@@ -605,9 +535,8 @@ def test_the_currency_stays_in_the_key_whatever_the_grain() -> None:
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-        categories=CategoryFilter(frozenset({"Settlement"})),
     )
     assert [(total.amount, total.currency, total.category) for total in totals] == [
-        (Decimal("100.00"), "DKK", "Settlement"),
-        (Decimal("10.00"), "EUR", "Settlement"),
+        (Decimal("100.00"), "DKK", "Settlement:Alice"),
+        (Decimal("10.00"), "EUR", "Settlement:Bob"),
     ]
