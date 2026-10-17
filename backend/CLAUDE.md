@@ -7,12 +7,11 @@ otherwise correct change, or nothing does; each bullet says which.
 
 ## The HTTP surface
 
-- **The backend serves no frontend and publishes no OpenAPI.** The whole surface is
-  `GET /api/expenses`, `/api/expenses/totals`, `/api/expenses/categories` and
-  `/api/currencies`: no `/` route, no `StaticFiles` mount, no build artifact, and
-  `docs_url`, `redoc_url` and `openapi_url` stay `None`. All four are **read-only** -
-  rows arrive through the two loaders and nowhere else, so there is no POST, PUT or
-  DELETE. Pinned by `test_root_is_not_served` and its three surface neighbours.
+- **The backend serves no frontend and publishes no OpenAPI.** The whole surface is the
+  four `GET`s the route table in [`README.md`](../README.md) lists: no `/` route, no
+  `StaticFiles` mount, no build artifact, and `docs_url`, `redoc_url` and `openapi_url`
+  stay `None`. All four are **read-only**, rows arriving through the two loaders alone.
+  Pinned by `test_root_is_not_served` and its three surface neighbours.
 - **CORS is wildcard with `allow_credentials=False`.** The spec forbids the pair, so the
   day the API grows cookies or an `Authorization` header the wildcard has to become a real
   origin list. It is registered outermost, after the security-headers middleware, so it
@@ -24,9 +23,8 @@ otherwise correct change, or nothing does; each bullet says which.
   can gain a field without breaking a client; a new endpoint goes through `_collection`.
   Pinned by `test_every_collection_is_an_object_holding_items`.
 - **An empty table is 200 with an empty `items` array, not 503.** A database nobody has
-  loaded yet is a legitimate state, and a 503 would train a client to retry forever
-  against a working server, so both repositories raise only from their `except` arm.
-  `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` and its twins.
+  loaded yet is a legitimate state, so both repositories raise only from their `except`
+  arm. `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` + twins.
 - **`amount` goes out as `str(Decimal)`** so no float round trip can drift a total by a
   cent, and `date` as a bare `YYYY-MM-DD`. The frontend renders both verbatim. Pinned by
   `test_expense_amounts_are_strings_not_numbers` and its totals and rates twins.
@@ -73,16 +71,16 @@ otherwise correct change, or nothing does; each bullet says which.
 
 - **`?currency=` converts in `conversion.py`, and four refusals are the design, not gaps to
   fill in later.** A rate is used **only** in the direction `rates.tsv` states it, never
-  inverted, never composed through a third currency. A pair loaded twice is refused rather
-  than picked between, and only when needed. One unconvertible expense refuses the
-  **whole** request: a list mixing converted and unconverted amounts is a column nobody can
-  add up. A code that is not `\A[A-Z]{3}\Z` is refused rather than uppercased. Pinned by
-  the refusal tests in `test_conversion.py`.
+  inverted, never composed through a third currency; a pair loaded twice is refused rather
+  than picked between, and only when needed; one unconvertible expense refuses the
+  **whole** request; a code that is not `\A[A-Z]{3}\Z` is refused rather than uppercased.
+  Pinned by the refusal tests in `test_conversion.py`.
 - **The identity is the one thing it does not refuse:** `record.currency == target` returns
   the record before any lookup, which is why no `DKK DKK 1.000000` row exists. Pinned by
   `test_an_expense_already_in_the_target_currency_is_untouched`.
-- **`ROUND_HALF_UP` is spelled out because `Decimal` rounds half to even by default.**
-  Pinned by `test_a_half_cent_rounds_up_rather_than_to_even`.
+- **`ROUND_HALF_UP` is spelled out because `Decimal` rounds half to even by default**, in
+  `aggregation.py` as well as here - they are `|`-joined siblings, so neither may import
+  the other. `test_a_half_cent_rounds_up_rather_than_to_even` and its average twin.
 
 ## Aggregation
 
@@ -96,22 +94,27 @@ otherwise correct change, or nothing does; each bullet says which.
   chooses no grain, so `aggregate` never sees it. **No level parameter either** - depth
   belongs to the category list, and rolling a sum up to an ancestor is what this
   prevents. `test_totals_name_the_same_paths_the_list_endpoint_shows`.
-- **The conversion runs before the summing, and the order is the point.**
-  `convert_expenses` quantizes to cents, so converting then adding differs by cents from
-  adding then converting, and only the first makes a total equal what a reader adds up from
-  `/api/expenses?currency=EUR`. That is what puts the summing in Python rather than a SQL
-  `GROUP BY`. Pinned by `test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows`.
-- **`period`, `from_date` and `to_date` are on every row; `amount`, `currency` and
-  `category` only when they have a value** - never `null`, never `""`. `exclude_none=True`
-  on the route dump is the whole rule, not `exclude_unset` - `_total_payload` sets all six
-  fields. `?group_by=category` is what puts `category` in the key, and takes one value.
-  Pinned by `test_totals_drop_the_category_key_when_it_was_not_grouped_by` and its
-  neighbours, read as plain dicts: parsing proves nothing about a key's presence.
+- **The conversion runs before the summing, and the order is the point** - it is what
+  puts the summing in Python rather than a SQL `GROUP BY`, on the terms
+  [`README.md`](../README.md#asking-for-totals) states. Pinned by
+  `test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows`.
+- **`period`, `from_date` and `to_date` are on every row; `amount`, `currency`,
+  `category` and `running_average` only when they have a value** - never `null`, never
+  `""`. `exclude_none=True` on the route dump is the whole rule, not `exclude_unset` -
+  `_total_payload` sets all seven fields. `?group_by=category` is what puts `category` in
+  the key and takes one value, and what leaves the average off every row: a mean is a
+  period's figure, not a path's. Pinned by
+  `test_totals_drop_the_category_key_when_it_was_not_grouped_by` and its neighbours, read
+  as plain dicts: parsing proves nothing about a key's presence.
 - **The response is a dense calendar: one row per period from the oldest matching expense
   to the newest**, spent in or not, and **absent is not `0.00`** - a month of credits can
   net to zero. The extent is `min`/`max` over the records returned, so it relies on no
-  ordering of the repository's. **Dense in periods only**: a date range has a defined
-  universe of periods and categories do not. `test_a_month_nobody_spent_in_is_still_a_row`.
+  ordering of the repository's, and never the requested range - which would trail a bounded
+  one off into periods nobody has reached yet. A period nobody spent in sends no `amount`
+  and, ungrouped, one row per currency seen so far carrying its `running_average`, which
+  divides by the period's place in this calendar rather than by how many periods its own
+  currency appeared in. **Dense in periods only**: a date range has a defined universe of
+  periods and categories do not. `test_a_month_nobody_spent_in_is_still_a_row` + averages.
 - **A requested bound narrows a period only when it falls inside it**, which keeps
   `?from_date=2026-01-01` honoured as the 1st even when nothing was spent until the 7th.
   Load-bearing, not an optimisation: the fake filters nothing, so it *can* hand a March
@@ -119,8 +122,7 @@ otherwise correct change, or nothing does; each bullet says which.
   period's `to_date` is inclusive, from `calendar.monthrange`. Pinned by
   `test_a_range_that_cannot_touch_a_period_leaves_it_whole` and its leap-February twin.
 - **`?period=` is required and refuses rather than defaulting**, because a grain nobody
-  chose is an assumption inside a sum. `month` is the only grain, which is why the payload
-  field is the grain-neutral `period`. `test_a_total_without_a_period_is_refused` + twin.
+  chose is an assumption inside a sum. `test_a_total_without_a_period_is_refused` + twin.
 
 ## The date range and the category filter
 

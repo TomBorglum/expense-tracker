@@ -511,6 +511,7 @@ def test_a_category_narrows_what_the_totals_are_taken_over(tmp_path: Path) -> No
             to_date="2026-02-28",
             amount="611.23",
             currency="DKK",
+            running_average="611.23",
         )
     ]
 
@@ -757,6 +758,40 @@ def test_totals_group_the_loaded_expenses_by_month(tmp_path: Path) -> None:
             amount="400.00",
             currency="DKK",
             category="Car",
+        ),
+    ]
+
+
+def test_totals_carry_a_running_average_over_the_loaded_months(
+    tmp_path: Path,
+) -> None:
+    """The average against real numeric(12, 2) rows rather than Python Decimals.
+
+    600.00 in January and 400.00 in February average to 500.00 by February, which is
+    the figure the totals view reads.
+    """
+    _load_four_days(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/totals", params={"period": "month"})
+
+    assert response.status_code == 200
+    assert _TOTALS.validate_json(response.content).items == [
+        PeriodTotalPayload(
+            period="2026-01",
+            from_date="2026-01-01",
+            to_date="2026-01-31",
+            amount="600.00",
+            currency="DKK",
+            running_average="600.00",
+        ),
+        PeriodTotalPayload(
+            period="2026-02",
+            from_date="2026-02-01",
+            to_date="2026-02-28",
+            amount="400.00",
+            currency="DKK",
+            running_average="500.00",
         ),
     ]
 
