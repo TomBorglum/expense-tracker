@@ -51,16 +51,13 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
         <caption className="sr-only">Expenses</caption>
         {/* Amount and Currency carry the widths the totals table gives them, so the two
             views size those columns alike. Category is the one column left unsized, as in
-            the totals table, and takes everything the fixed layout has not spent: a path
-            is a level deeper than the last with nothing bounding its depth, and a fixed
-            160px wrapped the longer ones. Details is pinned instead and a long memo wraps
-            - under table-fixed a second unsized column would halve the slack. The min
-            width is what the wrapper's overflow-auto scrolls once there is no room
-            left. */}
+            the totals table, and takes everything the fixed layout has not spent: it holds
+            a path that is a level deeper than the last with nothing bounding its depth,
+            and the memo beneath it. The min width is what the wrapper's overflow-auto
+            scrolls once there is no room left. */}
         <colgroup>
           <col className="w-32" />
           <col />
-          <col className="w-40" />
           <col className="w-40" />
           <col className="w-24" />
         </colgroup>
@@ -73,9 +70,6 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
             </th>
             <th scope="col" className="font-semibold">
               Category
-            </th>
-            <th scope="col" className="font-semibold">
-              Details
             </th>
             <th scope="col" className="text-right font-semibold">
               Amount
@@ -91,7 +85,7 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
             // so does a range nothing falls inside. Both are a working server rather than
             // a fault, so this is a row and not the alert above.
             <tr>
-              <td colSpan={5} className="text-base-content/60">
+              <td colSpan={4} className="text-base-content/60">
                 No expenses match the selected criteria.
               </td>
             </tr>
@@ -106,8 +100,14 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
                 // eslint-disable-next-line @eslint-react/no-array-index-key -- see above
                 <tr key={index}>
                   <td className="tabular-nums">{expense.date}</td>
-                  <td>{expense.category}</td>
-                  <td>{expense.details}</td>
+                  {/* The path over its memo, two lines in one cell; a blank memo, which
+                      the contract allows, renders no second line at all. */}
+                  <td>
+                    <div>{expense.category}</div>
+                    {expense.details ? (
+                      <div className="text-base-content/60">{expense.details}</div>
+                    ) : null}
+                  </td>
                   <td
                     className={`text-right tabular-nums ${amount.isCredit ? CREDIT_CLASS : ""}`}
                   >
