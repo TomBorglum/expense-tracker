@@ -219,16 +219,17 @@ def create_app() -> FastAPI:
         # malformed one costs no round trip.
         grain = parse_period(period)
         grouping = parse_grouping(group_by)
-        dates, categories, records = await _read_expenses(
+        # The filter reaches the query and stops there: it narrows which rows arrive,
+        # never what they sum under.
+        dates, _, records = await _read_expenses(
             expenses, currencies, currency, from_date, to_date, category
         )
         # After the conversion, never before: converting each amount and then adding is
         # what makes a total equal the sum of the rows /api/expenses shows for it.
         payload = [
             _total_payload(total)
-            # The filter as well as the range: what was selected is what the rows
-            # are grouped under, and nothing selected groups on the top level.
-            for total in aggregate(records, grain, grouping, dates, categories)
+            # Grouped on the record's own path, so a total names what an expense names.
+            for total in aggregate(records, grain, grouping, dates)
         ]
         # exclude_none, not exclude_unset: _total_payload sets all six fields, so
         # exclude_unset would drop nothing and say nothing about it.

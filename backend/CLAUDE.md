@@ -91,13 +91,11 @@ otherwise correct change, or nothing does; each bullet says which.
   because DKK added to EUR means nothing - and takes the same four query parameters. It
   adds **no repository method**: `list_expenses` is what it reads. Pinned by
   `test_two_currencies_in_one_month_stay_two_totals`.
-- **That third part's grain comes from `?category=`; `?group_by=` is only a toggle.** A
-  row sums under the **deepest** selected path it sits under, so the groups partition the
-  rows rather than counting one under an ancestor and a descendant both; nothing selected
-  sums under its top level, which for a depth-1 category is the category. **No level
-  parameter here** - depth belongs to the category list. The top-level fall-back keeps
-  `_group` total against the fake that filters nothing, like `_clamp` below.
-  `test_a_selected_child_is_split_out_of_its_selected_parent`.
+- **A row sums under its own path, so a total names what an expense names.**
+  `?group_by=` only toggles whether the key has that third part; `?category=` filters and
+  chooses no grain, so `aggregate` never sees it. **No level parameter either** - depth
+  belongs to the category list, and rolling a sum up to an ancestor is what this
+  prevents. `test_totals_name_the_same_paths_the_list_endpoint_shows`.
 - **The conversion runs before the summing, and the order is the point.**
   `convert_expenses` quantizes to cents, so converting then adding differs by cents from
   adding then converting, and only the first makes a total equal what a reader adds up from

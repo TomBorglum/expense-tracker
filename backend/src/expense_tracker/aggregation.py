@@ -8,7 +8,6 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import NamedTuple
 
-from .category_filter import CategoryFilter, deepest_ancestor, top_level
 from .date_range import DateRange
 from .expense_repository import ExpenseRecord
 
@@ -38,8 +37,7 @@ class TotalRecord(NamedTuple):
     # None together, and only when the period holds no expenses at all.
     amount: Decimal | None
     currency: str | None
-    # The path the rows were summed under - the deepest selected ancestor, or the top
-    # level when nothing was selected. Also None when the request did not group at all.
+    # The record's own path, or None when the request did not group at all.
     category: str | None
 
 
@@ -63,34 +61,21 @@ def parse_grouping(value: str | None) -> Grouping | None:
         raise AggregationError(f"unknown group_by: {value}") from exc
 
 
-def _group(
-    category: str, grouping: Grouping | None, categories: CategoryFilter | None
-) -> str | None:
+def _group(category: str, grouping: Grouping | None) -> str | None:
     """The path a record is summed under, or None when nothing was grouped by."""
     if grouping is not Grouping.CATEGORY:
         return None
-    # The deepest selected path the record sits under, so the groups partition the rows
-    # rather than counting one of them under an ancestor and a descendant both. No
-    # filter is no selection to match, and the grain is then the top level - which for a
-    # depth-1 category is the category itself.
-    #
-    # The fall-back is load-bearing rather than defensive: every row the repository
-    # returned sits under something selected, but the HTTP suite's fake records the
-    # filter and applies nothing, the same case _clamp is written for.
-    if categories is None:
-        return top_level(category)
-    return deepest_ancestor(category, categories.names) or top_level(category)
+    return category
 
 
 def aggregate(
     expenses: Sequence[ExpenseRecord],
     period: Period,
     grouping: Grouping | None,
-    # Neither is defaulted, for the reason grouping is not: both change what a row means
-    # rather than only which rows there are, and a grain nobody chose is an assumption
-    # inside a sum. UNBOUNDED and None are what a caller asking for neither passes.
+    # Not defaulted, for the reason grouping is not: it changes what a row means rather
+    # than only which rows there are. UNBOUNDED is what a caller asking for no range
+    # passes.
     dates: DateRange,
-    categories: CategoryFilter | None,
 ) -> list[TotalRecord]:
     """Every period from the oldest expense to the newest, oldest first."""
     sums: defaultdict[tuple[str, str, str | None], Decimal] = defaultdict(
@@ -102,7 +87,7 @@ def aggregate(
         key = (
             _period_key(record.expense_date, period),
             record.currency,
-            _group(record.category, grouping, categories),
+            _group(record.category, grouping),
         )
         sums[key] += record.amount
     grouped: defaultdict[str, list[tuple[str, str | None, Decimal]]] = defaultdict(list)
