@@ -23,8 +23,8 @@ const GROUPED: TotalsQuery = { ...QUERY, group_by: CATEGORY_GROUPING };
 
 // The header row rowTexts() picks up first. The grouping changes it as well as the rows
 // below it, so each grid below names the one it expects.
-const HEADER = ["Period", "Amount", "Currency"];
-const GROUPED_HEADER = ["Period", "Category", "Amount", "Currency"];
+const HEADER = ["Period", "Amount", "Currency", "Average"];
+const GROUPED_HEADER = ["Period", "Category", "Amount", "Currency", "Average"];
 
 function renderPeriodTotals(query: TotalsQuery = QUERY) {
   // A fresh client per test, so nothing is served out of a cache another test filled,
@@ -63,9 +63,11 @@ test("renders a section per period, oldest first, each carrying its span", async
   await screen.findByRole("table", { name: "Totals" });
   expect(rowTexts()).toEqual([
     HEADER,
-    ["2001-01-01 to 2001-01-31", "11.00", "EUR"],
-    ["2001-02-01 to 2001-02-28", "None recorded"],
-    ["2001-03-01 to 2001-03-31", "30.00", "EUR"],
+    ["2001-01-01 to 2001-01-31", "11.00", "EUR", "11.00"],
+    // The empty period still carries an average, which is the whole point of its row
+    // having gained a currency: 11.00 over the two periods so far.
+    ["2001-02-01 to 2001-02-28", "None recorded", "5.50"],
+    ["2001-03-01 to 2001-03-31", "30.00", "EUR", "13.67"],
   ]);
 });
 
@@ -77,17 +79,19 @@ test("adds a line per category when the grouping was asked for", async () => {
   // The band opening each period heads the category column as well as its own, so its row
   // is one cell short of theirs; each line under it opens with the period cell it has
   // nothing to put in, which is what keeps it rendering as an ordinary row.
+  // The band keeps its average while the grouping is on - it comes from the ungrouped
+  // request - and every category line leaves that column empty.
   expect(rowTexts()).toEqual([
     GROUPED_HEADER,
-    ["2001-01-01 to 2001-01-31", "11.00", "EUR"],
-    ["", "Stub category", "11.00", "EUR"],
-    ["2001-02-01 to 2001-02-28", "None recorded"],
-    ["2001-03-01 to 2001-03-31", "30.00", "EUR"],
-    ["", "Stub category", "12.50", "EUR"],
-    ["", "Other stub category", "17.50", "EUR"],
+    ["2001-01-01 to 2001-01-31", "11.00", "EUR", "11.00"],
+    ["", "Stub category", "11.00", "EUR", ""],
+    ["2001-02-01 to 2001-02-28", "None recorded", "5.50"],
+    ["2001-03-01 to 2001-03-31", "30.00", "EUR", "13.67"],
+    ["", "Stub category", "12.50", "EUR", ""],
+    ["", "Other stub category", "17.50", "EUR", ""],
     // A path renders verbatim: the breakdown splits nothing, the backend having chosen
     // the grain. 0.00 keeps the lines adding up to the subtotal above them.
-    ["", "Stub category:Nested stub", "0.00", "EUR"],
+    ["", "Stub category:Nested stub", "0.00", "EUR", ""],
   ]);
 });
 
@@ -102,9 +106,9 @@ test("drops the category lines when the grouping is switched off", async () => {
   // on a range that did not change, so this render is a cache hit and is synchronous.
   expect(rowTexts()).toEqual([
     HEADER,
-    ["2001-01-01 to 2001-01-31", "11.00", "EUR"],
-    ["2001-02-01 to 2001-02-28", "None recorded"],
-    ["2001-03-01 to 2001-03-31", "30.00", "EUR"],
+    ["2001-01-01 to 2001-01-31", "11.00", "EUR", "11.00"],
+    ["2001-02-01 to 2001-02-28", "None recorded", "5.50"],
+    ["2001-03-01 to 2001-03-31", "30.00", "EUR", "13.67"],
   ]);
 });
 
@@ -135,9 +139,9 @@ test("takes the subtotal from the ungrouped request rather than adding the lines
   await screen.findByRole("table", { name: "Totals" });
   expect(rowTexts()).toEqual([
     GROUPED_HEADER,
-    ["2001-03-01 to 2001-03-31", "999.99", "EUR"],
-    ["", "Stub category", "12.50", "EUR"],
-    ["", "Other stub category", "17.50", "EUR"],
+    ["2001-03-01 to 2001-03-31", "999.99", "EUR", "13.67"],
+    ["", "Stub category", "12.50", "EUR", ""],
+    ["", "Other stub category", "17.50", "EUR", ""],
   ]);
 });
 
@@ -146,7 +150,7 @@ test("shows a period and a category that net negative as credits", async () => {
     http.get(TOTALS_URL, ({ request }) =>
       collection(
         new URL(request.url).searchParams.get("group_by") === null
-          ? [{ ...MOCK_TOTALS[2], amount: "-5.00" }]
+          ? [{ ...MOCK_TOTALS[2], amount: "-5.00", running_average: "-1.25" }]
           : [
               { ...MOCK_CATEGORY_TOTALS[2], amount: "12.50" },
               { ...MOCK_CATEGORY_TOTALS[3], amount: "-17.50" },
@@ -156,12 +160,15 @@ test("shows a period and a category that net negative as credits", async () => {
   );
   renderPeriodTotals(GROUPED);
   await screen.findByRole("table", { name: "Totals" });
+  // A running average can net negative too, months of credits outweighing the spending,
+  // and reads as a credit on the same terms rather than as a minus sign.
   expect(rowTexts()).toEqual([
     GROUPED_HEADER,
-    ["2001-03-01 to 2001-03-31", "+5.00", "EUR"],
-    ["", "Stub category", "12.50", "EUR"],
-    ["", "Other stub category", "+17.50", "EUR"],
+    ["2001-03-01 to 2001-03-31", "+5.00", "EUR", "+1.25"],
+    ["", "Stub category", "12.50", "EUR", ""],
+    ["", "Other stub category", "+17.50", "EUR", ""],
   ]);
+  expect(screen.getByRole("cell", { name: "+1.25" }).classList).toContain(CREDIT_CLASS);
   expect(screen.getByRole("cell", { name: "+5.00" }).classList).toContain(CREDIT_CLASS);
   expect(screen.getByRole("cell", { name: "+17.50" }).classList).toContain(
     CREDIT_CLASS,
@@ -186,8 +193,8 @@ test("leaves the amount blank on a category line that carries none", async () =>
   await screen.findByRole("table", { name: "Totals" });
   expect(rowTexts()).toEqual([
     GROUPED_HEADER,
-    ["2001-01-01 to 2001-01-31", "11.00", "EUR"],
-    ["", "Stub category", "", "EUR"],
+    ["2001-01-01 to 2001-01-31", "11.00", "EUR", "11.00"],
+    ["", "Stub category", "", "EUR", ""],
   ]);
 });
 
@@ -204,7 +211,10 @@ test("says a period holds nothing rather than showing it as zero", async () => {
   );
   renderPeriodTotals();
   await screen.findByRole("table", { name: "Totals" });
-  expect(rowTexts()).toEqual([HEADER, ["2001-02-01 to 2001-02-28", "None recorded"]]);
+  expect(rowTexts()).toEqual([
+    HEADER,
+    ["2001-02-01 to 2001-02-28", "None recorded", ""],
+  ]);
 });
 
 test("shows a status while the request is in flight", () => {
@@ -279,6 +289,19 @@ test("shows an alert when an absent amount arrives as null", async () => {
   expect(alert.textContent).toBe("Could not load the totals.");
 });
 
+test("shows an alert when a running average arrives as a number", async () => {
+  // The backend pins it to str(Decimal) beside amount, and the guard rejects a number on
+  // the same terms: the view renders the string it is handed and does no arithmetic.
+  server.use(
+    http.get(TOTALS_URL, () =>
+      collection([{ ...MOCK_TOTALS[0], running_average: 11 }]),
+    ),
+  );
+  renderPeriodTotals();
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe("Could not load the totals.");
+});
+
 test("shows a range that matches nothing as a row rather than an alert", async () => {
   // A valid range holding no expenses is a 200 with [], for the reason an empty table
   // is: it is an answer and not a fault. The row spans whatever width the grouping left
@@ -288,10 +311,10 @@ test("shows a range that matches nothing as a row rather than an alert", async (
   await screen.findByRole("table", { name: "Totals" });
   const empty = () => screen.getByRole<HTMLTableCellElement>("cell");
   expect(empty().textContent).toBe("No expenses match the selected criteria.");
-  expect(empty().colSpan).toBe(3);
+  expect(empty().colSpan).toBe(4);
   rerenderWith(GROUPED);
   await screen.findByRole("columnheader", { name: "Category" });
-  expect(empty().colSpan).toBe(4);
+  expect(empty().colSpan).toBe(5);
 });
 
 test("asks the API for the parameters it was given", async () => {

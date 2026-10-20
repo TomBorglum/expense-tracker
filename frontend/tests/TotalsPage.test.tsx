@@ -333,6 +333,15 @@ test("clearing the selection drops the parameter from the URL", async () => {
   });
 });
 
+test("shows each period's running average beside its total", async () => {
+  // Through the router, so this covers the column arriving on the page a URL names and
+  // not only in a component mounted by hand. The figure is the payload's, verbatim.
+  renderPageAt("/totals");
+  await screen.findByRole("table", { name: "Totals" });
+  await screen.findByRole("columnheader", { name: "Average" });
+  expect(screen.getByRole("cell", { name: "13.67" })).toBeDefined();
+});
+
 test("shows the totals rather than the expenses table", async () => {
   renderPageAt("/totals");
   const table = await screen.findByRole("table", { name: "Totals" });

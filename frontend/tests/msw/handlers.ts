@@ -37,8 +37,13 @@ export const MOCK_RATES: CurrencyRate[] = [
 ];
 
 // A dense calendar, oldest first: three periods spanning a gap the middle one records
-// nothing in. That row carries its span and no amount at all - the keys are absent, not
-// null, which is what the guard and the "None recorded" branch are written against.
+// nothing in. That row carries no amount at all - the key is absent, not null, which is
+// what the guard and the "None recorded" branch are written against - and carries its
+// currency and running average, which an empty period does have.
+//
+// The averages are the backend's own arithmetic over these amounts: 11.00, then 11.00
+// over two periods, then 41.00 over three, which rounds up. Values the view could not
+// have derived itself, so a passing test proves they travelled over the request.
 export const MOCK_TOTALS: PeriodTotal[] = [
   {
     period: "2001-01",
@@ -46,20 +51,30 @@ export const MOCK_TOTALS: PeriodTotal[] = [
     to_date: "2001-01-31",
     amount: "11.00",
     currency: "EUR",
+    running_average: "11.00",
   },
-  { period: "2001-02", from_date: "2001-02-01", to_date: "2001-02-28" },
+  {
+    period: "2001-02",
+    from_date: "2001-02-01",
+    to_date: "2001-02-28",
+    currency: "EUR",
+    running_average: "5.50",
+  },
   {
     period: "2001-03",
     from_date: "2001-03-01",
     to_date: "2001-03-31",
     amount: "30.00",
     currency: "EUR",
+    running_average: "13.67",
   },
 ];
 
 // The same three periods split by category, which is the payload ?group_by=category
 // answers with. The amounts add up to the ungrouped ones above, because that is the
-// property the view relies on when it takes its subtotal from the other request.
+// property the view relies on when it takes its subtotal from the other request. No row
+// here carries a running_average: the mean is a period's figure, not a path's, so the
+// backend leaves it off a grouped row and the Average column stays empty on these lines.
 export const MOCK_CATEGORY_TOTALS: PeriodTotal[] = [
   {
     period: "2001-01",

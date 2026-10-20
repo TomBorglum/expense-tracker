@@ -33,10 +33,12 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   tabs and the category `<fieldset>` each arrived at 0.75rem that way and carry a `text-sm`
   undoing it, `.label` dims to 60% so the category choices carry none, and a table reaches
   0.875rem the same way. Nothing checks this.
-- **A period's subtotal is the ungrouped request, never its category rows added up.**
-  `PeriodTotals` runs both and takes the total from the one without `group_by`; adding
-  amounts up here is what sending them as strings exists to prevent. Pinned by "takes the
-  subtotal from the ungrouped request rather than adding the lines up".
+- **A period's subtotal and its running average are the ungrouped request, never its
+  category rows added up.** `PeriodTotals` runs both and takes them from the one without
+  `group_by`, a grouped row carrying no average at all, so the Average column fills on the
+  band alone. Adding amounts up here, or accumulating them across periods, is what sending
+  them as strings exists to prevent. Pinned by "takes the subtotal from the ungrouped
+  request rather than adding the lines up".
 - **An empty list is a row, not an alert**, and so is a period with no `amount`.
   `role="alert"` is reserved for a request that actually failed - this side of the backend's
   "an empty table is 200, not 503". **The period's own row names no category**: its heading
@@ -162,10 +164,9 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
 
 ## Environment and tooling
 
-- **The API origin lives in bare `.env`, not `.env.development`.** vite loads `.env` in
-  every mode, including the `test` mode vitest runs in, where MSW binds its handlers to the
-  URL built from it. `envDir` is pinned to `frontend/` because the `test` block moves
-  vite's `root` to the repo root and `envDir` would otherwise follow.
+- **The API origin lives in bare `.env`, not `.env.development`**, for the reason
+  [`README.md`](../README.md#where-the-api-lives) gives. `envDir` is pinned to `frontend/`
+  because the `test` block moves vite's `root` to the repo root and it would follow.
 - **Every linted file needs a tsconfig that owns it.** eslint runs type-aware via
   `parserOptions.projectService`, so a `.ts`/`.tsx` file outside every tsconfig's `include`
   fails to lint rather than being skipped. `src/` and `tests/` come from `tsconfig.app.json`,
