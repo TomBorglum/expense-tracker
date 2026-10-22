@@ -121,15 +121,15 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
           rather than with them. */}
       <table
         className={`table table-pin-rows table-fixed ${
-          byCategory ? "min-w-3xl" : "min-w-2xl"
+          byCategory ? "min-w-3xl" : "min-w-md"
         }`}
       >
         {/* The table's accessible name, which is how the tests reach it. Hidden from sight
             because the page already shows the same word as its heading. */}
         <caption className="sr-only">Totals</caption>
-        {/* Amount, Currency and Average are pinned, so they hold their position as the
-            grouping adds and removes the Category column and only Period and Category
-            absorb the difference: daisyUI leaves table-layout auto, where each view's own rows size
+        {/* Amount and Currency are pinned, so they hold their position as the grouping
+            adds and removes the Category column and only Period and Category absorb the
+            difference: daisyUI leaves table-layout auto, where each view's own rows size
             the columns and the leftover is re-spread across them, so the amounts land at
             a different x in each. Period is pinned too once grouped, wide enough for its
             bounds, which leaves the slack to the category names. The min width is what
@@ -139,7 +139,6 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
           {byCategory ? <col /> : null}
           <col className="w-40" />
           <col className="w-24" />
-          <col className="w-40" />
         </colgroup>
         <thead>
           {/* font-semibold on every th, because daisyUI puts 600 on <thead> and the
@@ -159,11 +158,6 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
             <th scope="col" className="font-semibold">
               Currency
             </th>
-            {/* The backend's figure, never accumulated here: it rides the ungrouped row,
-                so the band carries it whether or not the grouping is on. */}
-            <th scope="col" className="text-right font-semibold">
-              Average
-            </th>
           </tr>
         </thead>
         {totals.data.length === 0 ? (
@@ -172,7 +166,7 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
               {/* An expense table nobody has run the loader against yet answers 200 with
                   [], and so does a range nothing falls inside. Both are a working server
                   rather than a fault, so this is a row and not the alert above. */}
-              <td colSpan={byCategory ? 5 : 4} className="text-base-content/60">
+              <td colSpan={byCategory ? 4 : 3} className="text-base-content/60">
                 No expenses match the selected criteria.
               </td>
             </tr>
@@ -210,16 +204,6 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
                       <td className={band}>{total.currency}</td>
                     </>
                   )}
-                  {/* Outside the branch above: a period nobody spent in has no amount to
-                      show and an average all the same. */}
-                  {total.running_average === undefined ? (
-                    <td className={band} />
-                  ) : (
-                    <AmountCell
-                      amount={total.running_average}
-                      className={`${band} font-semibold`}
-                    />
-                  )}
                 </tr>
                 {(categories.get(total.period) ?? []).map((row) => (
                   <tr key={rowKey(row)}>
@@ -232,8 +216,6 @@ export function PeriodTotals({ query }: PeriodTotalsProps) {
                     </th>
                     <AmountCell amount={row.amount ?? ""} />
                     <td>{row.currency}</td>
-                    {/* A category row carries no average: the mean is the period's. */}
-                    <td />
                   </tr>
                 ))}
               </tbody>

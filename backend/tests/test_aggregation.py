@@ -55,7 +55,6 @@ def test_expenses_in_one_month_become_one_total() -> None:
             Decimal("125.50"),
             "DKK",
             None,
-            running_average=Decimal("125.50"),
         )
     ]
 
@@ -248,7 +247,6 @@ def test_a_month_nobody_spent_in_is_still_a_row() -> None:
         None,
         None,
         None,
-        running_average=None,
     )
 
 
@@ -277,7 +275,6 @@ def test_a_month_whose_refunds_cancel_its_spending_is_a_zero_and_not_a_gap() -> 
             Decimal("0.00"),
             "DKK",
             "Transport",
-            running_average=None,
         )
     ]
     assert totals[0].amount is not None
@@ -555,50 +552,12 @@ _FEBRUARY = datetime.date(2026, 2, 15)
 _APRIL = datetime.date(2026, 4, 15)
 
 
-def _averages(totals: list[TotalRecord]) -> list[tuple[str, str | None, str | None]]:
-    """Each row as (period, currency, average), the average as the wire shows it."""
-    return [
-        (
-            total.period,
-            total.currency,
-            None if total.running_average is None else str(total.running_average),
-        )
-        for total in totals
-    ]
+def test_a_period_nobody_spent_in_is_one_bare_row() -> None:
+    """Ungrouped as well as grouped, now that no average rides an empty period.
 
-
-def test_the_first_periods_average_is_its_own_total() -> None:
-    """There is nothing before it to average with, so the mean of one is that one."""
-    totals = aggregate(
-        [_expense("300.00", _JANUARY)], Period.MONTH, None, UNBOUNDED
-    ).totals
-    assert _averages(totals) == [("2026-01", "DKK", "300.00")]
-
-
-def test_a_month_nobody_spent_in_still_divides_by_itself() -> None:
-    """The case the feature was asked for: an empty month drags the average down.
-
-    300 in January and nothing in February is an average of 150, not 300 - the empty
-    month counts 0 towards the sum and 1 towards the divisor.
+    The row carries the span and nothing else: absent says "none recorded" where 0.00
+    would say "these cancelled out", which a month of credits can genuinely do.
     """
-    totals = aggregate(
-        [
-            _expense("300.00", _JANUARY),
-            _expense("150.00", _MARCH),
-        ],
-        Period.MONTH,
-        None,
-        UNBOUNDED,
-    ).totals
-    assert _averages(totals) == [
-        ("2026-01", "DKK", "300.00"),
-        ("2026-02", "DKK", "150.00"),
-        ("2026-03", "DKK", "150.00"),
-    ]
-
-
-def test_a_month_nobody_spent_in_carries_its_average_and_no_amount() -> None:
-    """Absent amount still says "none recorded"; the average is what it does have."""
     totals = aggregate(
         [
             _expense("300.00", _JANUARY),
@@ -613,191 +572,8 @@ def test_a_month_nobody_spent_in_carries_its_average_and_no_amount() -> None:
         datetime.date(2026, 2, 1),
         datetime.date(2026, 2, 28),
         None,
-        "DKK",
-        None,
-        running_average=Decimal("150.00"),
-    )
-    assert totals[1].amount is None
-
-
-def test_a_half_cent_average_rounds_up_rather_than_to_even() -> None:
-    """ROUND_HALF_UP, as the conversion quantize has: 0.025 is 0.03 and not 0.02.
-
-    str() of the average is what reaches the wire, so the scale is asserted there.
-    """
-    totals = aggregate(
-        [
-            _expense("0.05", _JANUARY),
-            _expense("1.00", _MARCH),
-        ],
-        Period.MONTH,
-        None,
-        UNBOUNDED,
-    ).totals
-    assert _averages(totals)[1] == ("2026-02", "DKK", "0.03")
-
-
-def test_a_half_cent_credit_average_rounds_away_from_zero() -> None:
-    """The other direction of the same rule, which is what away-from-zero means."""
-    totals = aggregate(
-        [
-            _expense("-0.05", _JANUARY),
-            _expense("1.00", _MARCH),
-        ],
-        Period.MONTH,
-        None,
-        UNBOUNDED,
-    ).totals
-    assert _averages(totals)[1] == ("2026-02", "DKK", "-0.03")
-
-
-def test_an_average_that_rounds_to_nothing_is_positive_zero() -> None:
-    """A sum cannot reach -0.00 and a division can, so this one is normalised.
-
-    A cumulative -0.01 over three months is -0.00333, which quantizes to -0.00 - an
-    artefact of the sign rather than a fact about money, and visible on the wire.
-    """
-    totals = aggregate(
-        [
-            _expense("-0.01", _JANUARY),
-            _expense("100.00", _APRIL),
-        ],
-        Period.MONTH,
-        None,
-        UNBOUNDED,
-    ).totals
-    assert _averages(totals) == [
-        ("2026-01", "DKK", "-0.01"),
-        ("2026-02", "DKK", "-0.01"),
-        ("2026-03", "DKK", "0.00"),
-        ("2026-04", "DKK", "25.00"),
-    ]
-
-
-def test_two_currencies_keep_two_running_averages() -> None:
-    """DKK added to EUR means nothing, which averaging them would do.
-
-    The two also add up: 75.00 + 20.00 is what the 190.00 spent over two months
-    averages to, the divisor being the same for every currency.
-    """
-    totals = aggregate(
-        [
-            _expense("100.00", _JANUARY),
-            _expense("10.00", _JANUARY, currency="EUR"),
-            _expense("50.00", _FEBRUARY),
-            _expense("30.00", _FEBRUARY, currency="EUR"),
-        ],
-        Period.MONTH,
-        None,
-        UNBOUNDED,
-    ).totals
-    assert _averages(totals) == [
-        ("2026-01", "DKK", "100.00"),
-        ("2026-01", "EUR", "10.00"),
-        ("2026-02", "DKK", "75.00"),
-        ("2026-02", "EUR", "20.00"),
-    ]
-
-
-def test_a_currency_first_seen_late_divides_by_every_period_before_it() -> None:
-    """The divisor is the period's place in the calendar, not the series' own length.
-
-    So a currency arriving in March reads as what it averages over the months in
-    view, which is what makes the averages under a period add up.
-    """
-    totals = aggregate(
-        [
-            _expense("90.00", _JANUARY),
-            _expense("90.00", _FEBRUARY),
-            _expense("90.00", _MARCH),
-            _expense("30.00", _MARCH, currency="EUR"),
-        ],
-        Period.MONTH,
-        None,
-        UNBOUNDED,
-    ).totals
-    assert _averages(totals)[-1] == ("2026-03", "EUR", "10.00")
-
-
-def test_a_gap_carries_one_row_per_currency_seen_so_far() -> None:
-    """Every series that has started has an average there; one that has not does not."""
-    totals = aggregate(
-        [
-            _expense("100.00", _JANUARY),
-            _expense("10.00", _JANUARY, currency="EUR"),
-            _expense("20.00", _MARCH),
-        ],
-        Period.MONTH,
-        None,
-        UNBOUNDED,
-    ).totals
-    assert _averages(totals) == [
-        ("2026-01", "DKK", "100.00"),
-        ("2026-01", "EUR", "10.00"),
-        ("2026-02", "DKK", "50.00"),
-        ("2026-02", "EUR", "5.00"),
-        ("2026-03", "DKK", "40.00"),
-    ]
-
-
-def test_a_gap_names_no_currency_that_has_not_arrived_yet() -> None:
-    """A currency first spent in March has no average in February: zero of nothing.
-
-    It would otherwise read as a month that averaged nothing in EUR rather than one
-    before EUR was ever spent.
-    """
-    totals = aggregate(
-        [
-            _expense("100.00", _JANUARY),
-            _expense("30.00", _MARCH, currency="EUR"),
-        ],
-        Period.MONTH,
-        None,
-        UNBOUNDED,
-    ).totals
-    assert _averages(totals) == [
-        ("2026-01", "DKK", "100.00"),
-        ("2026-02", "DKK", "50.00"),
-        ("2026-03", "EUR", "10.00"),
-    ]
-
-
-def test_a_grouped_row_carries_no_average() -> None:
-    """The average is the period's, and a grouped row sums under a path instead."""
-    totals = aggregate(
-        [
-            _expense("100.00", _JANUARY, category="Housing"),
-            _expense("50.00", _JANUARY, category="Food"),
-        ],
-        Period.MONTH,
-        Grouping.CATEGORY,
-        UNBOUNDED,
-    ).totals
-    assert _averages(totals) == [
-        ("2026-01", "DKK", None),
-        ("2026-01", "DKK", None),
-    ]
-
-
-def test_a_grouped_gap_stays_a_bare_row() -> None:
-    """No average to carry, so the row is the span alone, as it was before."""
-    totals = aggregate(
-        [
-            _expense("300.00", _JANUARY),
-            _expense("150.00", _MARCH),
-        ],
-        Period.MONTH,
-        Grouping.CATEGORY,
-        UNBOUNDED,
-    ).totals
-    assert totals[1] == TotalRecord(
-        "2026-02",
-        datetime.date(2026, 2, 1),
-        datetime.date(2026, 2, 28),
         None,
         None,
-        None,
-        running_average=None,
     )
 
 

@@ -33,9 +33,9 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   tabs and the category `<fieldset>` each arrived at 0.75rem that way and carry a `text-sm`
   undoing it, `.label` dims to 60% so the category choices carry none, and a table reaches
   0.875rem the same way. Nothing checks this.
-- **A period's subtotal, its running average and the range average are all the ungrouped
-  request**, never its category rows added up. `PeriodTotals` and `TotalsSummary` both key
-  on `ungrouped(query)` and split one body with `select`, so they cost one request; a query
+- **A period's subtotal and the range average are both the ungrouped request**, never its
+  category rows added up. `PeriodTotals` and `TotalsSummary` both key on
+  `ungrouped(query)` and split one body with `select`, so they cost one request; a query
   of its own doubles it. Accumulating amounts here is what sending them as strings exists
   to prevent. Pinned by "takes the subtotal from the ungrouped request rather than adding
   the lines up" and "costs one request when it renders beside the table".

@@ -91,7 +91,7 @@ class PeriodTotalPayload(BaseModel):
     gives, and the two dates are strings rather than dates because the route hands
     model_dump() to JSONResponse, which cannot encode a datetime.date.
 
-    The first three are on every row. The last four are dumped with exclude_none, so
+    The first three are on every row. The last three are dumped with exclude_none, so
     each is present with a value or absent altogether - never null and never "".
     """
 
@@ -101,7 +101,6 @@ class PeriodTotalPayload(BaseModel):
     amount: str | None = None
     currency: str | None = None
     category: str | None = None
-    running_average: str | None = None
 
 
 def _total_payload(total: TotalRecord) -> PeriodTotalPayload:
@@ -114,9 +113,6 @@ def _total_payload(total: TotalRecord) -> PeriodTotalPayload:
         amount=None if total.amount is None else str(total.amount),
         currency=total.currency,
         category=total.category,
-        running_average=(
-            None if total.running_average is None else str(total.running_average)
-        ),
     )
 
 
@@ -260,7 +256,7 @@ def create_app() -> FastAPI:
         # Sent whatever was grouped by: the range average is a figure about the range,
         # which grouping re-keys the rows of without changing.
         summary = [_summary_payload(average) for average in summed.averages]
-        # exclude_none, not exclude_unset: _total_payload sets all seven fields, so
+        # exclude_none, not exclude_unset: _total_payload sets all six fields, so
         # exclude_unset would drop nothing and say nothing about it.
         return _collection(
             [item.model_dump(exclude_none=True) for item in payload],
