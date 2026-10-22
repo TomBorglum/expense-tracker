@@ -11,6 +11,7 @@ from expense_tracker import (
     CurrencyPayload,
     ExpensePayload,
     PeriodTotalPayload,
+    SummaryPayload,
     config,
     create_app,
 )
@@ -30,6 +31,12 @@ class _Collection[T](BaseModel):
     items: list[T]
 
 
+class _Summarised[T](BaseModel):
+    """The other half of the totals body. That endpoint alone sends it."""
+
+    summary: list[T]
+
+
 # Parses a response body into typed models instead of casting it to dicts. Reads
 # response.content, which is bytes, so Response.json()'s Any never enters the picture.
 # Each one validates the envelope, so `.items` at a call site is the rows inside it.
@@ -42,6 +49,10 @@ _CURRENCIES = TypeAdapter(_Collection[CurrencyPayload])
 _TOTALS = TypeAdapter(_Collection[PeriodTotalPayload])
 # The rows as plain objects, which is the only way to read a key's absence.
 _RAW_ROWS = TypeAdapter(_Collection[dict[str, str]])
+# The summary half, typed and plain, for the two things each can say: a model rejects a
+# number where a string belongs, and a plain dict is what shows a key is there at all.
+_SUMMARY = TypeAdapter(_Summarised[SummaryPayload])
+_RAW_SUMMARY = TypeAdapter(_Summarised[dict[str, str]])
 # The body as one plain object, which is the only way to tell an envelope from the bare
 # array that used to be sent: a list does not validate as a dict at all.
 _ENVELOPE = TypeAdapter(dict[str, object])
@@ -114,24 +125,24 @@ def test_openapi_docs_are_disabled(client: TestClient) -> None:
 
 
 @pytest.mark.parametrize(
-    "path",
+    ("path", "keys"),
     [
-        "/api/expenses",
-        "/api/expenses/totals?period=month",
-        "/api/expenses/categories",
-        "/api/currencies",
+        ("/api/expenses", ["items"]),
+        ("/api/expenses/totals?period=month", ["items", "summary"]),
+        ("/api/expenses/categories", ["items"]),
+        ("/api/currencies", ["items"]),
     ],
 )
 def test_every_collection_is_an_object_holding_items(
-    client: TestClient, path: str
+    client: TestClient, path: str, keys: list[str]
 ) -> None:
     # A bare array is what each of these used to send, and it still parses for a client
     # that reads the rows straight off the body - so the four are asserted together
     # here rather than relying on the typed adapters above, which read `items` and
-    # would pass an endpoint that was never migrated. One key, so an addition is a
-    # decision rather than a drift.
+    # would pass an endpoint that was never migrated. The exact key list, so an addition
+    # is a decision rather than a drift: totals is the one endpoint that has made it.
     body = _ENVELOPE.validate_json(client.get(path).content)
-    assert list(body) == ["items"]
+    assert list(body) == keys
 
 
 def test_expenses_endpoint_returns_json(
@@ -1268,3 +1279,69 @@ def test_missing_database_settings_are_refused_at_startup() -> None:
     # of the case, in every pixi environment rather than only in prod.
     with pytest.raises(ValidationError, match="PGUSER"), TestClient(create_app()):
         pass
+
+
+def test_the_range_summary_is_strings_not_numbers(
+    same_period_expenses_client: TestClient,
+) -> None:
+    """5.00 must not arrive as 5, the twin of the amount assertion above.
+
+    66.38 carries the other half of the rule: DKK totals 132.75 over the two months the
+    calendar spans, which is 66.375, and ROUND_HALF_UP takes that up rather than to
+    even. One entry per currency, sorted, EUR dividing by both months although it was
+    first spent in the second.
+    """
+    body = _SUMMARY.validate_json(
+        same_period_expenses_client.get(
+            "/api/expenses/totals", params={"period": "month"}
+        ).content
+    ).summary
+    assert body == [
+        SummaryPayload(currency="DKK", average="66.38"),
+        SummaryPayload(currency="EUR", average="5.00"),
+    ]
+
+
+def test_the_range_summary_is_the_same_grouped_or_not(
+    same_period_expenses_client: TestClient,
+) -> None:
+    """It is a figure about the range, which grouping re-keys the rows of without
+    changing, so the view can read it from either request."""
+    params = {"period": "month"}
+    ungrouped = _SUMMARY.validate_json(
+        same_period_expenses_client.get("/api/expenses/totals", params=params).content
+    ).summary
+    grouped = _SUMMARY.validate_json(
+        same_period_expenses_client.get(
+            "/api/expenses/totals", params={**params, "group_by": "category"}
+        ).content
+    ).summary
+    assert grouped == ungrouped
+
+
+def test_a_range_summary_entry_carries_both_keys(
+    same_period_expenses_client: TestClient,
+) -> None:
+    """Neither key is ever absent, unlike a row's: an entry exists only for a currency
+    that has expenses, so exclude_none has nothing to drop. Read as plain dicts because
+    parsing through the model proves nothing about a key's presence.
+    """
+    body = _RAW_SUMMARY.validate_json(
+        same_period_expenses_client.get(
+            "/api/expenses/totals", params={"period": "month"}
+        ).content
+    ).summary
+    assert [sorted(entry) for entry in body] == [["average", "currency"]] * 2
+
+
+def test_an_empty_expense_table_summarises_nothing(
+    empty_expenses_client: TestClient,
+) -> None:
+    """200 with both halves empty: no expenses is no calendar to divide by, so there is
+    nothing to average and nothing dividing by zero."""
+    response = empty_expenses_client.get(
+        "/api/expenses/totals", params={"period": "month"}
+    )
+    assert response.status_code == 200
+    assert _TOTALS.validate_json(response.content).items == []
+    assert _SUMMARY.validate_json(response.content).summary == []

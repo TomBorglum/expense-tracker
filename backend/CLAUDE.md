@@ -85,35 +85,28 @@ otherwise correct change, or nothing does; each bullet says which.
 ## Aggregation
 
 - **`GET /api/expenses/totals` sums the rows `/api/expenses` lists**, grouped by
-  `(period, currency, category)` - `currency` stays in the key whatever was asked for,
-  because DKK added to EUR means nothing - and takes the same four query parameters. It
-  adds **no repository method**: `list_expenses` is what it reads. Pinned by
+  `(period, currency, category)` and taking the same four query parameters. It adds **no
+  repository method**: `list_expenses` is what it reads. Pinned by
   `test_two_currencies_in_one_month_stay_two_totals`.
-- **A row sums under its own path, so a total names what an expense names.**
-  `?group_by=` only toggles whether the key has that third part; `?category=` filters and
-  chooses no grain, so `aggregate` never sees it. **No level parameter either** - depth
-  belongs to the category list, and rolling a sum up to an ancestor is what this
-  prevents. `test_totals_name_the_same_paths_the_list_endpoint_shows`.
+- **A row sums under its own path, so a total names what an expense names.** `?category=`
+  filters and chooses no grain, so `aggregate` never sees it. **No level parameter
+  either** - rolling a sum up to an ancestor is what this prevents.
+  `test_totals_name_the_same_paths_the_list_endpoint_shows`.
 - **The conversion runs before the summing, and the order is the point** - it is what
   puts the summing in Python rather than a SQL `GROUP BY`, on the terms
   [`README.md`](../README.md#asking-for-totals) states. Pinned by
   `test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows`.
-- **`period`, `from_date` and `to_date` are on every row; `amount`, `currency`,
-  `category` and `running_average` only when they have a value** - never `null`, never
-  `""`. `exclude_none=True` on the route dump is the whole rule, not `exclude_unset` -
+- **A row's optional keys are absent when they have no value, never `null`.**
+  `exclude_none=True` on the route dump is the whole rule, not `exclude_unset` -
   `_total_payload` sets all seven fields. `?group_by=category` is what puts `category` in
-  the key and takes one value, and what leaves the average off every row: a mean is a
-  period's figure, not a path's. Pinned by
-  `test_totals_drop_the_category_key_when_it_was_not_grouped_by` and its neighbours, read
-  as plain dicts: parsing proves nothing about a key's presence.
-- **The response is a dense calendar: one row per period from the oldest matching expense
-  to the newest**, spent in or not, and **absent is not `0.00`** - a month of credits can
-  net to zero. The extent is `min`/`max` over the records returned, so it relies on no
-  ordering of the repository's, and never the requested range - which would trail a bounded
-  one off into periods nobody has reached yet. A period nobody spent in sends no `amount`
-  and, ungrouped, one row per currency seen so far carrying its `running_average`, which
-  divides by the period's place in this calendar rather than by how many periods its own
-  currency appeared in. **Dense in periods only**: a date range has a defined universe of
+  the key and what leaves the average off every row: a mean is a period's figure, not a
+  path's. Pinned by `test_totals_drop_the_category_key_when_it_was_not_grouped_by` and its
+  neighbours, read as plain dicts: parsing proves nothing about a key's presence.
+- **The dense calendar's extent is `min`/`max` over the records returned**, so it relies
+  on no ordering of the repository's, and never the requested range - which would trail a
+  bounded one off into periods nobody has reached yet. A period nobody spent in sends no
+  `amount` and, ungrouped, one row per currency seen so far carrying its
+  `running_average`. **Dense in periods only**: a date range has a defined universe of
   periods and categories do not. `test_a_month_nobody_spent_in_is_still_a_row` + averages.
 - **A requested bound narrows a period only when it falls inside it**, which keeps
   `?from_date=2026-01-01` honoured as the 1st even when nothing was spent until the 7th.
@@ -121,6 +114,11 @@ otherwise correct change, or nothing does; each bullet says which.
   period a January range, and a plain `max`/`min` would end the span before it began. A
   period's `to_date` is inclusive, from `calendar.monthrange`. Pinned by
   `test_a_range_that_cannot_touch_a_period_leaves_it_whole` and its leap-February twin.
+- **The `summary` beside `items` is the same grouped or not**: one entry per currency
+  holding the mean of its period totals over the same calendar, which grouping re-keys the
+  rows of without changing. Unlike a row's, **neither key is ever absent**. Pinned by
+  `test_the_range_summary_is_the_same_grouped_or_not` and
+  `test_a_range_summary_entry_carries_both_keys`.
 - **`?period=` is required and refuses rather than defaulting**, because a grain nobody
   chose is an assumption inside a sum. `test_a_total_without_a_period_is_refused` + twin.
 

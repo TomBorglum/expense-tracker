@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from expense_tracker.aggregation import (
+    Aggregation,
     AggregationError,
     Grouping,
     Period,
@@ -45,7 +46,7 @@ def test_expenses_in_one_month_become_one_total() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert totals == [
         TotalRecord(
             "2026-03",
@@ -69,7 +70,7 @@ def test_a_month_boundary_splits_a_total() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert [total.period for total in totals] == ["2026-02", "2026-03"]
 
 
@@ -80,7 +81,7 @@ def test_a_single_digit_month_is_zero_padded() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert totals[0].period == "2026-09"
 
 
@@ -94,7 +95,7 @@ def test_two_currencies_in_one_month_stay_two_totals() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert [(total.amount, total.currency) for total in totals] == [
         (Decimal("100.00"), "DKK"),
         (Decimal("10.00"), "EUR"),
@@ -110,7 +111,7 @@ def test_categories_are_summed_together_when_they_are_not_grouped_by() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert [(total.amount, total.category) for total in totals] == [
         (Decimal("125.50"), None)
     ]
@@ -125,7 +126,7 @@ def test_grouping_by_category_splits_the_same_month() -> None:
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-    )
+    ).totals
     assert [(total.amount, total.category) for total in totals] == [
         (Decimal("25.50"), "Food"),
         (Decimal("100.00"), "Housing"),
@@ -142,7 +143,7 @@ def test_a_total_carries_two_decimal_places() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert str(totals[0].amount) == "1250.50"
 
 
@@ -153,7 +154,7 @@ def test_cents_are_exact_over_many_rows() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert totals[0].amount == Decimal("1.00")
 
 
@@ -168,7 +169,7 @@ def test_rows_come_back_oldest_period_first_then_category_then_currency() -> Non
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-    )
+    ).totals
     assert [(t.period, t.category, t.currency) for t in totals] == [
         ("2026-02", "Food", "DKK"),
         ("2026-03", "Food", "DKK"),
@@ -178,7 +179,7 @@ def test_rows_come_back_oldest_period_first_then_category_then_currency() -> Non
 
 
 def test_nothing_to_total_is_an_empty_list() -> None:
-    assert aggregate([], Period.MONTH, Grouping.CATEGORY, UNBOUNDED) == []
+    assert aggregate([], Period.MONTH, Grouping.CATEGORY, UNBOUNDED).totals == []
 
 
 def test_nothing_to_total_is_an_empty_list_whatever_the_range_was() -> None:
@@ -189,7 +190,7 @@ def test_nothing_to_total_is_an_empty_list_whatever_the_range_was() -> None:
             Period.MONTH,
             None,
             DateRange(datetime.date(2026, 1, 1), datetime.date(2026, 12, 31)),
-        )
+        ).totals
         == []
     )
 
@@ -201,7 +202,7 @@ def test_a_period_spans_its_whole_calendar_month() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert _spans(totals) == [("2026-03", "2026-03-01", "2026-03-31")]
 
 
@@ -211,7 +212,7 @@ def test_a_thirty_day_month_ends_on_the_thirtieth() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert _spans(totals) == [("2026-04", "2026-04-01", "2026-04-30")]
 
 
@@ -222,7 +223,7 @@ def test_a_leap_february_ends_on_the_twenty_ninth() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert _spans(totals) == [("2028-02", "2028-02-01", "2028-02-29")]
 
 
@@ -239,7 +240,7 @@ def test_a_month_nobody_spent_in_is_still_a_row() -> None:
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-    )
+    ).totals
     assert totals[1] == TotalRecord(
         "2026-02",
         datetime.date(2026, 2, 1),
@@ -267,7 +268,7 @@ def test_a_month_whose_refunds_cancel_its_spending_is_a_zero_and_not_a_gap() -> 
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-    )
+    ).totals
     assert totals == [
         TotalRecord(
             "2026-12",
@@ -294,7 +295,7 @@ def test_a_netted_month_is_positive_zero() -> None:
             Period.MONTH,
             None,
             UNBOUNDED,
-        )
+        ).totals
         assert str(totals[0].amount) == "0.00"
 
 
@@ -308,7 +309,7 @@ def test_a_category_holding_only_a_refund_totals_negative() -> None:
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-    )
+    ).totals
     assert [(total.category, total.amount) for total in totals] == [
         ("Housing", Decimal("1250.00")),
         ("Transport", Decimal("-150.00")),
@@ -324,7 +325,7 @@ def test_a_gap_of_several_months_is_filled_contiguously() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert [total.period for total in totals] == [
         "2025-12",
         "2026-01",
@@ -341,7 +342,7 @@ def test_a_bound_inside_a_period_narrows_it() -> None:
         Period.MONTH,
         None,
         DateRange(datetime.date(2026, 3, 12), datetime.date(2026, 3, 14)),
-    )
+    ).totals
     assert _spans(totals) == [("2026-03", "2026-03-12", "2026-03-14")]
 
 
@@ -355,7 +356,7 @@ def test_a_bound_outside_a_period_leaves_it_whole() -> None:
         Period.MONTH,
         None,
         DateRange(datetime.date(2026, 1, 12), datetime.date(2026, 3, 14)),
-    )
+    ).totals
     assert _spans(totals) == [
         ("2026-01", "2026-01-12", "2026-01-31"),
         ("2026-02", "2026-02-01", "2026-02-28"),
@@ -370,7 +371,7 @@ def test_a_bound_on_a_period_edge_narrows_nothing() -> None:
         Period.MONTH,
         None,
         DateRange(datetime.date(2026, 3, 1), datetime.date(2026, 3, 31)),
-    )
+    ).totals
     assert _spans(totals) == [("2026-03", "2026-03-01", "2026-03-31")]
 
 
@@ -386,7 +387,7 @@ def test_a_range_that_cannot_touch_a_period_leaves_it_whole() -> None:
         Period.MONTH,
         None,
         DateRange(datetime.date(2026, 1, 1), datetime.date(2026, 1, 31)),
-    )
+    ).totals
     assert _spans(totals) == [("2026-03", "2026-03-01", "2026-03-31")]
 
 
@@ -396,7 +397,7 @@ def test_an_unbounded_range_clamps_nothing() -> None:
         Period.MONTH,
         None,
         DateRange(None, None),
-    )
+    ).totals
     assert _spans(totals) == [("2026-03", "2026-03-01", "2026-03-31")]
 
 
@@ -406,7 +407,7 @@ def test_one_open_bound_clamps_only_the_other_end() -> None:
         Period.MONTH,
         None,
         DateRange(datetime.date(2026, 3, 9), None),
-    )
+    ).totals
     assert _spans(totals) == [("2026-03", "2026-03-09", "2026-03-31")]
 
 
@@ -472,7 +473,7 @@ def test_a_depth_one_category_is_grouped_under_itself() -> None:
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-    )
+    ).totals
     assert [(total.amount, total.category) for total in totals] == [
         (Decimal("100.00"), "Housing")
     ]
@@ -481,7 +482,9 @@ def test_a_depth_one_category_is_grouped_under_itself() -> None:
 def test_every_path_is_its_own_group() -> None:
     """The grain is the record's own path at every depth, so a total names exactly what
     the expenses it came from name. Nothing is rolled up into an ancestor."""
-    totals = aggregate(_settlements(), Period.MONTH, Grouping.CATEGORY, UNBOUNDED)
+    totals = aggregate(
+        _settlements(), Period.MONTH, Grouping.CATEGORY, UNBOUNDED
+    ).totals
     assert [(total.amount, total.category) for total in totals] == [
         (Decimal("10.00"), "Groceries"),
         (Decimal("100.00"), "Settlement:Alice"),
@@ -493,7 +496,9 @@ def test_every_path_is_its_own_group() -> None:
 def test_a_child_is_not_folded_into_its_parent() -> None:
     """Alice's own 100 and her Spain trip's 50 stay two rows rather than one 150, and
     the rows still add to what the same request returns ungrouped."""
-    grouped = aggregate(_settlements(), Period.MONTH, Grouping.CATEGORY, UNBOUNDED)
+    grouped = aggregate(
+        _settlements(), Period.MONTH, Grouping.CATEGORY, UNBOUNDED
+    ).totals
     assert [
         (total.amount, total.category)
         for total in grouped
@@ -502,7 +507,7 @@ def test_a_child_is_not_folded_into_its_parent() -> None:
         (Decimal("100.00"), "Settlement:Alice"),
         (Decimal("50.00"), "Settlement:Alice:Spain"),
     ]
-    ungrouped = aggregate(_settlements(), Period.MONTH, None, UNBOUNDED)
+    ungrouped = aggregate(_settlements(), Period.MONTH, None, UNBOUNDED).totals
     assert [total.amount for total in ungrouped] == [Decimal("185.00")]
 
 
@@ -512,7 +517,7 @@ def test_narrowing_the_records_leaves_the_grain_alone() -> None:
     settlements = [
         record for record in _settlements() if record.category != "Groceries"
     ]
-    totals = aggregate(settlements, Period.MONTH, Grouping.CATEGORY, UNBOUNDED)
+    totals = aggregate(settlements, Period.MONTH, Grouping.CATEGORY, UNBOUNDED).totals
     assert [(total.amount, total.category) for total in totals] == [
         (Decimal("100.00"), "Settlement:Alice"),
         (Decimal("50.00"), "Settlement:Alice:Spain"),
@@ -522,7 +527,7 @@ def test_narrowing_the_records_leaves_the_grain_alone() -> None:
 
 def test_an_ungrouped_request_names_no_category() -> None:
     """A row carries a path only when ?group_by=category asked for one."""
-    totals = aggregate(_settlements(), Period.MONTH, None, UNBOUNDED)
+    totals = aggregate(_settlements(), Period.MONTH, None, UNBOUNDED).totals
     assert [(total.amount, total.category) for total in totals] == [
         (Decimal("185.00"), None)
     ]
@@ -538,7 +543,7 @@ def test_the_currency_stays_in_the_key_whatever_the_grain() -> None:
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-    )
+    ).totals
     assert [(total.amount, total.currency, total.category) for total in totals] == [
         (Decimal("100.00"), "DKK", "Settlement:Alice"),
         (Decimal("10.00"), "EUR", "Settlement:Bob"),
@@ -564,7 +569,9 @@ def _averages(totals: list[TotalRecord]) -> list[tuple[str, str | None, str | No
 
 def test_the_first_periods_average_is_its_own_total() -> None:
     """There is nothing before it to average with, so the mean of one is that one."""
-    totals = aggregate([_expense("300.00", _JANUARY)], Period.MONTH, None, UNBOUNDED)
+    totals = aggregate(
+        [_expense("300.00", _JANUARY)], Period.MONTH, None, UNBOUNDED
+    ).totals
     assert _averages(totals) == [("2026-01", "DKK", "300.00")]
 
 
@@ -582,7 +589,7 @@ def test_a_month_nobody_spent_in_still_divides_by_itself() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert _averages(totals) == [
         ("2026-01", "DKK", "300.00"),
         ("2026-02", "DKK", "150.00"),
@@ -600,7 +607,7 @@ def test_a_month_nobody_spent_in_carries_its_average_and_no_amount() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert totals[1] == TotalRecord(
         "2026-02",
         datetime.date(2026, 2, 1),
@@ -626,7 +633,7 @@ def test_a_half_cent_average_rounds_up_rather_than_to_even() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert _averages(totals)[1] == ("2026-02", "DKK", "0.03")
 
 
@@ -640,7 +647,7 @@ def test_a_half_cent_credit_average_rounds_away_from_zero() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert _averages(totals)[1] == ("2026-02", "DKK", "-0.03")
 
 
@@ -658,7 +665,7 @@ def test_an_average_that_rounds_to_nothing_is_positive_zero() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert _averages(totals) == [
         ("2026-01", "DKK", "-0.01"),
         ("2026-02", "DKK", "-0.01"),
@@ -683,7 +690,7 @@ def test_two_currencies_keep_two_running_averages() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert _averages(totals) == [
         ("2026-01", "DKK", "100.00"),
         ("2026-01", "EUR", "10.00"),
@@ -708,7 +715,7 @@ def test_a_currency_first_seen_late_divides_by_every_period_before_it() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert _averages(totals)[-1] == ("2026-03", "EUR", "10.00")
 
 
@@ -723,7 +730,7 @@ def test_a_gap_carries_one_row_per_currency_seen_so_far() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert _averages(totals) == [
         ("2026-01", "DKK", "100.00"),
         ("2026-01", "EUR", "10.00"),
@@ -747,7 +754,7 @@ def test_a_gap_names_no_currency_that_has_not_arrived_yet() -> None:
         Period.MONTH,
         None,
         UNBOUNDED,
-    )
+    ).totals
     assert _averages(totals) == [
         ("2026-01", "DKK", "100.00"),
         ("2026-02", "DKK", "50.00"),
@@ -765,7 +772,7 @@ def test_a_grouped_row_carries_no_average() -> None:
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-    )
+    ).totals
     assert _averages(totals) == [
         ("2026-01", "DKK", None),
         ("2026-01", "DKK", None),
@@ -782,7 +789,7 @@ def test_a_grouped_gap_stays_a_bare_row() -> None:
         Period.MONTH,
         Grouping.CATEGORY,
         UNBOUNDED,
-    )
+    ).totals
     assert totals[1] == TotalRecord(
         "2026-02",
         datetime.date(2026, 2, 1),
@@ -792,3 +799,87 @@ def test_a_grouped_gap_stays_a_bare_row() -> None:
         None,
         running_average=None,
     )
+
+
+def _range(result: Aggregation) -> list[tuple[str, str]]:
+    """Each summary entry as (currency, average), the average as the wire shows it."""
+    return [(entry.currency, str(entry.average)) for entry in result.averages]
+
+
+def test_the_range_average_of_one_period_is_its_own_total() -> None:
+    """One period spans the whole calendar, so the mean of one is that one."""
+    result = aggregate([_expense("300.00", _JANUARY)], Period.MONTH, None, UNBOUNDED)
+    assert _range(result) == [("DKK", "300.00")]
+
+
+def test_the_range_average_counts_a_month_nobody_spent_in() -> None:
+    """450 over January to March is 150, the empty February dividing as a period."""
+    result = aggregate(
+        [
+            _expense("300.00", _JANUARY),
+            _expense("150.00", _MARCH),
+        ],
+        Period.MONTH,
+        None,
+        UNBOUNDED,
+    )
+    assert _range(result) == [("DKK", "150.00")]
+
+
+def test_a_currency_first_seen_late_divides_by_the_whole_calendar() -> None:
+    """Not by the periods its own series covers, which is what keeps the two
+    comparable: EUR arriving in March still divides by the three months DKK spans."""
+    result = aggregate(
+        [
+            _expense("300.00", _JANUARY),
+            _expense("90.00", _MARCH, currency="EUR"),
+        ],
+        Period.MONTH,
+        None,
+        UNBOUNDED,
+    )
+    assert _range(result) == [("DKK", "100.00"), ("EUR", "30.00")]
+
+
+def test_the_range_average_is_the_same_grouped_or_not() -> None:
+    """The figure is about the range, which grouping re-keys the rows of without
+    changing. Both requests sum the same expenses, so both reach the same mean."""
+    grouped = aggregate(_settlements(), Period.MONTH, Grouping.CATEGORY, UNBOUNDED)
+    ungrouped = aggregate(_settlements(), Period.MONTH, None, UNBOUNDED)
+    assert _range(grouped) == _range(ungrouped)
+
+
+def test_a_half_cent_range_average_rounds_up_rather_than_to_even() -> None:
+    """0.05 over two periods is 0.025, which ROUND_HALF_UP makes 0.03 and Decimal's
+    default would make 0.02."""
+    result = aggregate(
+        [
+            _expense("0.03", _JANUARY),
+            _expense("0.02", _FEBRUARY),
+        ],
+        Period.MONTH,
+        None,
+        UNBOUNDED,
+    )
+    assert _range(result) == [("DKK", "0.03")]
+
+
+def test_a_range_average_that_rounds_to_nothing_is_positive_zero() -> None:
+    """A cumulative credit too small to show at two places quantizes to -0.00, which a
+    sum cannot reach and a division can."""
+    result = aggregate(
+        [
+            _expense("-0.01", _JANUARY),
+            _expense("0.00", _APRIL),
+        ],
+        Period.MONTH,
+        None,
+        UNBOUNDED,
+    )
+    assert _range(result) == [("DKK", "0.00")]
+
+
+def test_no_expenses_carry_no_range_average() -> None:
+    """No extent is no calendar to divide by, which is the empty summary with no branch
+    of its own and nothing dividing by zero."""
+    assert aggregate([], Period.MONTH, None, UNBOUNDED).averages == []

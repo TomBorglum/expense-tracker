@@ -24,6 +24,7 @@ from expense_tracker import (
     CategoryPayload,
     ExpensePayload,
     PeriodTotalPayload,
+    SummaryPayload,
     create_app,
 )
 from expense_tracker.config import database_url
@@ -42,10 +43,17 @@ class _Collection[T](BaseModel):
     items: list[T]
 
 
+class _Summarised[T](BaseModel):
+    """The other half of the totals body. That endpoint alone sends it."""
+
+    summary: list[T]
+
+
 # Each one validates the envelope, so `.items` at a call site is the rows inside it.
 _EXPENSES = TypeAdapter(_Collection[ExpensePayload])
 _CATEGORIES = TypeAdapter(_Collection[CategoryPayload])
 _TOTALS = TypeAdapter(_Collection[PeriodTotalPayload])
+_SUMMARY = TypeAdapter(_Summarised[SummaryPayload])
 
 
 async def _truncate() -> None:
@@ -793,6 +801,23 @@ def test_totals_carry_a_running_average_over_the_loaded_months(
             currency="DKK",
             running_average="500.00",
         ),
+    ]
+
+
+def test_the_range_summary_averages_the_loaded_months(tmp_path: Path) -> None:
+    """The range average against real numeric(12, 2) rows rather than Python Decimals.
+
+    600.00 in January and 400.00 in February is 1000.00 over the two months the calendar
+    spans, so the figure the totals view shows beside the table is 500.00.
+    """
+    _load_four_days(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/totals", params={"period": "month"})
+
+    assert response.status_code == 200
+    assert _SUMMARY.validate_json(response.content).summary == [
+        SummaryPayload(currency="DKK", average="500.00")
     ]
 
 
