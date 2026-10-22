@@ -9,6 +9,7 @@ import { CATEGORY_GROUPING, type TotalsQuery } from "../api/totals";
 import { CategoryToggle } from "../components/CategoryToggle";
 import { ExpenseFilters } from "../components/ExpenseFilters";
 import { PeriodTotals } from "../components/PeriodTotals";
+import { TotalsSummary } from "../components/TotalsSummary";
 import { SHARED_SEARCH_KEYS, sharedSearch } from "../search";
 
 // The currency the totals are presented in, the days they are drawn from, the categories
@@ -67,7 +68,11 @@ function TotalsPage() {
           />
         </ExpenseFilters>
       </div>
-      <section className="card min-h-0 bg-base-100 shadow-sm">
+      {/* Above the periods it is drawn from, and outside the table: the figure is about
+          the range the filters name, not about any row in it. Driven by the same search,
+          so the controls above move both. */}
+      <TotalsSummary query={search} />
+      <section className="card mt-6 min-h-0 bg-base-100 shadow-sm">
         <div className="card-body min-h-0">
           <PeriodTotals query={search} />
         </div>

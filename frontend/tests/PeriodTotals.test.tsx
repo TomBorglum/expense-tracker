@@ -8,7 +8,7 @@ import { BASE_CURRENCY } from "@/api/currencies";
 import { CATEGORY_GROUPING, TOTALS_URL, type TotalsQuery } from "@/api/totals";
 import { PeriodTotals } from "@/components/PeriodTotals";
 
-import { collection, MOCK_CATEGORY_TOTALS, MOCK_TOTALS } from "./msw/handlers";
+import { MOCK_CATEGORY_TOTALS, MOCK_TOTALS, totalsCollection } from "./msw/handlers";
 import { server } from "./msw/server";
 
 // Literal dates rather than the current year, so this file names what it asks for and
@@ -128,7 +128,7 @@ test("takes the subtotal from the ungrouped request rather than adding the lines
   // avoid, and this is what proves it is not happening.
   server.use(
     http.get(TOTALS_URL, ({ request }) =>
-      collection(
+      totalsCollection(
         new URL(request.url).searchParams.get("group_by") === null
           ? [{ ...MOCK_TOTALS[2], amount: "999.99" }]
           : MOCK_CATEGORY_TOTALS.slice(2, 4),
@@ -148,7 +148,7 @@ test("takes the subtotal from the ungrouped request rather than adding the lines
 test("shows a period and a category that net negative as credits", async () => {
   server.use(
     http.get(TOTALS_URL, ({ request }) =>
-      collection(
+      totalsCollection(
         new URL(request.url).searchParams.get("group_by") === null
           ? [{ ...MOCK_TOTALS[2], amount: "-5.00", running_average: "-1.25" }]
           : [
@@ -182,7 +182,7 @@ test("leaves the amount blank on a category line that carries none", async () =>
   // The guard lets a category row through without an amount, and there is no sign to read.
   server.use(
     http.get(TOTALS_URL, ({ request }) =>
-      collection(
+      totalsCollection(
         new URL(request.url).searchParams.get("group_by") === null
           ? [MOCK_TOTALS[0]]
           : [{ ...MOCK_CATEGORY_TOTALS[0], amount: undefined }],
@@ -204,7 +204,7 @@ test("says a period holds nothing rather than showing it as zero", async () => {
   // that distinction away.
   server.use(
     http.get(TOTALS_URL, () =>
-      collection([
+      totalsCollection([
         { period: "2001-02", from_date: "2001-02-01", to_date: "2001-02-28" },
       ]),
     ),
@@ -239,7 +239,7 @@ test("shows an alert when only the grouped request fails", async () => {
   server.use(
     http.get(TOTALS_URL, ({ request }) =>
       new URL(request.url).searchParams.get("group_by") === null
-        ? collection(MOCK_TOTALS)
+        ? totalsCollection(MOCK_TOTALS)
         : HttpResponse.json({ detail: "expenses unavailable" }, { status: 503 }),
     ),
   );
@@ -261,7 +261,7 @@ test("shows an alert when an amount arrives as a number", async () => {
   // The backend pins amount to str(Decimal) on its side; this is the frontend half of
   // that contract, and a JSON number is how it would break.
   server.use(
-    http.get(TOTALS_URL, () => collection([{ ...MOCK_TOTALS[0], amount: 30.0 }])),
+    http.get(TOTALS_URL, () => totalsCollection([{ ...MOCK_TOTALS[0], amount: 30.0 }])),
   );
   renderPeriodTotals();
   const alert = await screen.findByRole("alert");
@@ -273,7 +273,7 @@ test("shows an alert when an absent amount arrives as null", async () => {
   // None-recorded branch reads. A null would render as a period holding an empty amount.
   server.use(
     http.get(TOTALS_URL, () =>
-      collection([
+      totalsCollection([
         {
           period: "2001-02",
           from_date: "2001-02-01",
@@ -294,7 +294,7 @@ test("shows an alert when a running average arrives as a number", async () => {
   // the same terms: the view renders the string it is handed and does no arithmetic.
   server.use(
     http.get(TOTALS_URL, () =>
-      collection([{ ...MOCK_TOTALS[0], running_average: 11 }]),
+      totalsCollection([{ ...MOCK_TOTALS[0], running_average: 11 }]),
     ),
   );
   renderPeriodTotals();
@@ -306,7 +306,8 @@ test("shows a range that matches nothing as a row rather than an alert", async (
   // A valid range holding no expenses is a 200 with [], for the reason an empty table
   // is: it is an answer and not a fault. The row spans whatever width the grouping left
   // the table, there being no period below it to line the columns up against.
-  server.use(http.get(TOTALS_URL, () => collection([])));
+  // No rows and no summary: no extent is no calendar to average over either.
+  server.use(http.get(TOTALS_URL, () => totalsCollection([], [])));
   const { rerenderWith } = renderPeriodTotals();
   await screen.findByRole("table", { name: "Totals" });
   const empty = () => screen.getByRole<HTMLTableCellElement>("cell");
@@ -332,7 +333,7 @@ test("asks the API for the parameters it was given", async () => {
         from_date: params.get("from_date"),
         to_date: params.get("to_date"),
       });
-      return collection(MOCK_TOTALS);
+      return totalsCollection(MOCK_TOTALS);
     }),
   );
   renderPeriodTotals({
@@ -358,7 +359,7 @@ test("makes the second request only when the grouping is asked for", async () =>
     http.get(TOTALS_URL, ({ request }) => {
       const params = new URL(request.url).searchParams;
       requested.push(params.get("group_by"));
-      return collection(
+      return totalsCollection(
         params.get("group_by") === null ? MOCK_TOTALS : MOCK_CATEGORY_TOTALS,
       );
     }),

@@ -4,8 +4,10 @@ import { CREDIT_CLASS, displayAmount } from "../amounts";
 import {
   CATEGORY_GROUPING,
   type PeriodTotal,
+  selectItems,
   type TotalsQuery,
   totalsQueryOptions,
+  ungrouped,
 } from "../api/totals";
 
 interface PeriodTotalsProps {
@@ -68,16 +70,18 @@ function AmountCell({
 // string so no float round trip can drift a total by a cent, and the two dates are bare
 // YYYY-MM-DD, which new Date() would read as UTC and print a day early west of Greenwich.
 export function PeriodTotals({ query }: PeriodTotalsProps) {
-  // Destructured out rather than overwritten with undefined, so the ungrouped query key
-  // holds no dead entry.
-  const { group_by: grouping, ...range } = query;
-  const byCategory = grouping !== undefined;
+  const byCategory = query.group_by !== undefined;
+  const range = ungrouped(query);
   // The ungrouped payload is the month total itself, straight from the backend. Adding
   // the category rows up here instead would be arithmetic on amounts this side of the
   // wire, which is the thing sending them as strings exists to avoid.
-  const totals = useQuery(totalsQueryOptions(range));
+  //
+  // select narrows the body to its rows, so everything below reads an array as before
+  // and the summary half goes to TotalsSummary off the same cache entry.
+  const totals = useQuery({ ...totalsQueryOptions(range), select: selectItems });
   const breakdownQuery = useQuery({
     ...totalsQueryOptions({ ...range, group_by: CATEGORY_GROUPING }),
+    select: selectItems,
     enabled: byCategory,
   });
   // The one place the grouping is consulted. enabled stops the request but evicts
