@@ -9,6 +9,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 
 from .aggregation import (
     AggregationError,
+    RangeAverage,
     TotalRecord,
     aggregate,
     parse_grouping,
@@ -119,9 +120,32 @@ def _total_payload(total: TotalRecord) -> PeriodTotalPayload:
     )
 
 
-def _collection(rows: Sequence[object]) -> JSONResponse:
-    """The rows as a collection body: an object, so it can gain fields later."""
-    return JSONResponse({"items": rows}, headers={"Cache-Control": "no-store"})
+class SummaryPayload(BaseModel):
+    """One currency's range figures as GET /api/expenses/totals sends them.
+
+    Every field is a string here too, for the reason ExpensePayload gives. Neither is
+    optional, unlike a row's: an entry exists only for a currency that has expenses, so
+    there is nothing for exclude_none to drop.
+    """
+
+    currency: str
+    average: str
+
+
+def _summary_payload(average: RangeAverage) -> SummaryPayload:
+    """One currency's range average on the wire."""
+    # str(), never float(): the summed column is numeric(12, 2).
+    return SummaryPayload(currency=average.currency, average=str(average.average))
+
+
+def _collection(
+    rows: Sequence[object], summary: Sequence[object] | None = None
+) -> JSONResponse:
+    """The rows as a collection body: an object, so it can gain fields like summary."""
+    body: dict[str, object] = {"items": rows}
+    if summary is not None:
+        body["summary"] = summary
+    return JSONResponse(body, headers={"Cache-Control": "no-store"})
 
 
 async def _read_expenses(
@@ -230,14 +254,18 @@ def create_app() -> FastAPI:
         )
         # After the conversion, never before: converting each amount and then adding is
         # what makes a total equal the sum of the rows /api/expenses shows for it.
-        payload = [
-            _total_payload(total)
-            # Grouped on the record's own path, so a total names what an expense names.
-            for total in aggregate(records, grain, grouping, dates)
-        ]
+        # Grouped on the record's own path, so a total names what an expense names.
+        summed = aggregate(records, grain, grouping, dates)
+        payload = [_total_payload(total) for total in summed.totals]
+        # Sent whatever was grouped by: the range average is a figure about the range,
+        # which grouping re-keys the rows of without changing.
+        summary = [_summary_payload(average) for average in summed.averages]
         # exclude_none, not exclude_unset: _total_payload sets all seven fields, so
         # exclude_unset would drop nothing and say nothing about it.
-        return _collection([item.model_dump(exclude_none=True) for item in payload])
+        return _collection(
+            [item.model_dump(exclude_none=True) for item in payload],
+            [item.model_dump() for item in summary],
+        )
 
     # The categories the rows /api/expenses lists fall in, once each. Read-only for the
     # same reason.

@@ -102,14 +102,16 @@ error state until something answers on 8000.
 | `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
 | `GET /api/expenses?category=Food&category=Housing` | Only the expenses in either category, or under it |
 | `GET /api/expenses/categories` | `[{"category", "name", "parent"}, ...]` - the `CategoryPayload` model, every category at the levels asked for, once each, in path order; takes `from_level` and `to_level` |
-| `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category", "running_average"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and `category` too |
+| `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category", "running_average"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and `category` too; its body carries a `summary` beside `items` |
 | `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
 **Every body is an object holding `items`**, so each shape above is what fills that
 array - `GET /api/currencies` answers
 `{"items": [{"from_currency", "to_currency", "exchange_rate"}, ...]}`. An object rather
 than a bare array is what lets a response gain a field later without breaking a client,
-which is the one guideline this API follows here that it did not before.
+which is the one guideline this API follows here that it did not before. Totals is the
+one endpoint that has taken that room, with [the range average](#the-range-average)
+beside its rows; the other three send `items` alone.
 **`items` rather than a domain plural** like `expenses`: Zalando, whose rule puts the
 object there, names it that on every collection, and one key across all four keeps
 `fetchList` free of per-endpoint knowledge. AIP-132 would name it for the resource.
@@ -377,6 +379,40 @@ ungrouped request for the same reason. The calendar's extent is unchanged - stil
 oldest matching expense to the newest, never the requested range - so a range reaching
 past the data neither invents leading periods nor trails off into future ones with a
 sinking average.
+
+### The range average
+
+**The body carries a `summary` beside `items`**: one entry per currency, each naming that
+currency and `average`, the mean of its period totals over the whole calendar the rows
+span. It is what the totals view shows above the table, and the figure a reader wants from
+a range - "what does a month cost" - rather than one a row can answer.
+
+```json
+{
+  "items": [{"period": "2026-01", "amount": "3498.56", "currency": "DKK", "...": "..."}],
+  "summary": [{"currency": "DKK", "average": "3443.07"}]
+}
+```
+
+**Both keys are always present**, unlike a row's. An entry exists only for a currency that
+has expenses, so there is nothing for `exclude_none` to drop and no absence to read
+meaning into. A currency's entry is the only place a figure about the whole range lives:
+the rows say nothing about it.
+
+**The divisor is the same calendar the rows walk** - first matching expense to last, with
+interior gaps counted - so `average` is the figure the last row's `running_average`
+reaches, stated once instead of inferred from a position. A range filtered wider than the
+data divides by the data, not by the dates asked for, which is why the number can differ
+from what the requested bounds suggest.
+
+**It is the same whether or not `?group_by=` was sent.** Grouping re-keys the rows without
+changing which expenses they sum, so both bodies carry an identical summary and a client
+can read it from either. `test_the_range_summary_is_the_same_grouped_or_not` pins it on
+both sides of the route. The quantization is a conversion's: `ROUND_HALF_UP` to cents, and
+a cumulative credit too small to show at that scale is normalised from `-0.00` to `0.00`.
+
+**No expenses means an empty summary**, the same `200` an empty `items` is. No extent is
+no calendar to divide by, so there is nothing to average and nothing dividing by zero.
 
 All four endpoints are read-only over HTTP. Rows arrive through
 `pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere else,

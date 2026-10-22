@@ -46,6 +46,21 @@ class TotalRecord(NamedTuple):
     running_average: Decimal | None
 
 
+class RangeAverage(NamedTuple):
+    """One currency's mean period total over the whole calendar the rows span."""
+
+    currency: str
+    average: Decimal
+
+
+class Aggregation(NamedTuple):
+    """The rows a request answers with, and the range figures beside them."""
+
+    totals: list[TotalRecord]
+    # One per currency, sorted, and empty only when there are no expenses at all.
+    averages: list[RangeAverage]
+
+
 def parse_period(value: str | None) -> Period:
     """The requested period, or AggregationError. An absent value is refused."""
     if value is None:
@@ -81,8 +96,8 @@ def aggregate(
     # than only which rows there are. UNBOUNDED is what a caller asking for no range
     # passes.
     dates: DateRange,
-) -> list[TotalRecord]:
-    """Every period from the oldest expense to the newest, oldest first."""
+) -> Aggregation:
+    """Every period from the oldest expense to the newest, and the range means."""
     sums: defaultdict[tuple[str, str, str | None], Decimal] = defaultdict(
         lambda: Decimal("0")
     )
@@ -99,10 +114,12 @@ def aggregate(
     for (period_key, currency, category), amount in sums.items():
         grouped[period_key].append((currency, category, amount))
     totals: list[TotalRecord] = []
-    # Carried across the walk, so a period's average covers every period before it.
+    # Carried across the walk, so a period's average covers every period before it, and
+    # holding each currency's whole-calendar total once the walk has ended.
     running: defaultdict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    period_keys = _period_keys(expenses, period)
     # The walk supplies the period order, so only the rows within one are sorted here.
-    for periods, period_key in enumerate(_period_keys(expenses, period), start=1):
+    for periods, period_key in enumerate(period_keys, start=1):
         start, end = _clamp(_period_bounds(period_key, period), dates)
         rows = sorted(grouped[period_key], key=lambda row: (row[1] or "", row[0]))
         for currency, _category, amount in rows:
@@ -131,7 +148,14 @@ def aggregate(
             )
             for currency, category, amount in rows
         )
-    return totals
+    # One per currency, over the whole calendar rather than that currency's own series.
+    return Aggregation(
+        totals,
+        [
+            RangeAverage(currency, _mean(total, len(period_keys)))
+            for currency, total in sorted(running.items())
+        ],
+    )
 
 
 def _gap(
