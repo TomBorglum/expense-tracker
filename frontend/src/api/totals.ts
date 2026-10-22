@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { fetchList } from "./fetchList";
+import { fetchCollection } from "./fetchList";
 
 // The wire contract, written out by hand, the same way expenses.ts writes out its own.
 // The backend builds the same payload as PeriodTotalPayload in
@@ -24,6 +24,23 @@ export interface PeriodTotal {
   currency?: string;
   category?: string;
   running_average?: string;
+}
+
+// The other half of the same body, built as SummaryPayload: one entry per currency,
+// holding the mean of its period totals over the whole calendar the rows span. Neither
+// key is ever absent, unlike a row's - an entry exists only for a currency that has
+// expenses - so both are required here and the guard rejects a missing one. It is the
+// same whether or not the request grouped, which is why the stat reads it from the
+// ungrouped request the table already makes.
+export interface RangeAverage {
+  currency: string;
+  average: string;
+}
+
+// What the totals body is, both halves together.
+export interface TotalsCollection {
+  items: PeriodTotal[];
+  summary: RangeAverage[];
 }
 
 export const TOTALS_PATH = "/api/expenses/totals";
@@ -63,6 +80,23 @@ function isPeriodTotalList(payload: unknown): payload is PeriodTotal[] {
   return Array.isArray(payload) && payload.every(isPeriodTotal);
 }
 
+function isRangeAverage(payload: unknown): payload is RangeAverage {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    // Present and a string, never absent and never a number: the asymmetry with a row's
+    // optional keys is the contract, so an absent key is a refusal here.
+    "currency" in payload &&
+    typeof payload.currency === "string" &&
+    "average" in payload &&
+    typeof payload.average === "string"
+  );
+}
+
+function isRangeAverageList(payload: unknown): payload is RangeAverage[] {
+  return Array.isArray(payload) && payload.every(isRangeAverage);
+}
+
 // The query half of the same contract. group_by and category are optional on both sides
 // and mean the same thing by their absence: sum the categories together and leave the
 // field off the row, and draw from every category rather than the ones named.
@@ -77,7 +111,7 @@ export interface TotalsQuery {
 export async function fetchTotals(
   query: TotalsQuery,
   signal?: AbortSignal,
-): Promise<PeriodTotal[]> {
+): Promise<TotalsCollection> {
   const url = new URL(TOTALS_URL);
   // Always sent: the backend refuses an absent period rather than defaulting one.
   url.searchParams.set("period", PERIOD);
@@ -93,8 +127,33 @@ export async function fetchTotals(
   for (const name of query.category ?? []) {
     url.searchParams.append("category", name);
   }
-  return fetchList(TOTALS_PATH, url, isPeriodTotalList, signal);
+  return fetchCollection(
+    TOTALS_PATH,
+    url,
+    isPeriodTotalList,
+    isRangeAverageList,
+    signal,
+  );
 }
+
+// The same query with the grouping dropped, which is what both the table's period bands
+// and the range stat request. Content-hashed into the same queryKey, so the two read one
+// cache entry rather than fetching a copy each.
+export function ungrouped(query: TotalsQuery): TotalsQuery {
+  // Deleted rather than set to undefined, so the key is gone from the object and not
+  // merely empty in it: the hash drops an undefined value, but a reader of the key does
+  // not have to know that.
+  const range: TotalsQuery = { ...query };
+  delete range.group_by;
+  return range;
+}
+
+// Module-level, never inline: react-query re-runs select when the function's reference
+// changes, so an arrow written at the call site would recompute on every render. Each
+// component subscribes to its own half and re-renders only when that half changes, the
+// cache still holding the whole body.
+export const selectItems = (data: TotalsCollection): PeriodTotal[] => data.items;
+export const selectSummary = (data: TotalsCollection): RangeAverage[] => data.summary;
 
 // A factory for the reason expensesQueryOptions is one: each set of parameters is its own
 // cache entry, which is what puts the view back into its pending branch on a change

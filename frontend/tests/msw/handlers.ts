@@ -3,7 +3,7 @@ import { http, HttpResponse } from "msw";
 import { CATEGORIES_URL, type Category } from "@/api/categories";
 import { CURRENCIES_URL, type CurrencyRate } from "@/api/currencies";
 import { type Expense, EXPENSES_URL } from "@/api/expenses";
-import { type PeriodTotal, TOTALS_URL } from "@/api/totals";
+import { type PeriodTotal, type RangeAverage, TOTALS_URL } from "@/api/totals";
 
 // Oldest first, the order the API sends. Deliberately not values the loader produces -
 // another currency, dates from another decade - so a passing test proves they travelled
@@ -132,6 +132,25 @@ export function collection(items: unknown): Response {
   return HttpResponse.json({ items });
 }
 
+// The summary the totals body carries beside its rows: the mean of the period totals
+// over the calendar they span. 13.67 is 41.00 over three periods, which rounds up - a
+// figure the view could not have derived from the amounts above, so a passing test
+// proves it travelled over the request rather than being computed this side.
+export const MOCK_RANGE_AVERAGE: RangeAverage[] = [
+  { currency: "EUR", average: "13.67" },
+];
+
+// Totals is the one endpoint whose body holds a second key, so it needs a mock of its
+// own. The summary defaults to the same value whether or not the request grouped, which
+// is the property the view leans on when it reads the figure from the ungrouped request
+// alone; a caller passes [] for a range that summed nothing.
+export function totalsCollection(
+  items: unknown,
+  summary: unknown = MOCK_RANGE_AVERAGE,
+): Response {
+  return HttpResponse.json({ items, summary });
+}
+
 export const handlers = [
   // The absolute URLs, not the paths. The requests are cross-origin now, and a path-only
   // pattern would resolve against jsdom's origin and never match them.
@@ -145,7 +164,7 @@ export const handlers = [
   // /api/expenses/totals despite being its prefix. The totals view makes both requests
   // whenever it is grouped, and they differ only by this parameter.
   http.get(TOTALS_URL, ({ request }) =>
-    collection(
+    totalsCollection(
       new URL(request.url).searchParams.get("group_by") === null
         ? MOCK_TOTALS
         : MOCK_CATEGORY_TOTALS,

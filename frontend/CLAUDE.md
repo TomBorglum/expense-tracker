@@ -33,12 +33,12 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   tabs and the category `<fieldset>` each arrived at 0.75rem that way and carry a `text-sm`
   undoing it, `.label` dims to 60% so the category choices carry none, and a table reaches
   0.875rem the same way. Nothing checks this.
-- **A period's subtotal and its running average are the ungrouped request, never its
-  category rows added up.** `PeriodTotals` runs both and takes them from the one without
-  `group_by`, a grouped row carrying no average at all, so the Average column fills on the
-  band alone. Adding amounts up here, or accumulating them across periods, is what sending
-  them as strings exists to prevent. Pinned by "takes the subtotal from the ungrouped
-  request rather than adding the lines up".
+- **A period's subtotal, its running average and the range average are all the ungrouped
+  request**, never its category rows added up. `PeriodTotals` and `TotalsSummary` both key
+  on `ungrouped(query)` and split one body with `select`, so they cost one request; a query
+  of its own doubles it. Accumulating amounts here is what sending them as strings exists
+  to prevent. Pinned by "takes the subtotal from the ungrouped request rather than adding
+  the lines up" and "costs one request when it renders beside the table".
 - **An empty list is a row, not an alert**, and so is a period with no `amount`.
   `role="alert"` is reserved for a request that actually failed - this side of the backend's
   "an empty table is 200, not 503". **The period's own row names no category**: its heading
@@ -62,8 +62,7 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   utility class before a second rule here**: a daisyUI role token in an ordinary CSS
   property fails `css/no-invalid-properties`, which must not be relaxed - this one passes
   only by assigning to a custom property.
-- **`dayPickerClassNames` carries three corrections over five names, handed to the panels as
-  utility classes** - a role token in an ordinary property fails `css/no-invalid-properties`.
+- **`dayPickerClassNames` carries three corrections over five names**, as utility classes.
   - **No day is marked "today".** `today` is emptied and `getClassNamesForModifiers` keeps
     only truthy entries. Without it daisyUI's four-class selector beats `.rdp-selected`'s
     three, so the current day reads as picked whatever the range is.

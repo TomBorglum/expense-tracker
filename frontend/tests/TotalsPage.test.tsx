@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CATEGORY_GROUPING, TOTALS_URL } from "@/api/totals";
 import { createAppRouter } from "@/router";
 
-import { collection, MOCK_CATEGORY_TOTALS, MOCK_TOTALS } from "./msw/handlers";
+import { MOCK_CATEGORY_TOTALS, MOCK_TOTALS, totalsCollection } from "./msw/handlers";
 import { server } from "./msw/server";
 
 // The date defaults read the clock, and several assertions below name the year they
@@ -61,7 +61,7 @@ function recordRequestedParams() {
         from_date: params.get("from_date"),
         to_date: params.get("to_date"),
       });
-      return collection(grouping === null ? MOCK_TOTALS : MOCK_CATEGORY_TOTALS);
+      return totalsCollection(grouping === null ? MOCK_TOTALS : MOCK_CATEGORY_TOTALS);
     }),
   );
   return requested;
@@ -262,7 +262,7 @@ test("narrows both payloads to the categories the URL names", async () => {
     http.get(TOTALS_URL, ({ request }) => {
       const params = new URL(request.url).searchParams;
       requested.push(params.getAll("category"));
-      return collection(
+      return totalsCollection(
         params.get("group_by") === null ? MOCK_TOTALS : MOCK_CATEGORY_TOTALS,
       );
     }),
@@ -331,6 +331,18 @@ test("clearing the selection drops the parameter from the URL", async () => {
       to_date: "2026-12-31",
     });
   });
+});
+
+test("shows the range average above the periods table", async () => {
+  // Through the router, so this covers the stat arriving on the page a URL names and not
+  // only in a component mounted by hand. It sits outside the table, which is the whole
+  // point of it: the figure is about the range the filters name, not about a row.
+  renderPageAt("/totals");
+  await screen.findByRole("table", { name: "Totals" });
+  const shown = screen.getByRole("definition");
+  expect(screen.getByRole("term").textContent).toBe("Average per month");
+  expect(shown.textContent).toBe("13.67 EUR");
+  expect(shown.closest("table")).toBeNull();
 });
 
 test("shows each period's running average beside its total", async () => {

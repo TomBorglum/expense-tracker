@@ -130,6 +130,16 @@ test("shows an alert when the rows arrive without their envelope", async () => {
   expect(alert.textContent).toBe("Could not load the expenses.");
 });
 
+test("shows an alert when the body is not an object at all", async () => {
+  // A step below the envelope check: the body has no keys to look for. Reaching into a
+  // string or a null for `items` would throw a TypeError instead of the payload error
+  // every other refusal sends, so the shape is settled before the keys are read.
+  server.use(http.get(EXPENSES_URL, () => HttpResponse.json("no rows for you")));
+  renderExpensesTable();
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe("Could not load the expenses.");
+});
+
 test("shows an alert when an amount arrives as a number", async () => {
   // The backend pins amount to str(Decimal) on its side; this is the frontend half of
   // that contract, and a JSON number is how it would break.
