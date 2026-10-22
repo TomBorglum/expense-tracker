@@ -92,7 +92,7 @@ test("renders nothing when the request fails, leaving the table its one alert", 
       <PeriodTotals query={QUERY} />
     </QueryClientProvider>,
   );
-  expect((await screen.findAllByRole("alert")).length).toBe(1);
+  expect(await screen.findAllByRole("alert")).toHaveLength(1);
   expect(screen.queryByRole("definition")).toBeNull();
 });
 
@@ -149,5 +149,5 @@ test("costs one request when it renders beside the table", async () => {
   );
   await screen.findByRole("definition");
   await screen.findByRole("table", { name: "Totals" });
-  expect(requested.length).toBe(1);
+  expect(requested).toHaveLength(1);
 });
