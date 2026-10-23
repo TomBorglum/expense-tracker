@@ -562,14 +562,20 @@ records:
       amount: '340.00'
       currency: DKK
       category: Transport:Train
+  - record: '04-09-2026;-240,00;"CAFE NEXT DOOR";'
+    extracted:
+      datetime: '2026-09-04T00:00:00+02:00'
+      action: defer
 ```
 
 **`extracted` is the whole of what this repository reads**, and only where its `action` is
-`import`. A `discard` is a record the other repository decided against, and states just the
-two fields that place it in its file; `record` and `key` are read by nothing here. An
-`import` states the rest, except `details`: a blank memo is written by leaving the field
-out, which is the third record above. That repository refuses `details: ''` so that one
-record has one spelling; this loader is a reader and takes either, reading both as empty.
+`import`. A `discard` is a record the other repository decided against and a `defer` one
+whose bank state is not terminal yet - a card payment the merchant has not claimed - and
+either states just the two fields that place it in its file; `record` and `key` are read
+by nothing here. An `import` states the rest, except `details`: a blank memo is written
+by leaving the field out, which is the third record above. That repository refuses
+`details: ''` so that one record has one spelling; this loader is a reader and takes
+either, reading both as empty.
 
 | Field | Format | Notes |
 | --- | --- | --- |
@@ -611,8 +617,10 @@ file instead, or rebuild.
 
 **With month files, that rebuild is the ordinary path rather than the exception.** The
 other repository adds a later export's records to the month file they fall in, rewriting
-it, so any import touching a month already loaded here arrives as an edit. A new month is
-a new filename and loads on its own:
+it, so any import touching a month already loaded here arrives as an edit. A settling
+`defer` is that same case - the record is replaced where it stands, so its month file
+changes and the rebuild is what brings the completed expense in. A new month is a new
+filename and loads on its own:
 
 ```sh
 pixi run backend-db-reset && pixi run backend-db-init && pixi run backend-load-expenses

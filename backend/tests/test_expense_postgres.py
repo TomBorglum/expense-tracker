@@ -151,29 +151,38 @@ def empty_tables() -> Iterator[None]:
     asyncio.run(_truncate())
 
 
-def _month_file(*rows: str) -> str:
-    """A month file holding one imported record per row.
+def _moment(day: str) -> str:
+    """One row's `DD/MM/YYYY` day as the `datetime` the format writes."""
+    when = datetime.datetime.strptime(day, "%d/%m/%Y").date()
+    return f"{when.isoformat()}T00:00:00+01:00"
 
-    A row is the five fields the database holds, tab-separated, in the order
+
+def _month_file(*rows: str) -> str:
+    """A month file holding one record per row.
+
+    An imported row is the five fields the database holds, tab-separated, in the order
     ExpenseRecord names them and with the date as `DD/MM/YYYY` - so a test reads as its
-    expenses rather than as YAML. The offset the `datetime` is written with is stated
-    because the format requires one and is never applied, winter being when every date
-    below falls.
+    expenses rather than as YAML. A `defer<TAB>DD/MM/YYYY` row is a deferred record,
+    which states the two fields that place it in its file and nothing else. The offset
+    the `datetime` is written with is stated because the format requires one and is
+    never applied, winter being when every date below falls.
     """
     records = ""
     for row in rows:
-        amount, currency, day, category, details = row.split("\t")
-        when = datetime.datetime.strptime(day, "%d/%m/%Y").date()
-        records += (
-            "  - record: 'line'\n"
-            + "    extracted:\n"
-            + f"      datetime: '{when.isoformat()}T00:00:00+01:00'\n"
-            + "      action: import\n"
-            + f"      amount: '{amount}'\n"
-            + f"      currency: '{currency}'\n"
-            + f"      category: '{category}'\n"
-            + f"      details: '{details}'\n"
-        )
+        if row.startswith("defer\t"):
+            _, day = row.split("\t")
+            fields = f"      datetime: '{_moment(day)}'\n      action: defer\n"
+        else:
+            amount, currency, day, category, details = row.split("\t")
+            fields = (
+                f"      datetime: '{_moment(day)}'\n"
+                + "      action: import\n"
+                + f"      amount: '{amount}'\n"
+                + f"      currency: '{currency}'\n"
+                + f"      category: '{category}'\n"
+                + f"      details: '{details}'\n"
+            )
+        records += "  - record: 'line'\n    extracted:\n" + fields
     return "---\nheader: 'H'\nrecords:\n" + records
 
 
@@ -199,6 +208,25 @@ def test_loading_a_directory_inserts_every_row(tmp_path: Path) -> None:
     assert [(name, count) for name, _sha, count in asyncio.run(_ledger())] == [
         ("01.yaml", 1),
         ("02.yaml", 2),
+    ]
+
+
+def test_a_deferred_record_inserts_no_row(tmp_path: Path) -> None:
+    """A file holding both loads its import and nothing for its defer."""
+    _ = _write(
+        tmp_path,
+        "01.yaml",
+        "775.37\tDKK\t02/01/2026\tInsurance\tCar",
+        "defer\t21/01/2026",
+    )
+
+    summary = asyncio.run(load_directory(tmp_path, database_url()))
+
+    assert summary == (1, 0, 1)
+    assert len(asyncio.run(_expenses())) == 1
+    # row_count is what the loader believed it inserted, so a defer must not raise it.
+    assert [(name, count) for name, _sha, count in asyncio.run(_ledger())] == [
+        ("01.yaml", 1)
     ]
 
 

@@ -143,16 +143,17 @@ def test_a_null_details_is_refused_rather_than_read_as_absent() -> None:
         _ = parse("x.yaml", body)
 
 
-def test_a_discarded_record_is_skipped() -> None:
-    """A discard states only its two fields, and yields no expense."""
-    discard = b"      datetime: " + _MOMENT + b"\n      action: discard\n"
-    assert parse("x.yaml", _month(discard, _IMPORT, discard)) == [
+@pytest.mark.parametrize("action", [b"discard", b"defer"])
+def test_a_record_that_is_not_an_import_is_skipped(action: bytes) -> None:
+    """Either states only its two fields, and yields no expense."""
+    skipped = b"      datetime: " + _MOMENT + b"\n      action: " + action + b"\n"
+    assert parse("x.yaml", _month(skipped, _IMPORT, skipped)) == [
         (Decimal("775.37"), "DKK", datetime.date(2026, 1, 2), "Insurance", "Car")
     ]
 
 
 def test_a_month_holding_no_records_parses_to_none() -> None:
-    """`records: []` is what a month every record of which was discarded writes."""
+    """`records: []` is what a month of only discards and defers writes."""
     assert parse("x.yaml", b"---\nheader: 'H'\nrecords: []\n") == []
 
 
@@ -206,9 +207,9 @@ def test_a_record_without_an_extracted_block_is_refused() -> None:
 
 
 def test_an_unknown_action_is_refused() -> None:
-    """Neither import nor discard means a decision this loader cannot act on."""
+    """An action none of the three names is a decision this loader cannot act on."""
     body = _month(b"      datetime: " + _MOMENT + b"\n      action: maybe\n")
-    with pytest.raises(ExpenseFileError, match="'import', 'discard'"):
+    with pytest.raises(ExpenseFileError, match="'import', 'discard', 'defer'"):
         _ = parse("x.yaml", body)
 
 

@@ -190,10 +190,18 @@ class _Discarded(_Extracted):
     action: Literal["discard"]
 
 
+class _Deferred(_Extracted):
+    """A record whose bank state is not terminal yet. A defer states only these two."""
+
+    action: Literal["defer"]
+
+
 class _Record(_Mapping):
     """One export record and what was decided about it. Only `extracted` is read."""
 
-    extracted: Annotated[_Imported | _Discarded, Field(discriminator="action")]
+    extracted: Annotated[
+        _Imported | _Discarded | _Deferred, Field(discriminator="action")
+    ]
 
 
 class _MonthFile(_Mapping):
@@ -207,7 +215,8 @@ def parse_expense_records(filename: str, data: bytes) -> list[ExpenseRecord]:
     """Turns one month file's bytes into records, or raises ExpenseFileError.
 
     Takes bytes rather than a path so the caller hashes exactly what it parses. A
-    discarded record yields nothing: it is one the other repository decided against.
+    discarded or deferred record yields nothing: one the other repository decided
+    against, and one whose bank state is not terminal yet.
     """
     try:
         # Bytes rather than decoded text: PyYAML's reader strips a byte-order mark and
