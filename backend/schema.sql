@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS loaded_expense_file (
     CONSTRAINT loaded_expense_file_row_count_positive CHECK (row_count >= 0)
 );
 
--- One row per imported record of one loaded file. A discarded record has none.
+-- One row per imported record of one loaded file. A discarded or deferred record
+-- has none.
 CREATE TABLE IF NOT EXISTS expense (
     -- Surrogate, because nothing in the data identifies a row: the same amount, day,
     -- currency, category and details can legitimately repeat.

@@ -37,6 +37,10 @@ records:
       currency: DKK
       category: Utilities
       details: Internet
+  - record: '21-10-2026;-240,00;"CAFE";'
+    extracted:
+      datetime: '2026-10-21T00:00:00+02:00'
+      action: defer
   - record: '27-10-2026;-1980,00;"SERVICE AND TYRES";'
     extracted:
       datetime: '2026-10-27T00:00:00+01:00'
