@@ -345,13 +345,13 @@ test("shows the range average above the periods table", async () => {
   expect(shown.closest("table")).toBeNull();
 });
 
-test("shows each period's running average beside its total", async () => {
-  // Through the router, so this covers the column arriving on the page a URL names and
-  // not only in a component mounted by hand. The figure is the payload's, verbatim.
+test("names no average column, the figure having moved above the table", async () => {
+  // The column and the stat answered different questions on the same row: an amount is
+  // one period's and the average was cumulative. Only the stat above the table is left.
   renderPageAt("/totals");
   await screen.findByRole("table", { name: "Totals" });
-  await screen.findByRole("columnheader", { name: "Average" });
-  expect(screen.getByRole("cell", { name: "13.67" })).toBeDefined();
+  expect(screen.queryByRole("columnheader", { name: "Average" })).toBeNull();
+  expect(screen.getByRole("definition").textContent).toBe("13.67 EUR");
 });
 
 test("shows the totals rather than the expenses table", async () => {

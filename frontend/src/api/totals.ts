@@ -7,15 +7,10 @@ import { fetchCollection } from "./fetchList";
 // backend/src/expense_tracker/__init__.py; there is no schema to generate either side
 // from, so the two declarations are kept in step deliberately. Change them together.
 //
-// The first three fields are on every row. The last four are dumped with exclude_none,
+// The first three fields are on every row. The last three are dumped with exclude_none,
 // so each is present with a value or absent altogether - never null and never "". An
 // absent amount means the period holds no expenses, which is not the same as a period of
-// credits that netted to "0.00" - and such a period carries a running_average all the
-// same, that being the one figure it does have.
-//
-// running_average is the mean of this currency's totals over the periods up to and
-// including this one. It is the period's own figure, so a ?group_by=category row carries
-// none at all.
+// credits that netted to "0.00"; such a period carries the span and nothing else.
 export interface PeriodTotal {
   period: string;
   from_date: string;
@@ -23,7 +18,6 @@ export interface PeriodTotal {
   amount?: string;
   currency?: string;
   category?: string;
-  running_average?: string;
 }
 
 // The other half of the same body, built as SummaryPayload: one entry per currency,
@@ -69,8 +63,7 @@ function isPeriodTotal(payload: unknown): payload is PeriodTotal {
     // key from a present empty one, and it is the narrowing that types the read.
     (!("amount" in payload) || typeof payload.amount === "string") &&
     (!("currency" in payload) || typeof payload.currency === "string") &&
-    (!("category" in payload) || typeof payload.category === "string") &&
-    (!("running_average" in payload) || typeof payload.running_average === "string")
+    (!("category" in payload) || typeof payload.category === "string")
   );
 }
 

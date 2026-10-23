@@ -41,9 +41,6 @@ class TotalRecord(NamedTuple):
     currency: str | None
     # The record's own path, or None when the request did not group at all.
     category: str | None
-    # The mean of this currency's totals over the periods so far, or None on a grouped
-    # row.
-    running_average: Decimal | None
 
 
 class RangeAverage(NamedTuple):
@@ -114,38 +111,22 @@ def aggregate(
     for (period_key, currency, category), amount in sums.items():
         grouped[period_key].append((currency, category, amount))
     totals: list[TotalRecord] = []
-    # Carried across the walk, so a period's average covers every period before it, and
-    # holding each currency's whole-calendar total once the walk has ended.
+    # Holding each currency's total over the whole calendar once the walk has ended.
     running: defaultdict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     period_keys = _period_keys(expenses, period)
     # The walk supplies the period order, so only the rows within one are sorted here.
-    for periods, period_key in enumerate(period_keys, start=1):
+    for period_key in period_keys:
         start, end = _clamp(_period_bounds(period_key, period), dates)
         rows = sorted(grouped[period_key], key=lambda row: (row[1] or "", row[0]))
         for currency, _category, amount in rows:
             running[currency] += amount
-        # Rebuilt each period, the divisor being how many have passed: an average moves
-        # even where the total behind it does not. Empty when the request grouped, which
-        # is what leaves a grouped row and a grouped gap row carrying none.
-        averages: dict[str, Decimal] = (
-            {}
-            if grouping is not None
-            else {
-                currency: _mean(total, periods) for currency, total in running.items()
-            }
-        )
         if not rows:
-            totals.extend(_gap(period_key, start, end, averages))
+            # A period nobody spent in is still a row, carrying the span: absent says
+            # "none recorded" where 0.00 would say "these cancelled out", which a month
+            # of credits can genuinely do.
+            totals.append(TotalRecord(period_key, start, end, None, None, None))
         totals.extend(
-            TotalRecord(
-                period_key,
-                start,
-                end,
-                amount,
-                currency,
-                category,
-                averages.get(currency),
-            )
+            TotalRecord(period_key, start, end, amount, currency, category)
             for currency, category, amount in rows
         )
     # One per currency, over the whole calendar rather than that currency's own series.
@@ -156,25 +137,6 @@ def aggregate(
             for currency, total in sorted(running.items())
         ],
     )
-
-
-def _gap(
-    period_key: str,
-    start: datetime.date,
-    end: datetime.date,
-    averages: dict[str, Decimal],
-) -> list[TotalRecord]:
-    """What a period nobody spent in sends: one row per average, or one bare row."""
-    # A period nobody spent in is still a row, carrying the span: absent says "none
-    # recorded" where 0.00 would say "these cancelled out", which a month of credits can
-    # genuinely do. Ungrouped it names the average of every currency seen so far, which
-    # is the one figure an empty period does have.
-    if not averages:
-        return [TotalRecord(period_key, start, end, None, None, None, None)]
-    return [
-        TotalRecord(period_key, start, end, None, currency, None, average)
-        for currency, average in sorted(averages.items())
-    ]
 
 
 def _mean(total: Decimal, periods: int) -> Decimal:

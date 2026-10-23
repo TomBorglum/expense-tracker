@@ -98,16 +98,15 @@ otherwise correct change, or nothing does; each bullet says which.
   `test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows`.
 - **A row's optional keys are absent when they have no value, never `null`.**
   `exclude_none=True` on the route dump is the whole rule, not `exclude_unset` -
-  `_total_payload` sets all seven fields. `?group_by=category` is what puts `category` in
-  the key and what leaves the average off every row: a mean is a period's figure, not a
-  path's. Pinned by `test_totals_drop_the_category_key_when_it_was_not_grouped_by` and its
-  neighbours, read as plain dicts: parsing proves nothing about a key's presence.
+  `_total_payload` sets all six fields, and `?group_by=category` is what puts `category`
+  in the key. Pinned by `test_totals_drop_the_category_key_when_it_was_not_grouped_by`,
+  read as plain dicts: parsing proves nothing about a key's presence.
 - **The dense calendar's extent is `min`/`max` over the records returned**, so it relies
   on no ordering of the repository's, and never the requested range - which would trail a
-  bounded one off into periods nobody has reached yet. A period nobody spent in sends no
-  `amount` and, ungrouped, one row per currency seen so far carrying its
-  `running_average`. **Dense in periods only**: a date range has a defined universe of
-  periods and categories do not. `test_a_month_nobody_spent_in_is_still_a_row` + averages.
+  bounded one off into periods nobody has reached yet. A period nobody spent in is one
+  bare row carrying the span. **Dense in periods only**: a date range has a defined
+  universe of periods and categories do not.
+  `test_a_month_nobody_spent_in_is_still_a_row` and its bare-row twin.
 - **A requested bound narrows a period only when it falls inside it**, which keeps
   `?from_date=2026-01-01` honoured as the 1st even when nothing was spent until the 7th.
   Load-bearing, not an optimisation: the fake filters nothing, so it *can* hand a March
