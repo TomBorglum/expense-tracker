@@ -43,7 +43,7 @@ test("renders every expense the API serves, in the order it sends them", async (
   expect(cells.map((cell) => cell.textContent)).toEqual(
     MOCK_EXPENSES.flatMap((expense) => [
       expense.date,
-      expense.category,
+      `${expense.category} (${expense.key})`,
       displayAmount(expense.amount).text,
       expense.currency,
     ]),
@@ -126,6 +126,17 @@ test("shows an alert when an amount arrives as a number", async () => {
   // that contract, and a JSON number is how it would break.
   server.use(
     http.get(EXPENSES_URL, () => collection([{ ...MOCK_EXPENSES[0], amount: 13.37 }])),
+  );
+  renderExpensesTable();
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe("Could not load the expenses.");
+});
+
+test("shows an alert when the key arrives as a number", async () => {
+  // The amount test's twin: the backend pins every expense field to a string, and a
+  // bank text of digits alone is how this one would arrive as a number.
+  server.use(
+    http.get(EXPENSES_URL, () => collection([{ ...MOCK_EXPENSES[0], key: 4200 }])),
   );
   renderExpensesTable();
   const alert = await screen.findByRole("alert");

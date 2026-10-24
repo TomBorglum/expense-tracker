@@ -8,7 +8,9 @@ interface ExpensesTableProps {
 }
 
 // The expenses are owned by the Python package and served from /api/expenses, oldest
-// first, restated in the currency asked for and narrowed to the days asked for. Dates are
+// first, restated in the currency asked for and narrowed to the days asked for. A row's
+// key is the bank's own text for it, shown in parentheses after the category and rendered
+// verbatim like the date beside it. Dates are
 // rendered exactly as they arrive, and amounts too apart from their sign, which
 // displayAmount turns from a negative into a credit: the backend sends amount as a string
 // so no float round trip can drift a total by a cent - conversion included, which is why
@@ -100,7 +102,10 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
                 // eslint-disable-next-line @eslint-react/no-array-index-key -- see above
                 <tr key={index}>
                   <td className="tabular-nums">{expense.date}</td>
-                  <td>{expense.category}</td>
+                  <td>
+                    {expense.category}{" "}
+                    <span className="text-base-content/60">({expense.key})</span>
+                  </td>
                   <td
                     className={`text-right tabular-nums ${amount.isCredit ? CREDIT_CLASS : ""}`}
                   >
