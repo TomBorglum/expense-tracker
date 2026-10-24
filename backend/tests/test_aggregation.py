@@ -26,7 +26,7 @@ def _expense(
     currency: str = "DKK",
     category: str = "Housing",
 ) -> ExpenseRecord:
-    return ExpenseRecord(Decimal(amount), currency, day, category, "Rent")
+    return ExpenseRecord(Decimal(amount), currency, day, category)
 
 
 def _spans(totals: list[TotalRecord]) -> list[tuple[str, str, str]]:

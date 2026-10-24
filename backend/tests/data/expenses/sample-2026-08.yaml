@@ -9,7 +9,6 @@ records:
       amount: '1250.00'
       currency: DKK
       category: Housing
-      details: Rent
   - record: '04-08-2026;-775,37;"ACCIDENT / CAR";'
     extracted:
       datetime: '2026-08-04T00:00:00+02:00'
@@ -18,7 +17,6 @@ records:
       amount: '775.37'
       currency: DKK
       category: Insurance
-      details: Accident / Car
   - record: '11-08-2026;-421,85;"SUPERMARKET";'
     extracted:
       datetime: '2026-08-11T00:00:00+02:00'
@@ -27,7 +25,6 @@ records:
       amount: '421.85'
       currency: DKK
       category: Groceries
-      details: Supermarket
   - record: '18-08-2026;-99,95;"INTERNET";'
     extracted:
       datetime: '2026-08-18T00:00:00+02:00'
@@ -36,7 +33,6 @@ records:
       amount: '99.95'
       currency: DKK
       category: Utilities
-      details: Internet
   - record: '24-08-2026;-618,55;"FUEL";'
     extracted:
       datetime: '2026-08-24T00:00:00+02:00'
@@ -45,4 +41,3 @@ records:
       amount: '618.55'
       currency: DKK
       category: Car
-      details: Fuel

@@ -9,7 +9,6 @@ records:
       amount: '1250.00'
       currency: DKK
       category: Housing
-      details: Rent
   - record: '06-03-2026;-611,23;"FUEL";'
     extracted:
       datetime: '2026-03-06T00:00:00+01:00'
@@ -18,7 +17,6 @@ records:
       amount: '611.23'
       currency: DKK
       category: Car
-      details: Fuel
   - record: '12-03-2026;-398,75;"SUPERMARKET";'
     extracted:
       datetime: '2026-03-12T00:00:00+01:00'
@@ -27,7 +25,6 @@ records:
       amount: '398.75'
       currency: DKK
       category: Groceries
-      details: Supermarket
   - record: '19-03-2026;-99,95;"INTERNET";'
     extracted:
       datetime: '2026-03-19T00:00:00+01:00'
@@ -36,7 +33,6 @@ records:
       amount: '99.95'
       currency: DKK
       category: Utilities
-      details: Internet
   - record: '24-03-2026;-145,00;"BUS PASS";'
     extracted:
       datetime: '2026-03-24T00:00:00+01:00'
@@ -45,7 +41,6 @@ records:
       amount: '145.00'
       currency: DKK
       category: Transport:Bus
-      details: Bus pass
   - record: '27-03-2026;-612,40;"FUEL";'
     extracted:
       datetime: '2026-03-27T00:00:00+01:00'
@@ -54,4 +49,3 @@ records:
       amount: '612.40'
       currency: DKK
       category: Car
-      details: Fuel

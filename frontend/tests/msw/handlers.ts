@@ -7,22 +7,19 @@ import { type PeriodTotal, type RangeAverage, TOTALS_URL } from "@/api/totals";
 
 // Oldest first, the order the API sends. Deliberately not values the loader produces -
 // another currency, dates from another decade - so a passing test proves they travelled
-// over the request. The first row is a negative amount with empty details, both of
-// which the contract allows.
+// over the request. The first row is a negative amount, which the contract allows.
 export const MOCK_EXPENSES: Expense[] = [
   {
     amount: "-4.20",
     currency: "GBP",
     date: "2000-01-02",
     category: "Other stub category",
-    details: "",
   },
   {
     amount: "13.37",
     currency: "EUR",
     date: "2001-02-03",
     category: "Stub category",
-    details: "Stub details",
   },
 ];
 

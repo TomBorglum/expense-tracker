@@ -36,7 +36,6 @@ _IMPORT = (
     + b"      amount: '775.37'\n"
     + b"      currency: DKK\n"
     + b"      category: Insurance\n"
-    + b"      details: Car\n"
 )
 
 
@@ -70,7 +69,7 @@ def _without(field: bytes) -> bytes:
     """`_IMPORT` with one field's line left out.
 
     Named rather than spelt `_bend(field, b"")`, which does the same thing: that call
-    site would read as `details: ''`, the other input these tests tell apart.
+    site would read as `currency: ''`, a field stated as nothing rather than left out.
     """
     return b"".join(
         line
@@ -82,7 +81,7 @@ def _without(field: bytes) -> bytes:
 def test_a_valid_file_parses() -> None:
     records = parse("x.yaml", _month(_IMPORT))
     assert records == [
-        (Decimal("775.37"), "DKK", datetime.date(2026, 1, 2), "Insurance", "Car")
+        (Decimal("775.37"), "DKK", datetime.date(2026, 1, 2), "Insurance")
     ]
 
 
@@ -122,33 +121,12 @@ def test_a_zero_amount_is_refused(value: bytes) -> None:
         _ = parse("x.yaml", body)
 
 
-def test_blank_details_are_accepted() -> None:
-    """The data repository writes a blank memo by leaving the field out and refuses this
-    spelling; both land on the same value here, a reader being the laxer half."""
-    (record,) = parse("x.yaml", _bent(b"details", b"      details: ''\n"))
-    assert record.details == ""
-
-
-def test_an_import_may_leave_out_its_details() -> None:
-    """The one field a record may omit, and absent is how a blank memo is written."""
-    (record,) = parse("x.yaml", _month(_without(b"details")))
-    assert record.details == ""
-
-
-def test_a_null_details_is_refused_rather_than_read_as_absent() -> None:
-    """The default answers for a field the file does not state, not for one it states as
-    nothing: two spellings of a blank memo are the format's, three are not."""
-    body = _bent(b"details", b"      details: null\n")
-    with pytest.raises(ExpenseFileError, match="must be text, not NoneType"):
-        _ = parse("x.yaml", body)
-
-
 @pytest.mark.parametrize("action", [b"discard", b"defer"])
 def test_a_record_that_is_not_an_import_is_skipped(action: bytes) -> None:
     """Either states only its two fields, and yields no expense."""
     skipped = b"      datetime: " + _MOMENT + b"\n      action: " + action + b"\n"
     assert parse("x.yaml", _month(skipped, _IMPORT, skipped)) == [
-        (Decimal("775.37"), "DKK", datetime.date(2026, 1, 2), "Insurance", "Car")
+        (Decimal("775.37"), "DKK", datetime.date(2026, 1, 2), "Insurance")
     ]
 
 
@@ -214,7 +192,7 @@ def test_an_unknown_action_is_refused() -> None:
 
 
 def test_an_import_missing_a_field_is_refused() -> None:
-    """Every field but `details` is required, so a missing one is not an empty one."""
+    """Every field is required, so a missing one is not an empty one."""
     body = _month(_without(b"currency"))
     with pytest.raises(ExpenseFileError, match=r"currency: Field required"):
         _ = parse("x.yaml", body)
@@ -309,7 +287,7 @@ def test_a_category_path_of_several_levels_is_kept_whole() -> None:
 
 
 def test_invalid_utf8_is_refused() -> None:
-    body = _bent(b"details", b"      details: '\xff\xfe'\n")
+    body = _bent(b"category", b"      category: '\xff\xfe'\n")
     with pytest.raises(ExpenseFileError, match="not valid YAML"):
         _ = parse("x.yaml", body)
 

@@ -9,7 +9,6 @@ records:
       amount: '1250.00'
       currency: DKK
       category: Housing
-      details: Rent
   - record: '08-09-2026;-466,40;"SUPERMARKET";'
     extracted:
       datetime: '2026-09-08T00:00:00+02:00'
@@ -18,7 +17,6 @@ records:
       amount: '466.40'
       currency: DKK
       category: Groceries
-      details: Supermarket
   - record: '16-09-2026;-99,95;"INTERNET";'
     extracted:
       datetime: '2026-09-16T00:00:00+02:00'
@@ -27,7 +25,6 @@ records:
       amount: '99.95'
       currency: DKK
       category: Utilities
-      details: Internet
   - record: '21-09-2026;-609,95;"FUEL";'
     extracted:
       datetime: '2026-09-21T00:00:00+02:00'
@@ -36,7 +33,6 @@ records:
       amount: '609.95'
       currency: DKK
       category: Car
-      details: Fuel
   - record: '28-09-2026;-275,00;"TRAIN TICKET";'
     extracted:
       datetime: '2026-09-28T00:00:00+02:00'
@@ -45,4 +41,3 @@ records:
       amount: '275.00'
       currency: DKK
       category: Transport:Train
-      details: Train ticket

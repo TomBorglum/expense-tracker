@@ -55,7 +55,6 @@ class ExpensePayload(BaseModel):
     currency: str
     date: str
     category: str
-    details: str
 
 
 class CurrencyPayload(BaseModel):
@@ -218,7 +217,6 @@ def create_app() -> FastAPI:
                 currency=record.currency,
                 date=record.expense_date.isoformat(),
                 category=record.category,
-                details=record.details,
             )
             for record in records
         ]

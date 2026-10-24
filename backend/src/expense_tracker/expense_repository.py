@@ -66,7 +66,6 @@ class Expense(Base):
     currency: Mapped[str] = mapped_column(Text)
     expense_date: Mapped[datetime.date] = mapped_column(Date)
     category: Mapped[str] = mapped_column(Text)
-    details: Mapped[str] = mapped_column(Text)
 
 
 class ExpenseRecord(NamedTuple):
@@ -76,7 +75,6 @@ class ExpenseRecord(NamedTuple):
     currency: str
     expense_date: datetime.date
     category: str
-    details: str
 
 
 def _under(path: str) -> ColumnElement[bool]:
@@ -140,7 +138,6 @@ class PostgresExpenseRepository(ExpenseRepository):
             Expense.currency,
             Expense.expense_date,
             Expense.category,
-            Expense.details,
         )
         # Both bounds inclusive, and an open one adds no clause at all. That they are
         # the right way round is the type's guarantee, not something checked here.

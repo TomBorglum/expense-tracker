@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS loaded_expense_file (
 -- has none.
 CREATE TABLE IF NOT EXISTS expense (
     -- Surrogate, because nothing in the data identifies a row: the same amount, day,
-    -- currency, category and details can legitimately repeat.
+    -- currency and category can legitimately repeat.
     id                     bigint         GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     -- No CASCADE: the ledger is append-only, and a DELETE that would orphan expenses
     -- must fail rather than take them along. That is also why this column carries no
@@ -54,8 +54,6 @@ CREATE TABLE IF NOT EXISTS expense (
     -- Settlement:Alice. The loader checks the same two things, so these are the
     -- backstop.
     category               text           NOT NULL,
-    -- The free-text memo. NOT NULL but allowed to be empty.
-    details                text           NOT NULL,
     -- An expense of nothing is not an entry, and numeric has no signed zero, so
     -- this refuses -0.00 as well.
     CONSTRAINT expense_amount_not_zero      CHECK (amount <> 0),
