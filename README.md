@@ -101,8 +101,9 @@ error state until something answers on 8000.
 | `GET /api/expenses?currency=EUR` | The same, restated in one currency |
 | `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
 | `GET /api/expenses?category=Food&category=Housing` | Only the expenses in either category, or under it |
+| `GET /api/expenses?not_category=Food` | Every expense except the ones in Food, or under it; `category_default` names the root's own sign |
 | `GET /api/expenses/categories` | `[{"category", "name", "parent"}, ...]` - the `CategoryPayload` model, every category at the levels asked for, once each, in path order; takes `from_level` and `to_level` |
-| `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and `category` too; its body carries a `summary` beside `items` |
+| `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and the three category parameters too; its body carries a `summary` beside `items` |
 | `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
 **Every body is an object holding `items`**, so each shape above is what fills that
@@ -207,6 +208,24 @@ once per value**, so `?category=Food&category=Housing` is every expense in eithe
 value given twice counts once. Give none and the request is the one that was there
 before the parameter existed.
 
+`?not_category=` is the same key read the other way: every expense **except** the ones in
+the category named. The two compose, because what a request states is not a list of
+categories but **where the selection changes**: the root has a sign, each value flips a
+subtree, and **the longest path over a row decides**. So `?category=Settlement` is the
+settlements alone, `?not_category=Settlement` is everything else, and
+`?category=Settlement&not_category=Settlement:Alice` is the settlements except hers. A
+path in both lists is refused rather than resolved - two flips of the same length over
+one path, so neither is the longer one.
+
+`?category_default=` is the root's own sign, `all` or `none`. Absent, it is `all` unless
+`?category=` names a path, in which case it is `none`: that is what keeps a request naming
+categories meaning those and no others, which is what it meant before anything could be
+deselected. So the flag is needed in exactly two places - `?category_default=none` alone,
+which selects **nothing** and is `200 {"items": []}` rather than every row, and
+`?category_default=all` beside both lists, which is everything but one subtree with a
+branch of that subtree kept. A client that sends none of the three asks for every
+category, as it always did.
+
 A value is matched the way the loader stored it: **stripped level by level, then
 verbatim**, so `?category=%20Food` is `Food` and `?category=food` is another category
 altogether. That is the loader's own rule rather than a second one - it strips every
@@ -219,8 +238,9 @@ never uppercases a currency code.
 hers. Over categories that carry no path the two are the same thing, which is why every
 request written before paths existed still means exactly what it meant.
 
-The filtering is one `WHERE` clause beside the two date clauses - `= path OR LIKE
-path || ':%'` per value, OR'd together - not a pass over the rows in Python, and it
+The filtering is one `WHERE` clause beside the two date clauses - a `CASE` whose arms are
+the flips in longest-path order, each `= path OR LIKE path || ':%'`, falling through to the
+root's sign - not a pass over the rows in Python, and it
 composes with `?currency=`, `?from_date=` and `?to_date=` the way
 those compose with each other: all three narrow the query, and the conversion runs over
 whatever they left. `schema.sql` gained no index for it - the table is small and
@@ -257,6 +277,9 @@ A blank value is a `422` carrying the same plain-string `detail`:
 | --- | --- |
 | `?category=` | `{"detail": "category must not be blank"}` |
 | `?category=%20` | `{"detail": "category must not be blank"}` |
+| `?not_category=` | `{"detail": "category must not be blank"}` |
+| `?category=Food&not_category=Food` | `{"detail": "category both selected and deselected: Food"}` |
+| `?category_default=every` | `{"detail": "unknown category_default: every"}` |
 | `?from_level=two` | `{"detail": "from_level must be a whole number"}` |
 | `?from_level=0` | `{"detail": "from_level must be 1 or more"}` |
 | `?to_level=11` | `{"detail": "to_level must not be more than 10"}` |

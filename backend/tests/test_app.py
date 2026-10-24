@@ -15,7 +15,7 @@ from expense_tracker import (
     config,
     create_app,
 )
-from expense_tracker.category_filter import CategoryFilter
+from expense_tracker.category_filter import EVERYTHING, CategorySelection
 from expense_tracker.currency_repository import CurrencyRateRecord
 from expense_tracker.date_range import UNBOUNDED, DateRange
 from expense_tracker.expense_repository import ExpenseRecord
@@ -60,10 +60,17 @@ _ENVELOPE = TypeAdapter(dict[str, object])
 # What the requested_ranges fixture collects: every DateRange the route handed the
 # expense repository, and the requested_categories fixture's counterpart.
 _Ranges = list[DateRange]
-_Categories = list[CategoryFilter | None]
+_Categories = list[CategorySelection]
 _Levels = list[LevelRange]
 
-_FOOD = CategoryFilter(frozenset({"Food"}))
+# One selected path and a root that is not: what ?category=Food alone works out to.
+_FOOD = CategorySelection(
+    selected=frozenset({"Food"}), deselected=frozenset(), default=False
+)
+# The other side of it: everything but one path, which no request could ask for before.
+_NOT_FOOD = CategorySelection(
+    selected=frozenset(), deselected=frozenset({"Food"}), default=True
+)
 
 
 def test_security_headers_present(client: TestClient) -> None:
@@ -393,11 +400,11 @@ def test_a_range_is_applied_before_the_amounts_are_converted(
     ]
 
 
-def test_a_category_is_handed_to_the_repository_as_a_filter(
+def test_a_category_is_handed_to_the_repository_as_a_selection(
     client: TestClient, requested_categories: _Categories
 ) -> None:
     """Filtering is the repository's job, done in SQL, so what the route owes it is a
-    CategoryFilter and nothing else."""
+    CategorySelection and nothing else."""
     response = client.get("/api/expenses", params={"category": "Food"})
     assert response.status_code == 200
     assert requested_categories == [_FOOD]
@@ -409,17 +416,23 @@ def test_a_repeated_category_key_hands_every_value(
     """The key repeats once per value, which is how a list reaches a query string."""
     response = client.get("/api/expenses", params={"category": ["Food", "Housing"]})
     assert response.status_code == 200
-    assert requested_categories == [CategoryFilter(frozenset({"Food", "Housing"}))]
+    assert requested_categories == [
+        CategorySelection(
+            selected=frozenset({"Food", "Housing"}),
+            deselected=frozenset(),
+            default=False,
+        )
+    ]
 
 
 def test_asking_for_no_category_is_the_request_that_was_there_before(
     client: TestClient, requested_categories: _Categories
 ) -> None:
-    """An absent key reaches the repository as None, so a client that does not ask
-    sees exactly what it saw before."""
+    """Every key absent reaches the repository as EVERYTHING, which adds no clause, so
+    a client that does not ask sees exactly what it saw before."""
     response = client.get("/api/expenses")
     assert response.status_code == 200
-    assert requested_categories == [None]
+    assert requested_categories == [EVERYTHING]
 
 
 @pytest.mark.parametrize("value", ["", " "])
@@ -774,10 +787,97 @@ def test_totals_without_a_range_ask_for_every_expense(
     assert requested_ranges == [UNBOUNDED]
 
 
+def test_a_deselected_category_leaves_every_other_one_selected(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """The request the feature exists for: one value, and the root stays selected."""
+    response = client.get("/api/expenses", params={"not_category": "Food"})
+    assert response.status_code == 200
+    assert requested_categories == [_NOT_FOOD]
+
+
+def test_a_repeated_not_category_key_hands_every_value(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """The second list is read the way the first one is: a key once per value."""
+    response = client.get("/api/expenses", params={"not_category": ["Food", "Housing"]})
+    assert response.status_code == 200
+    assert requested_categories == [
+        CategorySelection(
+            selected=frozenset(),
+            deselected=frozenset({"Food", "Housing"}),
+            default=True,
+        )
+    ]
+
+
+def test_the_two_category_keys_compose_into_one_selection(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """A subtree minus a branch of it, which is the pair the longest path resolves."""
+    response = client.get(
+        "/api/expenses",
+        params={"category": "Settlement", "not_category": "Settlement:Alice"},
+    )
+    assert response.status_code == 200
+    assert requested_categories == [
+        CategorySelection(
+            selected=frozenset({"Settlement"}),
+            deselected=frozenset({"Settlement:Alice"}),
+            default=False,
+        )
+    ]
+
+
+def test_the_category_default_deselects_the_root(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """The empty selection, which is a request in its own right rather than the
+    unfiltered one."""
+    response = client.get("/api/expenses", params={"category_default": "none"})
+    assert response.status_code == 200
+    assert requested_categories == [
+        CategorySelection(selected=frozenset(), deselected=frozenset(), default=False)
+    ]
+
+
+def test_an_unknown_category_default_is_refused(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """A plain-string detail like every other refusal here, and before the query."""
+    response = client.get("/api/expenses", params={"category_default": "every"})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "unknown category_default: every"}
+    assert requested_categories == []
+
+
+def test_a_category_both_selected_and_deselected_is_refused(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """Two flips of the same length over one path, which no reading resolves."""
+    response = client.get(
+        "/api/expenses", params={"category": "Food", "not_category": "Food"}
+    )
+    assert response.status_code == 422
+    assert response.json() == {"detail": "category both selected and deselected: Food"}
+    assert requested_categories == []
+
+
+@pytest.mark.parametrize("value", ["", " "])
+def test_a_blank_not_category_is_refused(
+    client: TestClient, requested_categories: _Categories, value: str
+) -> None:
+    """The same refusal the selected key gets: one parser reads both."""
+    response = client.get("/api/expenses", params={"not_category": value})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "category must not be blank"}
+    assert requested_categories == []
+
+
 def test_totals_hand_a_category_to_the_repository(
     client: TestClient, requested_categories: _Categories
 ) -> None:
-    """The same CategoryFilter the list endpoint sends, filtered in SQL not here."""
+    """The same CategorySelection the list endpoint sends, filtered in SQL not here."""
     response = client.get(
         "/api/expenses/totals", params={"period": "month", "category": "Food"}
     )
@@ -792,7 +892,31 @@ def test_totals_without_a_category_ask_for_every_category(
         client.get("/api/expenses/totals", params={"period": "month"}).status_code
         == 200
     )
-    assert requested_categories == [None]
+    assert requested_categories == [EVERYTHING]
+
+
+def test_totals_hand_a_deselected_category_to_the_repository(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    """Both keys and the flag reach the totals route on the list route's terms, which
+    is what lets a view carry a selection across to the other one."""
+    response = client.get(
+        "/api/expenses/totals", params={"period": "month", "not_category": "Food"}
+    )
+    assert response.status_code == 200
+    assert requested_categories == [_NOT_FOOD]
+
+
+def test_totals_refuse_an_unknown_category_default(
+    client: TestClient, requested_categories: _Categories
+) -> None:
+    response = client.get(
+        "/api/expenses/totals",
+        params={"period": "month", "category_default": "every"},
+    )
+    assert response.status_code == 422
+    assert response.json() == {"detail": "unknown category_default: every"}
+    assert requested_categories == []
 
 
 def test_totals_refuse_a_blank_category(

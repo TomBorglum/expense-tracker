@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 from expense_tracker import create_app
-from expense_tracker.category_filter import CategoryFilter
+from expense_tracker.category_filter import EVERYTHING, CategorySelection
 from expense_tracker.currency_repository import CurrencyRateRecord, CurrencyRepository
 from expense_tracker.date_range import UNBOUNDED, DateRange
 from expense_tracker.deps import provide_currency_repository, provide_expense_repository
@@ -22,7 +22,7 @@ class _FakeExpenseRepository(ExpenseRepository):
     # Annotated at class level for reportUnannotatedClassAttribute.
     _records: Sequence[ExpenseRecord]
     _ranges: list[DateRange]
-    _categories: list[CategoryFilter | None]
+    _categories: list[CategorySelection]
     _levels: list[LevelRange]
     _category_names: Sequence[str]
 
@@ -30,7 +30,7 @@ class _FakeExpenseRepository(ExpenseRepository):
         self,
         records: Sequence[ExpenseRecord],
         ranges: list[DateRange],
-        categories: list[CategoryFilter | None],
+        categories: list[CategorySelection],
         levels: list[LevelRange],
         category_names: Sequence[str] = (),
     ) -> None:
@@ -42,9 +42,9 @@ class _FakeExpenseRepository(ExpenseRepository):
 
     @override
     async def list_expenses(
-        self, dates: DateRange = UNBOUNDED, categories: CategoryFilter | None = None
+        self, dates: DateRange = UNBOUNDED, categories: CategorySelection = EVERYTHING
     ) -> Sequence[ExpenseRecord]:
-        # The range and the filter are recorded rather than applied, and the records
+        # The range and the selection are recorded rather than applied, and the records
         # are handed back in the order they were given. Filtering and ordering are
         # both the repository's job, so a fake that did either would hide a route
         # that did it again.
@@ -134,9 +134,9 @@ def requested_ranges() -> list[DateRange]:
 
 
 @pytest.fixture
-def requested_categories() -> list[CategoryFilter | None]:
-    """Every CategoryFilter the route hands the expense repository, in order, with
-    None for a request that named no category."""
+def requested_categories() -> list[CategorySelection]:
+    """Every CategorySelection the route hands the expense repository, in order, with
+    EVERYTHING for a request that flipped nothing."""
     return []
 
 
@@ -152,7 +152,7 @@ def app(
     category_names: list[str],
     currency_records: list[CurrencyRateRecord],
     requested_ranges: list[DateRange],
-    requested_categories: list[CategoryFilter | None],
+    requested_categories: list[CategorySelection],
     requested_levels: list[LevelRange],
 ) -> FastAPI:
     """An app whose data comes from memory instead of PostgreSQL.
