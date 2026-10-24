@@ -13,12 +13,13 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   a day early west of Greenwich. A period is headed by its bounds, never its `YYYY-MM`.
   **A negative is a credit, `+` in `CREDIT_CLASS`**, rewritten by `src/amounts.ts` alone.
   Pinned by `amounts.test.ts` and "shows an alert when an amount arrives as a number".
-- **The expenses table is four columns, and Category is the unsized one.** Amount and
-  Currency carry the widths the totals table gives them, so the two views size those
-  columns alike; Category takes the fixed layout's slack, holding a path with nothing
-  bounding its depth. The column set is pinned by "heads the four columns Date,
-  Category, Amount and Currency"; the widths are by eye, as every appearance rule here
-  is.
+- **The expenses table is four columns, and Category is the unsized one**, holding two
+  values: the path, then the row's `key` in parentheses at `text-base-content/60`,
+  wrapping rather than truncated - half a bank text says less than a taller row. Amount
+  and Currency carry the widths the totals table gives them, so the two views size those
+  columns alike; Category takes the fixed layout's slack. Pinned by "heads the four
+  columns Date, Category, Amount and Currency" and by "renders every expense the API
+  serves"; the widths are by eye, as every appearance rule here is.
 - **A `Date` is never built from a string and never named through UTC.** The picker deals in
   `Date` objects and the API in bare `YYYY-MM-DD`, so `src/dates.ts` is the one crossing
   point, built from `getFullYear`/`getMonth`/`getDate`. **No code in `src/` calls

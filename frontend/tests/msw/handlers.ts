@@ -14,12 +14,14 @@ export const MOCK_EXPENSES: Expense[] = [
     currency: "GBP",
     date: "2000-01-02",
     category: "Other stub category",
+    key: "OTHER STUB KEY",
   },
   {
     amount: "13.37",
     currency: "EUR",
     date: "2001-02-03",
     category: "Stub category",
+    key: "STUB KEY",
   },
 ];
 
