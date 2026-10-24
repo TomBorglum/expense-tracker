@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS expense (
     -- Settlement:Alice. The loader checks the same two things, so these are the
     -- backstop.
     category               text           NOT NULL,
+    -- The text the bank's export carried for this record, e.g. FUEL. The loader strips
+    -- it and refuses a blank one, so this is the backstop.
+    key                    text           NOT NULL,
     -- An expense of nothing is not an entry, and numeric has no signed zero, so
     -- this refuses -0.00 as well.
     CONSTRAINT expense_amount_not_zero      CHECK (amount <> 0),
@@ -61,7 +64,8 @@ CREATE TABLE IF NOT EXISTS expense (
     CONSTRAINT expense_category_not_blank   CHECK (category <> ''),
     -- One or more levels, none of them empty - so no level can hold the separator, and
     -- splitting a path or joining one back up is lossless and needs no escaping.
-    CONSTRAINT expense_category_is_a_path   CHECK (category ~ '^[^:]+(:[^:]+)*$')
+    CONSTRAINT expense_category_is_a_path   CHECK (category ~ '^[^:]+(:[^:]+)*$'),
+    CONSTRAINT expense_key_not_blank        CHECK (key <> '')
 );
 
 -- Exactly the order GET /api/expenses asks for, tiebreak included.

@@ -85,8 +85,16 @@ def expense_records() -> list[ExpenseRecord]:
     shows up as 1250.0 rather than 1250.00.
     """
     return [
-        ExpenseRecord(Decimal("775.37"), "DKK", datetime.date(2026, 1, 2), "Insurance"),
-        ExpenseRecord(Decimal("1250.00"), "DKK", datetime.date(2026, 2, 2), "Housing"),
+        ExpenseRecord(
+            Decimal("775.37"),
+            "DKK",
+            datetime.date(2026, 1, 2),
+            "Insurance",
+            "ACCIDENT / CAR",
+        ),
+        ExpenseRecord(
+            Decimal("1250.00"), "DKK", datetime.date(2026, 2, 2), "Housing", "RENT"
+        ),
     ]
 
 
@@ -198,16 +206,32 @@ def same_period_expenses_client(app: FastAPI) -> TestClient:
         _FakeExpenseRepository(
             [
                 ExpenseRecord(
-                    Decimal("7.25"), "DKK", datetime.date(2026, 2, 28), "Food"
+                    Decimal("7.25"),
+                    "DKK",
+                    datetime.date(2026, 2, 28),
+                    "Food",
+                    "SUPERMARKET",
                 ),
                 ExpenseRecord(
-                    Decimal("100.00"), "DKK", datetime.date(2026, 3, 4), "Housing"
+                    Decimal("100.00"),
+                    "DKK",
+                    datetime.date(2026, 3, 4),
+                    "Housing",
+                    "RENT",
                 ),
                 ExpenseRecord(
-                    Decimal("25.50"), "DKK", datetime.date(2026, 3, 9), "Housing"
+                    Decimal("25.50"),
+                    "DKK",
+                    datetime.date(2026, 3, 9),
+                    "Housing",
+                    "ELECTRICITY",
                 ),
                 ExpenseRecord(
-                    Decimal("10.00"), "EUR", datetime.date(2026, 3, 9), "Housing"
+                    Decimal("10.00"),
+                    "EUR",
+                    datetime.date(2026, 3, 9),
+                    "Housing",
+                    "DEPOSIT",
                 ),
             ],
             [],
@@ -229,10 +253,18 @@ def gapped_expenses_client(app: FastAPI) -> TestClient:
         _FakeExpenseRepository(
             [
                 ExpenseRecord(
-                    Decimal("100.00"), "DKK", datetime.date(2026, 1, 5), "Housing"
+                    Decimal("100.00"),
+                    "DKK",
+                    datetime.date(2026, 1, 5),
+                    "Housing",
+                    "RENT",
                 ),
                 ExpenseRecord(
-                    Decimal("300.00"), "DKK", datetime.date(2026, 3, 20), "Housing"
+                    Decimal("300.00"),
+                    "DKK",
+                    datetime.date(2026, 3, 20),
+                    "Housing",
+                    "RENT",
                 ),
             ],
             [],
@@ -255,16 +287,32 @@ def refunded_expenses_client(app: FastAPI) -> TestClient:
         _FakeExpenseRepository(
             [
                 ExpenseRecord(
-                    Decimal("1250.00"), "DKK", datetime.date(2026, 11, 3), "Housing"
+                    Decimal("1250.00"),
+                    "DKK",
+                    datetime.date(2026, 11, 3),
+                    "Housing",
+                    "RENT",
                 ),
                 ExpenseRecord(
-                    Decimal("-150.00"), "DKK", datetime.date(2026, 11, 30), "Transport"
+                    Decimal("-150.00"),
+                    "DKK",
+                    datetime.date(2026, 11, 30),
+                    "Transport",
+                    "REFUND / TRAIN TICKET",
                 ),
                 ExpenseRecord(
-                    Decimal("430.00"), "DKK", datetime.date(2026, 12, 22), "Transport"
+                    Decimal("430.00"),
+                    "DKK",
+                    datetime.date(2026, 12, 22),
+                    "Transport",
+                    "FLIGHT TICKET",
                 ),
                 ExpenseRecord(
-                    Decimal("-430.00"), "DKK", datetime.date(2026, 12, 29), "Transport"
+                    Decimal("-430.00"),
+                    "DKK",
+                    datetime.date(2026, 12, 29),
+                    "Transport",
+                    "REFUND / FLIGHT TICKET",
                 ),
             ],
             [],
@@ -291,21 +339,28 @@ def nested_expenses_client(app: FastAPI) -> TestClient:
                     "DKK",
                     datetime.date(2026, 1, 5),
                     "Settlement:Alice",
+                    "DINNER",
                 ),
                 ExpenseRecord(
                     Decimal("50.00"),
                     "DKK",
                     datetime.date(2026, 1, 9),
                     "Settlement:Alice:Spain",
+                    "HOTEL",
                 ),
                 ExpenseRecord(
                     Decimal("25.00"),
                     "DKK",
                     datetime.date(2026, 1, 12),
                     "Settlement:Bob",
+                    "TAXI",
                 ),
                 ExpenseRecord(
-                    Decimal("10.00"), "DKK", datetime.date(2026, 1, 20), "Groceries"
+                    Decimal("10.00"),
+                    "DKK",
+                    datetime.date(2026, 1, 20),
+                    "Groceries",
+                    "SUPERMARKET",
                 ),
             ],
             [],

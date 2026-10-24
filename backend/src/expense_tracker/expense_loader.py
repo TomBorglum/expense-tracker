@@ -152,11 +152,19 @@ def _category(value: object) -> str:
     return text
 
 
+def _key(value: object) -> str:
+    """One `key` field, stripped, as the export wrote it."""
+    text = _text(value).strip()
+    if not text:
+        raise PydanticCustomError("blank_key", "key is blank")
+    return text
+
+
 class _Mapping(BaseModel):
     """A mapping the format writes, read for the fields this loader uses."""
 
-    # Stated rather than left to pydantic's default: `key` is a field deliberately
-    # skipped, and the format's mappings take new fields over time.
+    # Stated rather than left to pydantic's default: a record states fields this loader
+    # does not read, and the format's mappings take new ones over time.
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
 
@@ -175,6 +183,7 @@ class _Imported(_Extracted):
     amount: Annotated[Decimal, BeforeValidator(_amount)]
     currency: Annotated[str, BeforeValidator(_currency)]
     category: Annotated[str, BeforeValidator(_category)]
+    key: Annotated[str, BeforeValidator(_key)]
 
 
 class _Discarded(_Extracted):
@@ -240,6 +249,7 @@ def parse_expense_records(filename: str, data: bytes) -> list[ExpenseRecord]:
             record.extracted.currency,
             record.extracted.expense_date,
             record.extracted.category,
+            record.extracted.key,
         )
         for record in month.records
         if isinstance(record.extracted, _Imported)

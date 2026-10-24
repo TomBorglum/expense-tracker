@@ -158,12 +158,14 @@ def test_expenses_endpoint_returns_json(
             currency="DKK",
             date="2026-01-02",
             category="Insurance",
+            key="ACCIDENT / CAR",
         ),
         ExpensePayload(
             amount="1250.00",
             currency="DKK",
             date="2026-02-02",
             category="Housing",
+            key="RENT",
         ),
     ]
     # The fixture is the other half of that literal; if it changes, this should fail
@@ -179,6 +181,14 @@ def test_expense_amounts_are_strings_not_numbers(client: TestClient) -> None:
     """
     body = _EXPENSES.validate_json(client.get("/api/expenses").content).items
     assert [row.amount for row in body] == ["775.37", "1250.00"]
+
+
+def test_an_expense_carries_the_key_it_was_recorded_under(client: TestClient) -> None:
+    """The bank's own text for the row, which the table shows beside the category. The
+    fixture keys are deliberately unlike their categories, so a route reading the wrong
+    attribute fails here rather than agreeing by coincidence."""
+    body = _EXPENSES.validate_json(client.get("/api/expenses").content).items
+    assert [row.key for row in body] == ["ACCIDENT / CAR", "RENT"]
 
 
 def test_expenses_endpoint_preserves_the_repository_order(client: TestClient) -> None:
@@ -217,12 +227,14 @@ def test_expenses_can_be_requested_in_another_currency(
             currency="EUR",
             date="2026-01-02",
             category="Insurance",
+            key="ACCIDENT / CAR",
         ),
         ExpensePayload(
             amount="167.56",
             currency="EUR",
             date="2026-02-02",
             category="Housing",
+            key="RENT",
         ),
     ]
     # The rate fixture is the other half of those two literals.

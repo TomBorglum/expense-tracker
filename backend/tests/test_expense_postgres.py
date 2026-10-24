@@ -70,7 +70,7 @@ async def _truncate() -> None:
         await engine.dispose()
 
 
-async def _expenses() -> list[tuple[Decimal, str, datetime.date, str]]:
+async def _expenses() -> list[tuple[Decimal, str, datetime.date, str, str]]:
     """Every expense as plain tuples, oldest first.
 
     Mapped instances rather than a Row, so the columns keep the model's types;
@@ -82,7 +82,9 @@ async def _expenses() -> list[tuple[Decimal, str, datetime.date, str]]:
             rows = await session.scalars(
                 select(Expense).order_by(Expense.expense_date, Expense.id)
             )
-            return [(r.amount, r.currency, r.expense_date, r.category) for r in rows]
+            return [
+                (r.amount, r.currency, r.expense_date, r.category, r.key) for r in rows
+            ]
     finally:
         await engine.dispose()
 
@@ -100,7 +102,9 @@ async def _ledger() -> list[tuple[str, str, int]]:
         await engine.dispose()
 
 
-async def _insert_expense(amount: Decimal, category: str = "Car") -> None:
+async def _insert_expense(
+    amount: Decimal, category: str = "Car", key: str = "FUEL"
+) -> None:
     """One expense inserted past the loader, so a CHECK answers for itself."""
     engine = create_async_engine(database_url())
     try:
@@ -119,6 +123,7 @@ async def _insert_expense(amount: Decimal, category: str = "Car") -> None:
                     currency="DKK",
                     expense_date=datetime.date(2026, 1, 2),
                     category=category,
+                    key=key,
                 )
             )
             await session.commit()
@@ -156,10 +161,12 @@ def _moment(day: str) -> str:
 def _month_file(*rows: str) -> str:
     """A month file holding one record per row.
 
-    An imported row is the four fields the database holds, tab-separated, in the order
+    An imported row is the four fields a test varies, tab-separated, in the order
     ExpenseRecord names them and with the date as `DD/MM/YYYY` - so a test reads as its
-    expenses rather than as YAML. A `defer<TAB>DD/MM/YYYY` row is a deferred record,
-    which states the two fields that place it in its file and nothing else. The offset
+    expenses rather than as YAML. A fifth field states the record's key, which otherwise
+    takes a constant, the field being mandatory and beside the point for most rows. A
+    `defer<TAB>DD/MM/YYYY` row is a deferred record, which states the two fields that
+    place it in its file and nothing else. The offset
     the `datetime` is written with is stated because the format requires one and is
     never applied, winter being when every date below falls.
     """
@@ -169,13 +176,15 @@ def _month_file(*rows: str) -> str:
             _, day = row.split("\t")
             fields = f"      datetime: '{_moment(day)}'\n      action: defer\n"
         else:
-            amount, currency, day, category = row.split("\t")
+            amount, currency, day, category, *stated_key = row.split("\t")
+            key = stated_key[0] if stated_key else "FUEL"
             fields = (
                 f"      datetime: '{_moment(day)}'\n"
                 + "      action: import\n"
                 + f"      amount: '{amount}'\n"
                 + f"      currency: '{currency}'\n"
                 + f"      category: '{category}'\n"
+                + f"      key: '{key}'\n"
             )
         records += "  - record: 'line'\n    extracted:\n" + fields
     return "---\nheader: 'H'\nrecords:\n" + records
@@ -204,6 +213,17 @@ def test_loading_a_directory_inserts_every_row(tmp_path: Path) -> None:
         ("01.yaml", 1),
         ("02.yaml", 2),
     ]
+
+
+def test_the_stored_key_is_the_one_the_file_stated(tmp_path: Path) -> None:
+    """The column the loader ignored until now, read back off the row it wrote."""
+    _ = _write(
+        tmp_path, "01.yaml", "775.37\tDKK\t02/01/2026\tInsurance\tACCIDENT / CAR"
+    )
+
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+
+    assert [row[4] for row in asyncio.run(_expenses())] == ["ACCIDENT / CAR"]
 
 
 def test_a_deferred_record_inserts_no_row(tmp_path: Path) -> None:
@@ -965,6 +985,14 @@ def test_the_database_refuses_a_category_that_is_not_a_path(category: str) -> No
     backstop schema.sql promises, and the only thing that exercises it."""
     pending = _insert_expense(Decimal("1.00"), category)
     with pytest.raises(SQLAlchemyError, match="expense_category_is_a_path"):
+        asyncio.run(pending)
+
+
+def test_the_database_refuses_a_blank_key() -> None:
+    """expense_key_not_blank, reached past the loader that refuses it first - the
+    backstop schema.sql promises, and the only thing that exercises it."""
+    pending = _insert_expense(Decimal("1.00"), key="")
+    with pytest.raises(SQLAlchemyError, match="expense_key_not_blank"):
         asyncio.run(pending)
 
 
