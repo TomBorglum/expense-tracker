@@ -283,7 +283,7 @@ test("narrows both payloads to the categories the URL names", async () => {
   );
 });
 
-test("ticking a category keeps the currency, the range and the grouping", async () => {
+test("unticking a category keeps the currency, the range and the grouping", async () => {
   const user = userEvent.setup();
   recordRequestedParams();
   const router = renderPageAt("/totals?currency=EUR&group_by=category");
@@ -297,20 +297,45 @@ test("ticking a category keeps the currency, the range and the grouping", async 
   await user.click(screen.getByRole("checkbox", { name: "Stub category" }));
 
   // Read back off the URL string rather than the parsed search: one value parses to a
-  // bare string, and the key order is the one the URL arrived in.
+  // bare string, and the key order is the one the URL arrived in. Unticking, because
+  // every box starts ticked here as it does on the expenses view.
   await waitFor(() => {
     const params = new URLSearchParams(router.state.location.searchStr);
     expect([...params.entries()].sort()).toEqual([
-      ["category", "Stub category"],
       ["currency", "EUR"],
       ["from_date", "2026-01-01"],
       ["group_by", CATEGORY_GROUPING],
+      ["not_category", "Stub category"],
       ["to_date", "2026-12-31"],
     ]);
   });
 });
 
-test("clearing the selection drops the parameter from the URL", async () => {
+test("narrows both payloads to an empty selection too", async () => {
+  // Both requests are made and both come back holding nothing: a period with no rows is
+  // the empty row this view already renders, not an error.
+  const requested: (string | null)[] = [];
+  server.use(
+    http.get(TOTALS_URL, ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      requested.push(params.get("category_default"));
+      return totalsCollection([]);
+    }),
+  );
+  renderPageAt("/totals?group_by=category&category_default=none");
+  await screen.findByRole("table", { name: "Totals" });
+  await waitFor(() => {
+    expect(requested).toEqual(["none", "none"]);
+  });
+  expect(screen.getByRole("button", { name: /^Categories / }).textContent).toBe(
+    "No categories",
+  );
+  expect(
+    screen.getAllByText("No expenses match the selected criteria.").length,
+  ).toBeGreaterThan(0);
+});
+
+test("selecting every category drops the parameters from the URL", async () => {
   const user = userEvent.setup();
   recordRequestedParams();
   const router = renderPageAt("/totals?category=Stub%20category");
@@ -321,9 +346,10 @@ test("clearing the selection drops the parameter from the URL", async () => {
   });
 
   await user.click(trigger);
-  await user.click(screen.getByRole("button", { name: "Clear selection" }));
+  await user.click(screen.getByRole("button", { name: "Select all" }));
 
-  // Undefined rather than an empty list: absent is what unfiltered means on the wire.
+  // Undefined rather than an empty list: absent is what unfiltered means on the wire,
+  // and a key retained across this navigate would be one the picker could not clear.
   await waitFor(() => {
     expect(router.state.location.search).toEqual({
       currency: "DKK",
@@ -331,6 +357,7 @@ test("clearing the selection drops the parameter from the URL", async () => {
       to_date: "2026-12-31",
     });
   });
+  expect(router.state.location.searchStr).not.toContain("category");
 });
 
 test("shows the range average above the periods table", async () => {

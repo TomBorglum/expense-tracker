@@ -108,7 +108,7 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   There is no `getRouteApi` and no `src/pages/` - both existed to break a cycle this shape
   does not have. Components take props and know no router, so they mount without one.
 - **`validateSearch` fills in an absent parameter and validates nothing else**, the shared
-  four through `sharedSearch` in `src/search.ts`. `?currency=` is handed to the backend as
+  six through `sharedSearch` in `src/search.ts`. `?currency=` is handed to the backend as
   typed, so `/?currency=euro` gets the 422 `conversion.py` raises; re-checking
   `\A[A-Z]{3}\Z` here would put that pattern in a second place to drift from. There is
   no "as recorded" mode - the parameter is always sent, an **empty** `?currency=` being a
@@ -117,27 +117,28 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   the current *year*, **the same one on both routes**, because a switch between them
   carries the range as it stands and cannot tell a default from a pick - a month on `/`
   would arrive on `/totals` as a single period. It reads the clock, so both page tests pin
-  it. `group_by` and `category` have **no default to fill in**: absent means ungrouped, or
-  unfiltered, on the wire too. `categoryFilter` folds one value or several into a
-  `string[]` and keeps `""` for the backend to refuse; an emptied selection navigates with
-  `undefined`, never `[]`.
+  it. `group_by` and the three category keys have **no default to fill in**: absent means
+  ungrouped, or every category. `categoryFilter` keeps `""` for the backend to refuse and
+  `categoryDefault` drops a flag the backend does not name; **all three category keys are
+  navigated together, `undefined` where empty**, because `retainSearchParams` keeps a key
+  a navigate leaves out and the default selection would otherwise be unreachable.
 - **The currency options are what the rate table can reach, not a list of ISO codes.**
   `targetCurrencies` keeps only the `to_currency` of a pair whose `from_currency` is
   `BASE_CURRENCY`, a rate being never inverted and never composed; `BASE_CURRENCY` itself
   is always offered and needs no rate. A rate list that is pending, 503s, empty or
   malformed leaves the select disabled and **does not disturb the table below it**: they
-  are two requests. The category list is offered on the same terms, a URL value it does
-  not name shown ticked like a code nobody offered - and a path among them passes through
-  `categoryFilter` untouched, nothing here knowing what joins one level to the next.
+  are two requests. The category list is offered on the same terms: a path it never named
+  is shown flipped all the same, and nothing here knows what joins one level to the next.
 - **The picker builds its tree from `parent`, not from the order the list arrived in**:
   path order is nearly pre-order, but a level name starting below `:` interleaves, so a
-  contiguity walk nests a root under the wrong parent. **Ticking a parent leaves its
-  children alone** - the backend reads a node as its whole subtree, so auto-ticking only
-  builds the overlap its longest-prefix rule then resolves. **Only the render filters a
-  collapsed row away**: the walk covers the whole tree and reports the selection in its
-  order, so a tick out of sight would leave the URL. **Expansion is a map of twisty
-  clicks, never a set of open paths** - a set holds a selection's ancestors open and
-  their own twisties inert. `CategoryPicker.test.tsx`.
+  contiguity walk nests a root under the wrong parent. **Every box is ticked by default,
+  and unticking one unticks its subtree**: a selection is the root's sign plus the paths
+  that flip it (`src/categorySelection.ts`, the mirror of `category_filter.py`), so a flip
+  left below the one being set would keep half a branch ticked under the longest-prefix
+  rule. **Only the render filters a collapsed row away**: the walk covers the whole tree
+  and reports the selection in its order, so a flip out of sight would leave the URL.
+  **Expansion is a map of twisty clicks, never a set of open paths** - a set holds a
+  flip's ancestors open and their own twisties inert. `CategoryPicker.test.tsx`.
 - **The date range is always bounded, and every `navigate` carries the whole search.**
   No clear button and no unbounded mode: `DateRangePicker` holds a half-picked range in
   local state and reports nothing until both ends are set, an empty bound being malformed

@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { type CategoryDefault } from "./categories";
 import { fetchCollection } from "./fetchList";
 
 // The wire contract, written out by hand, the same way expenses.ts writes out its own.
@@ -99,6 +100,8 @@ export interface TotalsQuery {
   to_date: string;
   group_by?: typeof CATEGORY_GROUPING;
   category?: string[];
+  not_category?: string[];
+  category_default?: CategoryDefault;
 }
 
 export async function fetchTotals(
@@ -116,9 +119,15 @@ export async function fetchTotals(
     // ungrouped request is the one that omits the parameter altogether.
     url.searchParams.set("group_by", query.group_by);
   }
-  // Appended rather than set: the backend reads the key once per value.
+  // Appended rather than set: the backend reads either key once per value.
   for (const name of query.category ?? []) {
     url.searchParams.append("category", name);
+  }
+  for (const name of query.not_category ?? []) {
+    url.searchParams.append("not_category", name);
+  }
+  if (query.category_default !== undefined) {
+    url.searchParams.set("category_default", query.category_default);
   }
   return fetchCollection(
     TOTALS_PATH,

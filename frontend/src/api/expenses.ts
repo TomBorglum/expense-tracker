@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { type CategoryDefault } from "./categories";
 import { fetchList } from "./fetchList";
 
 // The wire contract, written out by hand. The backend builds the same payload by hand as
@@ -52,16 +53,19 @@ function isExpenseList(payload: unknown): payload is Expense[] {
   return Array.isArray(payload) && payload.every(isExpense);
 }
 
-// The query half of the same contract: four optional parameters on the backend, the
+// The query half of the same contract: six optional parameters on the backend, the
 // first three always sent from here. An empty value is malformed to the backend rather
-// than an absent one, so there is no "everything" request to fall back to. category is
-// the exception: absent means unfiltered on both sides, and it is never an empty list,
-// so the query key holds no dead entry.
+// than an absent one, so there is no "everything" request to fall back to. The three
+// category keys are the exception: all absent is every category on both sides, neither
+// list is ever empty, and the flag is sent only where the backend would otherwise read
+// the root the other way - so the query key holds no dead entry.
 export interface ExpensesQuery {
   currency: string;
   from_date: string;
   to_date: string;
   category?: string[];
+  not_category?: string[];
+  category_default?: CategoryDefault;
 }
 
 export async function fetchExpenses(
@@ -74,9 +78,17 @@ export async function fetchExpenses(
   url.searchParams.set("currency", query.currency);
   url.searchParams.set("from_date", query.from_date);
   url.searchParams.set("to_date", query.to_date);
-  // Appended rather than set: the backend reads the key once per value.
+  // Appended rather than set: the backend reads either key once per value.
   for (const name of query.category ?? []) {
     url.searchParams.append("category", name);
+  }
+  for (const name of query.not_category ?? []) {
+    url.searchParams.append("not_category", name);
+  }
+  if (query.category_default !== undefined) {
+    // Set only where it is needed, the way group_by is: an absent flag is what lets the
+    // backend read the root off the selected list, which is the common case.
+    url.searchParams.set("category_default", query.category_default);
   }
   return fetchList(EXPENSES_PATH, url, isExpenseList, signal);
 }

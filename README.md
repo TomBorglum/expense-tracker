@@ -810,13 +810,14 @@ still refuses an inverted range, because the URL can be typed by hand.
 
 ### Choosing categories
 
-A **Categories** control beside the currency select narrows both views to one or more
-categories, and the choice is the `?category=` the table and the totals ask the API for -
-**the key repeats once per value**, as described under
+A **Categories** control beside the currency select narrows both views to a selection of
+categories, and that selection is the `?category=`, `?not_category=` and
+`?category_default=` the table and the totals ask the API for - **each list repeats its
+key once per value**, as described under
 [Asking for one or more categories](#asking-for-one-or-more-categories). The filtering
 stays the backend's: the frontend sends paths and drops no row of its own, and the totals
-view hands the same paths to its subtotal and its breakdown, so a period is summed over
-the expenses it is split by.
+view hands the same selection to its subtotal and its breakdown, so a period is summed
+over the expenses it is split by.
 
 The nodes on offer come from `GET /api/expenses/categories`, read by
 `frontend/src/api/categories.ts` in the order the backend sends them - once each, by path.
@@ -832,25 +833,38 @@ order is only nearly pre-order: a level name beginning with a character below `:
 between a node and its own children, and a walk that trusted the order would nest it in
 the wrong place.
 
-**A tick reports the whole path**, so `Alice` sends `category=Settlement:Alice`. **Ticking
-a parent leaves its children alone**: the backend already reads a node as its whole
-subtree, so ticking `Settlement` asks for every settlement without touching a box below
-it. Ticking a parent *and* one of its children is a request in its own right rather than a
-mistake - on the totals view it splits that child out of its parent's total, leaving the
-parent holding the rest.
+**Every box starts ticked**, because the default is every category and the panel says so
+rather than leaving an empty list to mean the same thing. **Unticking a box unticks its
+whole subtree**, and a node whose subtree disagrees with it carries a dash rather than a
+tick - `Car` is dashed while `Car:Fuel` alone is out. Ticking a box back puts its subtree
+in again, which is how one branch of something otherwise deselected is kept: untick
+`Settlement`, tick `Alice` under it, and the request is everything except the settlements,
+hers included.
 
-**A category is picked, never typed**: each tick applies at once, the list stays open for
-the next, and a **Clear selection** button empties it in one click - present but disabled
-while there is nothing to clear, so the panel is the same size whatever is ticked. Nothing
-ticked reads as **All categories** and sends no `category` at all, which is what the
-backend means by an absent one; there is no "All" checkbox because that is a value no
-request carries. The trigger names one picked path and counts two or more, and is a fixed
-width either way, so the filter row never moves as the selection changes.
+**A box reports the whole path**, so `Alice` is `Settlement:Alice` on the wire. What the
+URL carries is not the list of ticked categories but **where the selection departs from
+the root's sign**: dropping one category out of forty is one `not_category` value rather
+than thirty-nine `category` ones. `frontend/src/categorySelection.ts` is where that is
+worked out, the mirror of `category_filter.py` reading the same three parameters back on
+the other side.
+
+**A category is picked, never typed**: each click applies at once, the list stays open for
+the next, and **Select all** and **Select none** reach the two extremes in one click -
+both present and each disabled at the end it leads to, so the panel is the same size
+whatever is selected. Select none is what makes a selection additive: empty it and tick
+the few categories you want, rather than untick the many you do not. The trigger reads
+**All categories** or **No categories** at the extremes, names the single path that is
+missing or the single one that is picked, and counts past that - a fixed width either way,
+so the filter row never moves as the selection changes.
 
 The selection lives in the **URL** alongside the rest, and is spelled the way the API
-reads it: `/?category=Car&category=Groceries` is a link worth sending and one you can type
-by hand. A path costs a `%3A` there - `?category=Settlement%3AAlice` - which is the one
-place the separator shows through, and it still arrives as the single value it is.
+reads it: `/?not_category=Car` is a link worth sending and one you can type by hand. A
+path costs a `%3A` there - `?not_category=Settlement%3AAlice` - which is the one place the
+separator shows through, and it still arrives as the single value it is. The empty
+selection is `?category_default=none` on its own, and the default selection is no category
+parameter at all - which is why all three are navigated together, `undefined` where empty:
+`retainSearchParams` keeps a key the next navigation leaves out, so a selection the
+default could not be reached from would be a trap.
 
 That is the router's own doing - `frontend/src/router.ts` replaces TanStack
 Router's default search serializer, which would write a JSON array and turn a
@@ -858,8 +872,8 @@ hand-typed `?from_date=2026` into a number, with one that repeats a key per valu
 reads every parameter as the string it was typed. `validateSearch` folds one value or
 several into a list and checks nothing else: a name the ledger does not hold is passed
 through and answered with an empty `items` array, an empty `?category=` with the 422
-`category_filter.py` raises, and either is shown as it stands - a name the list does not
-offer still appears, ticked, at the top.
+`category_filter.py` raises, and either is shown as it stands - a path the list does not
+offer still appears, flipped, at the top.
 
 A list that has not arrived, fails, or comes back empty leaves the control disabled and
 does not disturb the table below - they are two requests, like the rate table and the
