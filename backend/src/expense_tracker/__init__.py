@@ -16,9 +16,9 @@ from .aggregation import (
     parse_period,
 )
 from .category_filter import (
-    CategoryFilter,
     CategoryFilterError,
-    parse_category_filter,
+    CategorySelection,
+    parse_category_selection,
     path_name,
     path_parent,
 )
@@ -151,11 +151,13 @@ async def _read_expenses(
     from_date: str | None,
     to_date: str | None,
     category: list[str] | None,
-) -> tuple[DateRange, CategoryFilter | None, Sequence[ExpenseRecord]]:
-    """The rows both expense routes read, and the range and filter behind them."""
+    not_category: list[str] | None,
+    category_default: str | None,
+) -> tuple[DateRange, CategorySelection, Sequence[ExpenseRecord]]:
+    """The rows both expense routes read, and the range and selection behind them."""
     # Both read before the query, so a malformed value costs no round trip.
     dates = parse_date_range(from_date, to_date)
-    categories = parse_category_filter(category)
+    categories = parse_category_selection(category, not_category, category_default)
     # The repository's order, reproduced untouched. Sorting again here would hide a
     # repository that stopped sorting, and convert_expenses preserves it.
     records = await expenses.list_expenses(dates, categories)
@@ -205,10 +207,21 @@ def create_app() -> FastAPI:
         to_date: str | None = None,
         # Query() is what makes a list a query parameter rather than a body; the key
         # repeats once per value. list[str] so that FastAPI refuses nothing itself.
+        # Each list flips what the root selects, and the longest path over a row wins;
+        # category_default is the root's own sign, and the only value it takes is none.
         category: Annotated[list[str] | None, Query()] = None,
+        not_category: Annotated[list[str] | None, Query()] = None,
+        category_default: str | None = None,
     ) -> JSONResponse:
         _, _, records = await _read_expenses(
-            expenses, currencies, currency, from_date, to_date, category
+            expenses,
+            currencies,
+            currency,
+            from_date,
+            to_date,
+            category,
+            not_category,
+            category_default,
         )
         payload = [
             ExpensePayload(
@@ -238,15 +251,24 @@ def create_app() -> FastAPI:
         from_date: str | None = None,
         to_date: str | None = None,
         category: Annotated[list[str] | None, Query()] = None,
+        not_category: Annotated[list[str] | None, Query()] = None,
+        category_default: str | None = None,
     ) -> JSONResponse:
         # Both read before the query, like the parameters _read_expenses parses, so a
         # malformed one costs no round trip.
         grain = parse_period(period)
         grouping = parse_grouping(group_by)
-        # The filter reaches the query and stops there: it narrows which rows arrive,
+        # The selection reaches the query and stops there: it narrows which rows arrive,
         # never what they sum under.
         dates, _, records = await _read_expenses(
-            expenses, currencies, currency, from_date, to_date, category
+            expenses,
+            currencies,
+            currency,
+            from_date,
+            to_date,
+            category,
+            not_category,
+            category_default,
         )
         # After the conversion, never before: converting each amount and then adding is
         # what makes a total equal the sum of the rows /api/expenses shows for it.

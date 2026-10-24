@@ -15,9 +15,11 @@ from sqlalchemy import (
     Integer,
     Numeric,
     Text,
+    case,
+    false,
     func,
-    or_,
     select,
+    true,
     union,
 )
 from sqlalchemy.exc import SQLAlchemyError
@@ -25,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import ColumnElement, Select
 
-from .category_filter import SEPARATOR, CategoryFilter
+from .category_filter import EVERYTHING, SEPARATOR, CategorySelection
 from .date_range import UNBOUNDED, DateRange
 from .db import Base
 from .level_range import TOP_LEVEL, LevelRange
@@ -90,6 +92,31 @@ def _under(path: str) -> ColumnElement[bool]:
     )
 
 
+def _sign(selected: bool) -> ColumnElement[bool]:
+    """A flip's sign as SQL, spelled out rather than bound: a parameter in every arm of
+    a CASE leaves PostgreSQL unable to type the expression."""
+    return true() if selected else false()
+
+
+def _selects(selection: CategorySelection) -> ColumnElement[bool] | None:
+    """Whether a row's category is selected, or None when every row's is.
+
+    The arms are read in flip order, so the first one matching a row is the longest path
+    over it - which is what makes a child's own sign beat the parent it sits under.
+    """
+    if selection.everything():
+        return None
+    flips = selection.flips()
+    if not flips:
+        # Nothing flips and the root is not selected, so no row is. An empty selection
+        # is a request in its own right rather than the unfiltered one.
+        return false()
+    return case(
+        *((_under(path), _sign(selected)) for path, selected in flips),
+        else_=_sign(selection.default),
+    ).is_(True)
+
+
 def _at_level(depth: int) -> Select[str]:
     """Every stored category cut to `depth` levels, over the rows that go that deep."""
     levels = func.string_to_array(Expense.category, SEPARATOR, type_=ARRAY(Text))
@@ -113,7 +140,7 @@ class ExpenseRepository(ABC):
 
     @abstractmethod
     async def list_expenses(
-        self, dates: DateRange = UNBOUNDED, categories: CategoryFilter | None = None
+        self, dates: DateRange = UNBOUNDED, categories: CategorySelection = EVERYTHING
     ) -> Sequence[ExpenseRecord]: ...
 
     @abstractmethod
@@ -132,9 +159,9 @@ class PostgresExpenseRepository(ExpenseRepository):
 
     @override
     async def list_expenses(
-        self, dates: DateRange = UNBOUNDED, categories: CategoryFilter | None = None
+        self, dates: DateRange = UNBOUNDED, categories: CategorySelection = EVERYTHING
     ) -> Sequence[ExpenseRecord]:
-        """Every expense within the bounds and categories given, oldest first."""
+        """Every expense within the bounds and selected categories, oldest first."""
         statement = select(
             Expense.amount,
             Expense.currency,
@@ -148,15 +175,12 @@ class PostgresExpenseRepository(ExpenseRepository):
             statement = statement.where(Expense.expense_date >= dates.start)
         if dates.end is not None:
             statement = statement.where(Expense.expense_date <= dates.end)
-        # sorted() for a deterministic clause; that no name is blank is the type's
-        # guarantee, like the range's ordering above.
-        # A name matches itself and every path below it, which over a corpus of depth-1
-        # categories is plain equality - so this reads the same as the IN clause it
-        # replaces until a path actually has levels.
-        if categories is not None:
-            statement = statement.where(
-                or_(*(_under(name) for name in sorted(categories.names)))
-            )
+        # The order the arms are read in is the type's, like the range's ordering
+        # above, and that no name is blank is its guarantee too. A selection covering
+        # everything adds no clause at all, so a request naming no category reaches the
+        # same statement it reached before one could be deselected.
+        if (selects := _selects(categories)) is not None:
+            statement = statement.where(selects)
         try:
             rows = await self._session.execute(
                 statement.order_by(Expense.expense_date, Expense.id)

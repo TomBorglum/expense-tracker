@@ -624,8 +624,8 @@ def test_a_leaf_matches_only_itself(tmp_path: Path) -> None:
 
 
 def test_a_node_and_its_own_child_return_each_row_once(tmp_path: Path) -> None:
-    """The names are OR'd into one WHERE, so overlapping subtrees cannot duplicate a
-    row - a property someone might later "fix" with a DISTINCT that is not needed."""
+    """The flips are arms of one CASE, so overlapping subtrees cannot duplicate a row
+    - a property someone might later "fix" with a DISTINCT that is not needed."""
     _load_a_tree(tmp_path)
 
     with TestClient(create_app()) as client:
@@ -660,6 +660,119 @@ def test_a_wildcard_in_a_category_name_is_matched_literally(tmp_path: Path) -> N
 
     body = _EXPENSES.validate_json(response.content).items
     assert [row.category for row in body] == ["100%", "100%:Fees"]
+
+
+def test_deselecting_a_category_returns_every_other_one(tmp_path: Path) -> None:
+    """The request the feature exists for, and the one the fake cannot show: the root
+    is selected, so the clause names what to leave out rather than what to keep."""
+    _load_three_categories(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"not_category": "Food"})
+
+    assert response.status_code == 200
+    body = _EXPENSES.validate_json(response.content).items
+    assert [(row.date, row.category) for row in body] == [
+        ("2026-02-01", "Housing"),
+        ("2026-02-14", "Car"),
+    ]
+
+
+def test_a_deselected_child_is_left_out_of_its_selected_parent(
+    tmp_path: Path,
+) -> None:
+    """The longest path over a row decides, so the child's own sign beats the subtree
+    it sits in - and Alice's own child goes with it, having no nearer flip."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses",
+            params={"category": "Settlement", "not_category": "Settlement:Alice"},
+        )
+
+    body = _EXPENSES.validate_json(response.content).items
+    assert [row.category for row in body] == ["Settlement:Bob"]
+
+
+def test_a_selected_path_survives_the_deselected_root_it_sits_under(
+    tmp_path: Path,
+) -> None:
+    """The same rule in the other direction, which is what ?category_default=all is
+    for: everything except one subtree, with one branch of it kept."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses",
+            params={
+                "category_default": "all",
+                "not_category": "Settlement",
+                "category": "Settlement:Alice",
+            },
+        )
+
+    body = _EXPENSES.validate_json(response.content).items
+    assert [row.category for row in body] == [
+        "Groceries",
+        "Settlement:Alice",
+        "Settlement:Alice:Spain",
+        "SettlementFund",
+    ]
+
+
+def test_the_empty_selection_is_an_empty_list_rather_than_every_row(
+    tmp_path: Path,
+) -> None:
+    """Nothing selected is a request in its own right: the clause is a bare false, not
+    an absent one, so this is the empty table's 200 again rather than the unfiltered
+    body."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"category_default": "none"})
+
+    assert response.status_code == 200
+    assert _EXPENSES.validate_json(response.content).items == []
+
+
+def test_the_empty_selection_leaves_the_totals_without_a_period(
+    tmp_path: Path,
+) -> None:
+    """No rows means no calendar to be dense over, and no currency to average - the
+    summary is per currency that has expenses, and none has any."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/expenses/totals",
+            params={"period": "month", "category_default": "none"},
+        )
+
+    assert response.status_code == 200
+    assert _TOTALS.validate_json(response.content).items == []
+    assert _SUMMARY.validate_json(response.content).summary == []
+
+
+def test_a_wildcard_in_a_deselected_name_is_matched_literally(
+    tmp_path: Path,
+) -> None:
+    """autoescape reaches the deselected list too, both flips being the same clause:
+    without it 1005:Fees would be read as sitting under 100% and left out as well."""
+    _ = _write(
+        tmp_path,
+        "01.yaml",
+        "100.00\tDKK\t05/01/2026\t100%",
+        "200.00\tDKK\t06/01/2026\t100%:Fees",
+        "300.00\tDKK\t07/01/2026\t1005:Fees",
+    )
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"not_category": "100%"})
+
+    body = _EXPENSES.validate_json(response.content).items
+    assert [row.category for row in body] == ["1005:Fees"]
 
 
 def test_a_node_with_no_expense_of_its_own_is_still_listed(tmp_path: Path) -> None:

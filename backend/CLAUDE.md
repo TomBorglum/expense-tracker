@@ -123,37 +123,42 @@ otherwise correct change, or nothing does; each bullet says which.
 
 ## The date range and the category filter
 
-- **`?from_date=`, `?to_date=` and `?category=` filter in SQL, not in the route.** The
-  `DateRange` and `CategoryFilter` go to `list_expenses`, which adds one `>=`, one `<=`
-  and one OR'd prefix clause per name - `= path OR LIKE path || ':%'`, with `autoescape`
-  because a level may hold `%` or `_` - each only when its parameter is set. Both bounds
-  are **inclusive** and open on their own; `None` adds no clause, so an absent parameter
-  and an empty one are not the same request. Pinned by the postgres suite's range and
-  category tests.
+- **The dates and the categories filter in SQL, not in the route.** The `DateRange` and the
+  `CategorySelection` go to `list_expenses`, which adds one `>=`, one `<=` and one `CASE` -
+  `= path OR LIKE path || ':%'` per arm, `autoescape` for a level holding `%` or `_`. Both
+  bounds are **inclusive** and open on their own; `everything()` adds no clause at all, and
+  nothing selected is a bare `false()`, so the empty selection is a request rather than the
+  unfiltered one. Pinned by the postgres suite.
+- **A selection states where it changes, never what it covers.** The root carries a sign -
+  `?category_default=`, `all` unless `?category=` names a path, which keeps every request
+  written before anything could be deselected meaning what it meant, and why `all` has to
+  be sendable - and each `?category=`/`?not_category=` value flips a subtree, **the longest
+  path over a row deciding**. `flips()` owns that order, longest first and by **levels**
+  rather than characters. `test_flips_are_ordered_longest_path_first` and the flag's own
+  twin.
 - **All three types validate in `__post_init__`, so the repository does not.** `DateRange`
-  refuses `start > end`, `LevelRange` a level outside `1..MAX_LEVEL` as well, and
-  `CategoryFilter` a blank name, at **every** construction, so `list_expenses` takes the
-  types and stops trusting its caller; a second check there gives one rule two homes.
+  refuses `start > end`, `LevelRange` a level outside `1..MAX_LEVEL`, and
+  `CategorySelection` a blank name and a path flipped both ways, at **every** construction,
+  so `list_expenses` stops trusting its caller; a second check gives one rule two homes. An
+  **empty** pair of lists is legal, being the default.
   `test_the_type_refuses_an_inverted_range_however_it_is_built`.
-- **`date_range._DATE` is the accepted date form, and the only one.**
-  `date.fromisoformat` also takes `20260102` and `2026-W01-1`, which this API never sends,
-  so the pattern refuses them first, as `validate_currency_code` refuses rather than
-  uppercases. Both bounds are read before either is compared, so an unreadable value is
-  refused as itself: `test_a_malformed_bound_is_refused_before_the_two_are_compared`.
+- **`date_range._DATE` is the accepted date form, and the only one.** `date.fromisoformat`
+  also takes `20260102` and `2026-W01-1`, which this API never sends, so the pattern
+  refuses them first, as `validate_currency_code` refuses rather than uppercases. Both
+  bounds are read before either is compared, so an unreadable value is refused as itself:
+  `test_a_malformed_bound_is_refused_before_the_two_are_compared`.
 - **A category is a `:`-separated path, and a value matches a node and every path below
-  it.** `category_filter.SEPARATOR` is its only declaration in Python; the CHECK in
-  `schema.sql` is what stops a level holding it, so nothing needs escaping. Matching is by
-  **level, never character** - `Foodstuffs` is not under `Food`, hence the clause's two
-  legs - and over depth-1 data it is plain equality, so every request written before paths
-  still means what it meant. Each **level** is stripped, not each field, or
-  `Settlement : Alice` becomes a node that renders identically and never merges; a
-  malformed path is not refused but matches nothing, as an unknown category does. Pinned
-  by `test_a_category_matches_its_descendants_as_well` and the strip and case twins.
-- **`GET /api/expenses/categories` is `list_categories`, deduplicated and ordered in
-  SQL, never `list_expenses` deduplicated in the route.** Totals skipped a repository
-  method because conversion had to precede the sum; nothing here converts, and pulling
-  every row for one column is what this prevents. The filter is **not** checked against
-  it. `test_categories_endpoint_preserves_the_repository_order`.
+  it.** `category_filter.SEPARATOR` is its only declaration in Python; `schema.sql`'s CHECK
+  stops a level holding it, so nothing escapes. Matching is by **level, never character** -
+  `Foodstuffs` is not under `Food`, hence `_under`'s two legs - and over depth-1 data it is
+  plain equality. Each **level** is stripped, not each field, or `Settlement : Alice`
+  becomes a node that renders identically and never merges.
+  `test_a_category_matches_its_descendants_as_well` and the strip twin.
+- **`GET /api/expenses/categories` is `list_categories`, deduplicated and ordered in SQL,
+  never `list_expenses` deduplicated in the route.** Totals skipped a repository method
+  because conversion had to precede the sum; nothing here converts, and pulling every row
+  for one column is what this prevents. The filter is **not** checked against it.
+  `test_categories_endpoint_preserves_the_repository_order`.
 - **`?from_level=`/`?to_level=` are one `SELECT` per level, `UNION`ed**, each truncating
   `category` and guarded by `array_length >= depth` - what makes a level exact, a slice
   past the end returning the array. Every leg needs its own `DISTINCT`, because `union()`
