@@ -13,7 +13,6 @@ export interface Expense {
   currency: string;
   date: string;
   category: string;
-  details: string;
 }
 
 // The path both stacks have to agree on. Nothing checks that agreement automatically
@@ -39,9 +38,7 @@ function isExpense(payload: unknown): payload is Expense {
     "date" in payload &&
     typeof payload.date === "string" &&
     "category" in payload &&
-    typeof payload.category === "string" &&
-    "details" in payload &&
-    typeof payload.details === "string"
+    typeof payload.category === "string"
   );
 }
 

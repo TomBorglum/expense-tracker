@@ -52,9 +52,9 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
         {/* Amount and Currency carry the widths the totals table gives them, so the two
             views size those columns alike. Category is the one column left unsized, as in
             the totals table, and takes everything the fixed layout has not spent: it holds
-            a path that is a level deeper than the last with nothing bounding its depth,
-            and the memo beneath it. The min width is what the wrapper's overflow-auto
-            scrolls once there is no room left. */}
+            a path that is a level deeper than the last with nothing bounding its depth.
+            The min width is what the wrapper's overflow-auto scrolls once there is no
+            room left. */}
         <colgroup>
           <col className="w-32" />
           <col />
@@ -94,20 +94,13 @@ export function ExpensesTable({ query }: ExpensesTableProps) {
               const amount = displayAmount(expense.amount);
               return (
                 // The payload carries no id, and schema.sql notes that the same amount, day,
-                // currency, category and details can legitimately repeat, so position is a
-                // row's only identity. The rows are rendered in arrival order and never
-                // sorted or filtered here, which is what makes that identity stable.
+                // currency and category can legitimately repeat, so position is a row's
+                // only identity. The rows are rendered in arrival order and never sorted or
+                // filtered here, which is what makes that identity stable.
                 // eslint-disable-next-line @eslint-react/no-array-index-key -- see above
                 <tr key={index}>
                   <td className="tabular-nums">{expense.date}</td>
-                  {/* The path over its memo, two lines in one cell; a blank memo, which
-                      the contract allows, renders no second line at all. */}
-                  <td>
-                    <div>{expense.category}</div>
-                    {expense.details ? (
-                      <div className="text-base-content/60">{expense.details}</div>
-                    ) : null}
-                  </td>
+                  <td>{expense.category}</td>
                   <td
                     className={`text-right tabular-nums ${amount.isCredit ? CREDIT_CLASS : ""}`}
                   >

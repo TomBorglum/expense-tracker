@@ -19,9 +19,7 @@ _DKK_TO_GBP = CurrencyRateRecord("DKK", "GBP", Decimal("0.114900"))
 
 
 def _expense(amount: str, currency: str = "DKK") -> ExpenseRecord:
-    return ExpenseRecord(
-        Decimal(amount), currency, datetime.date(2026, 1, 2), "Car", "Fuel"
-    )
+    return ExpenseRecord(Decimal(amount), currency, datetime.date(2026, 1, 2), "Car")
 
 
 def test_an_amount_is_multiplied_by_the_rate_for_its_pair() -> None:

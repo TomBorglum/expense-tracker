@@ -152,11 +152,6 @@ def _category(value: object) -> str:
     return text
 
 
-def _details(value: object) -> str:
-    """One `details` field. Stripped, and allowed to be empty."""
-    return _text(value).strip()
-
-
 class _Mapping(BaseModel):
     """A mapping the format writes, read for the fields this loader uses."""
 
@@ -174,14 +169,12 @@ class _Extracted(_Mapping):
 
 
 class _Imported(_Extracted):
-    """A record to load. An import states every field but `details`."""
+    """A record to load. An import states every field."""
 
     action: Literal["import"]
     amount: Annotated[Decimal, BeforeValidator(_amount)]
     currency: Annotated[str, BeforeValidator(_currency)]
     category: Annotated[str, BeforeValidator(_category)]
-    # Empty where the field is absent, which is how the format writes a blank memo.
-    details: Annotated[str, BeforeValidator(_details)] = ""
 
 
 class _Discarded(_Extracted):
@@ -247,7 +240,6 @@ def parse_expense_records(filename: str, data: bytes) -> list[ExpenseRecord]:
             record.extracted.currency,
             record.extracted.expense_date,
             record.extracted.category,
-            record.extracted.details,
         )
         for record in month.records
         if isinstance(record.extracted, _Imported)

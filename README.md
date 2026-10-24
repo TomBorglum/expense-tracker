@@ -97,7 +97,7 @@ error state until something answers on 8000.
 
 | Route | What it serves |
 | --- | --- |
-| `GET /api/expenses` | `[{"amount", "currency", "date", "category", "details"}, ...]` - the `ExpensePayload` model |
+| `GET /api/expenses` | `[{"amount", "currency", "date", "category"}, ...]` - the `ExpensePayload` model |
 | `GET /api/expenses?currency=EUR` | The same, restated in one currency |
 | `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
 | `GET /api/expenses?category=Food&category=Housing` | Only the expenses in either category, or under it |
@@ -553,7 +553,6 @@ records:
       amount: '2438.47'
       currency: DKK
       category: Building
-      details: E/F Solbakken
   - record: '03-09-2026;-340,00;"TRAIN TICKET";'
     extracted:
       datetime: '2026-09-03T00:00:00+02:00'
@@ -572,10 +571,7 @@ records:
 `import`. A `discard` is a record the other repository decided against and a `defer` one
 whose bank state is not terminal yet - a card payment the merchant has not claimed - and
 either states just the two fields that place it in its file; `record` and `key` are read
-by nothing here. An `import` states the rest, except `details`: a blank memo is written
-by leaving the field out, which is the third record above. That repository refuses
-`details: ''` so that one record has one spelling; this loader is a reader and takes
-either, reading both as empty.
+by nothing here. An `import` states the rest.
 
 | Field | Format | Notes |
 | --- | --- | --- |
@@ -583,7 +579,6 @@ either, reading both as empty.
 | `amount` | decimal | At most two decimal places; may be negative; never zero |
 | `currency` | ISO 4217 alpha-3 | Uppercase |
 | `category` | a `:`-separated path | Each level stripped; no level may be empty |
-| `details` | free text | Optional; stripped. Absent reads as empty, and so does `''` |
 
 A third decimal place is refused rather than rounded away by `numeric(12, 2)` in
 silence. A negative amount is accepted, because a credit is a negative expense; a zero
@@ -691,8 +686,7 @@ vitest never exercise the bundler, but keeps nothing from it.
 `GET /api/expenses` is the app's main read, fetched at runtime with
 [TanStack Query](https://tanstack.com/query) in `frontend/src/api/expenses.ts` and
 rendered by `frontend/src/components/ExpensesTable.tsx` as one table of date, category,
-amount and currency, where the category cell carries the expense's details on a second
-line beneath its path - a blank memo being a line that is simply not there. Nothing generates a client from a schema, so the payload
+amount and currency. Nothing generates a client from a schema, so the payload
 *shape* is written out by hand on both sides and the two must be changed together; a
 mismatch shows up as a 404 or a failed shape guard at runtime. Every field is a string on
 the wire - `amount` included, because JSON has no decimal type - so the guard rejects a

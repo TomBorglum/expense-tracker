@@ -158,14 +158,12 @@ def test_expenses_endpoint_returns_json(
             currency="DKK",
             date="2026-01-02",
             category="Insurance",
-            details="Accident / Car",
         ),
         ExpensePayload(
             amount="1250.00",
             currency="DKK",
             date="2026-02-02",
             category="Housing",
-            details="Rent",
         ),
     ]
     # The fixture is the other half of that literal; if it changes, this should fail
@@ -219,14 +217,12 @@ def test_expenses_can_be_requested_in_another_currency(
             currency="EUR",
             date="2026-01-02",
             category="Insurance",
-            details="Accident / Car",
         ),
         ExpensePayload(
             amount="167.56",
             currency="EUR",
             date="2026-02-02",
             category="Housing",
-            details="Rent",
         ),
     ]
     # The rate fixture is the other half of those two literals.
