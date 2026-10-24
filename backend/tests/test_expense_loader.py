@@ -81,7 +81,7 @@ def _without(field: bytes) -> bytes:
 def test_a_valid_file_parses() -> None:
     records = parse("x.yaml", _month(_IMPORT))
     assert records == [
-        (Decimal("775.37"), "DKK", datetime.date(2026, 1, 2), "Insurance")
+        (Decimal("775.37"), "DKK", datetime.date(2026, 1, 2), "Insurance", "ACCIDENT")
     ]
 
 
@@ -126,7 +126,7 @@ def test_a_record_that_is_not_an_import_is_skipped(action: bytes) -> None:
     """Either states only its two fields, and yields no expense."""
     skipped = b"      datetime: " + _MOMENT + b"\n      action: " + action + b"\n"
     assert parse("x.yaml", _month(skipped, _IMPORT, skipped)) == [
-        (Decimal("775.37"), "DKK", datetime.date(2026, 1, 2), "Insurance")
+        (Decimal("775.37"), "DKK", datetime.date(2026, 1, 2), "Insurance", "ACCIDENT")
     ]
 
 
@@ -286,6 +286,36 @@ def test_a_category_path_of_several_levels_is_kept_whole() -> None:
     ]
 
 
+def test_a_missing_key_is_refused() -> None:
+    """Mandatory like the three fields above it: the table shows the key beside the
+    category, and a record stating none is a record that cannot be rendered."""
+    body = _month(_without(b"key"))
+    with pytest.raises(ExpenseFileError, match=r"key: Field required"):
+        _ = parse("x.yaml", body)
+
+
+@pytest.mark.parametrize("value", [b"''", b"' '"])
+def test_a_blank_key_is_refused(value: bytes) -> None:
+    """Stated as nothing and stated as spaces are the same record. Refused here as well
+    as by the CHECK, for the reason the category refusals give."""
+    body = _bent(b"key", b"      key: " + value + b"\n")
+    with pytest.raises(ExpenseFileError, match="key is blank"):
+        _ = parse("x.yaml", body)
+
+
+def test_an_unquoted_numeric_key_is_refused() -> None:
+    """A bank text of digits alone resolves to an int, which str() would paper over."""
+    body = _bent(b"key", b"      key: 4200\n")
+    with pytest.raises(ExpenseFileError, match="must be text, not int; quote it"):
+        _ = parse("x.yaml", body)
+
+
+def test_a_key_is_stripped() -> None:
+    """The whole field, not level by level: a key holds no separator."""
+    body = _bent(b"key", b"      key: '  SHAPE UP FITNESS  '\n")
+    assert [record.key for record in parse("x.yaml", body)] == ["SHAPE UP FITNESS"]
+
+
 def test_invalid_utf8_is_refused() -> None:
     body = _bent(b"category", b"      category: '\xff\xfe'\n")
     with pytest.raises(ExpenseFileError, match="not valid YAML"):
@@ -293,7 +323,7 @@ def test_invalid_utf8_is_refused() -> None:
 
 
 def test_a_field_this_loader_does_not_read_is_ignored() -> None:
-    """`key` is one, and the format takes new fields over time."""
+    """`record` is one, and the format takes new fields over time."""
     body = _month(_IMPORT + b"      note: something later\n")
     assert len(parse("x.yaml", body)) == 1
 

@@ -97,7 +97,7 @@ error state until something answers on 8000.
 
 | Route | What it serves |
 | --- | --- |
-| `GET /api/expenses` | `[{"amount", "currency", "date", "category"}, ...]` - the `ExpensePayload` model |
+| `GET /api/expenses` | `[{"amount", "currency", "date", "category", "key"}, ...]` - the `ExpensePayload` model |
 | `GET /api/expenses?currency=EUR` | The same, restated in one currency |
 | `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
 | `GET /api/expenses?category=Food&category=Housing` | Only the expenses in either category, or under it |
@@ -570,8 +570,8 @@ records:
 **`extracted` is the whole of what this repository reads**, and only where its `action` is
 `import`. A `discard` is a record the other repository decided against and a `defer` one
 whose bank state is not terminal yet - a card payment the merchant has not claimed - and
-either states just the two fields that place it in its file; `record` and `key` are read
-by nothing here. An `import` states the rest.
+either states just the two fields that place it in its file; `record` is read by nothing
+here. An `import` states the rest.
 
 | Field | Format | Notes |
 | --- | --- | --- |
@@ -579,6 +579,7 @@ by nothing here. An `import` states the rest.
 | `amount` | decimal | At most two decimal places; may be negative; never zero |
 | `currency` | ISO 4217 alpha-3 | Uppercase |
 | `category` | a `:`-separated path | Each level stripped; no level may be empty |
+| `key` | the bank's own text for the record | Stripped; never blank |
 
 A third decimal place is refused rather than rounded away by `numeric(12, 2)` in
 silence. A negative amount is accepted, because a credit is a negative expense; a zero
@@ -586,7 +587,8 @@ one is refused, because an expense of nothing is not an entry, and
 `expense_amount_not_zero` backstops that in the database. A `category` that is not a path
 - `Food:`, `:Food`, `Food::Drink` - is refused here rather than only by
 `expense_category_is_a_path`, because the loader names the file and the constraint alone
-would surface as a bare `IntegrityError`. **Every field is read as text**,
+would surface as a bare `IntegrityError`; a blank `key` is refused on the same terms,
+`expense_key_not_blank` being its backstop. **Every field is read as text**,
 so an unquoted `2438.47` - which YAML 1.1 resolves to a float - is refused rather than
 rounded through one, and so is an unquoted date-time. The `datetime`'s offset is required
 and never applied: the date wanted is the one the file states, which is the date the bank's

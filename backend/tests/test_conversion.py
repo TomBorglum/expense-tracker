@@ -19,13 +19,22 @@ _DKK_TO_GBP = CurrencyRateRecord("DKK", "GBP", Decimal("0.114900"))
 
 
 def _expense(amount: str, currency: str = "DKK") -> ExpenseRecord:
-    return ExpenseRecord(Decimal(amount), currency, datetime.date(2026, 1, 2), "Car")
+    return ExpenseRecord(
+        Decimal(amount), currency, datetime.date(2026, 1, 2), "Car", "FUEL"
+    )
 
 
 def test_an_amount_is_multiplied_by_the_rate_for_its_pair() -> None:
     converted = convert_expenses([_expense("775.37")], [_DKK_TO_EUR], "EUR")
     # 775.37 * 0.134048 is 103.93679776 exactly, which rounds to 103.94.
     assert converted == [_expense("103.94", "EUR")]
+
+
+def test_a_converted_expense_keeps_the_key_it_was_recorded_under() -> None:
+    """_convert rewrites amount and currency through _replace, so every other field is
+    a pass-through. The key is the one that reaches the table verbatim."""
+    converted = convert_expenses([_expense("775.37")], [_DKK_TO_EUR], "EUR")
+    assert converted[0].key == "FUEL"
 
 
 def test_the_converted_amount_carries_two_decimal_places() -> None:
