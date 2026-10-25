@@ -859,21 +859,24 @@ so the filter row never moves as the selection changes.
 
 The selection lives in the **URL** alongside the rest, and is spelled the way the API
 reads it: `/?not_category=Car` is a link worth sending and one you can type by hand. A
-path costs a `%3A` there - `?not_category=Settlement%3AAlice` - which is the one place the
-separator shows through, and it still arrives as the single value it is. The empty
-selection is `?category_default=none` on its own, and the default selection is no category
-parameter at all - which is why all three are navigated together, `undefined` where empty:
-`retainSearchParams` keeps a key the next navigation leaves out, so a selection the
-default could not be reached from would be a trap.
+path keeps its separator there - `?not_category=Settlement:Alice` - because a colon is
+legal in a query string as it stands: `URLSearchParams` escapes it to `%3A` and the
+router puts it back, so the URL reads the way the categories do. Typed either way it
+arrives as the single value it is. The empty selection is `?category_default=none` on
+its own, and the default selection is no category parameter at all - which is why all
+three are navigated together, `undefined` where empty: `retainSearchParams` keeps a key
+the next navigation leaves out, so a selection the default could not be reached from
+would be a trap.
 
-That is the router's own doing - `frontend/src/router.ts` replaces TanStack
-Router's default search serializer, which would write a JSON array and turn a
-hand-typed `?from_date=2026` into a number, with one that repeats a key per value and
-reads every parameter as the string it was typed. `validateSearch` folds one value or
-several into a list and checks nothing else: a name the ledger does not hold is passed
-through and answered with an empty `items` array, an empty `?category=` with the 422
-`category_filter.py` raises, and either is shown as it stands - a path the list does not
-offer still appears, flipped, at the top.
+That is the router's own doing - `frontend/src/router.ts` replaces TanStack Router's
+default search serializer, which would write a JSON array and turn a hand-typed
+`?from_date=2026` into a number, with one that repeats a key per value and reads every
+parameter as the string it was typed, leaving the separator in a path alone (a value
+that itself reads `%3A` is escaped to `%253A`, which the put-back cannot reach).
+`validateSearch` folds one value or several into a list and checks nothing else: a name
+the ledger does not hold is passed through and answered with an empty `items` array, an
+empty `?category=` with the 422 `category_filter.py` raises, and either is shown as it
+stands - a path the list does not offer still appears, flipped, at the top.
 
 A list that has not arrived, fails, or comes back empty leaves the control disabled and
 does not disturb the table below - they are two requests, like the rate table and the

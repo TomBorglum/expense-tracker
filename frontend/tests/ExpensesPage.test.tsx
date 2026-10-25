@@ -495,9 +495,10 @@ test("requests a nested category by its whole path", async () => {
   await waitFor(() => {
     expect(requested.at(-1)?.not_category).toEqual(["Stub category:Nested stub"]);
   });
-  // Percent-encoded in the URL, which is what a separator costs in the address bar.
+  // The separator as it stands in the URL, a colon being legal in a query; the space is
+  // what a form submission spells as a plus.
   expect(router.state.location.searchStr).toContain(
-    "not_category=Stub+category%3ANested+stub",
+    "not_category=Stub+category:Nested+stub",
   );
 });
 

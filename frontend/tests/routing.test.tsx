@@ -239,17 +239,30 @@ test("spells the deselected list as a repeated key as well", async () => {
   expect(new URLSearchParams(searchStr).getAll("not_category")).toEqual(["A", "B"]);
 });
 
-test("spells a category path as the one value it is", async () => {
-  // The separator percent-encodes, and the value still arrives whole: a path is one
-  // category, not two, so neither the serializer nor validateSearch may split it.
+test("spells a category path with the separator it carries", async () => {
+  // A colon is legal in a query as it stands, so the serializer puts back the one a form
+  // submission would escape: a path reads in the address bar the way it reads everywhere
+  // else. Typed either way it arrives whole - a path is one category, not two, so
+  // neither the serializer nor validateSearch may split it.
   const router = renderAppAt("/?category=Settlement%3AAlice&category=Car");
   await screen.findByRole("table", { name: "Expenses" });
   const searchStr = router.state.location.searchStr;
-  expect(searchStr).toContain("category=Settlement%3AAlice&category=Car");
+  expect(searchStr).toContain("category=Settlement:Alice&category=Car");
+  expect(searchStr).not.toContain("%3A");
   expect(new URLSearchParams(searchStr).getAll("category")).toEqual([
     "Settlement:Alice",
     "Car",
   ]);
+});
+
+test("escapes a value that holds the separator's own escape", async () => {
+  // The one value putting the colon back could damage: a category whose name reads
+  // "%3A" is serialized as "%253A", which holds no "%3A" to replace, and still parses
+  // back as the text it was.
+  const router = renderAppAt("/?category=A%253AB");
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(router.state.location.searchStr).toContain("category=A%253AB");
+  expect(router.state.location.search.category).toBe("A%3AB");
 });
 
 test("reads every parameter as the string it was typed", async () => {
