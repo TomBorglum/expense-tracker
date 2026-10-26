@@ -1,4 +1,9 @@
-import { ALL_CATEGORIES, type Category, NO_CATEGORIES } from "./api/categories";
+import {
+  ALL_CATEGORIES,
+  type Category,
+  type CategoryDefault,
+  NO_CATEGORIES,
+} from "./api/categories";
 import { type ExpensesQuery } from "./api/expenses";
 
 // What a request selects: the root's own sign, and the paths that flip it. The mirror of
@@ -133,6 +138,11 @@ function impliedRoot(selected: readonly string[]): boolean {
   return selected.length === 0;
 }
 
+// The root's sign spelled out, for the states an absent flag would read the other way.
+function rootFlag(root: boolean): CategoryDefault {
+  return root ? ALL_CATEGORIES : NO_CATEGORIES;
+}
+
 export function selectionFromSearch(search: CategorySearch): CategorySelection {
   const selected = search.category ?? [];
   return {
@@ -157,8 +167,6 @@ export function selectionToSearch(selection: CategorySelection): CategorySearch 
     category_default:
       impliedRoot(selection.selected) === selection.root
         ? undefined
-        : selection.root
-          ? ALL_CATEGORIES
-          : NO_CATEGORIES,
+        : rootFlag(selection.root),
   };
 }
