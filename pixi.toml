@@ -10,15 +10,15 @@ platforms = ["linux-64"]
 # Runtime LIBRARIES, folded into every environment. The app itself is installed per
 # environment, in the two blocks below.
 [dependencies]
-python = "==3.14.8"
+python = "==3.15.1"
 # fastapi-core, not fastapi: on conda-forge `fastapi` is the `fastapi[standard]` bundle
 # and drags uvicorn-standard, jinja2, python-multipart, email_validator and fastapi-cli in.
-fastapi-core = "==0.146.0"
+fastapi-core = "==0.162.0"
 uvicorn = "==0.54.0"
 # The ORM and the driver. asyncpg speaks the PostgreSQL wire protocol directly, so this
 # pair pulls in no libpq, no client binaries and no server.
-sqlalchemy = "==2.1.5"
-asyncpg = "==0.31.0"
+sqlalchemy = "==2.1.6"
+asyncpg = "==0.32.0"
 # What sqlalchemy.ext.asyncio runs its sync-to-async bridge on. SQLAlchemy declares it
 # under the `asyncio` extra and 2.1 no longer resolves it on its own, and conda has no
 # extras - the same reason fastapi-core is spelled out above. Without it every import of
@@ -35,7 +35,7 @@ pydantic-core = "==2.50.1"
 pyyaml = "==6.0.3"
 # What config.py validates the database settings with. Only the BaseSettings half is used;
 # loading backend/.env is direnv's job (`dotenv_if_exists` in .envrc), never the app's.
-pydantic-settings = "==2.16.0"
+pydantic-settings = "==2.16.1"
 
 # The app in two flavours: editable for development, a hatchling-built wheel for prod.
 # See backend/CLAUDE.md.
@@ -53,14 +53,14 @@ pytest-cov = "==7.1.0"
 # What starlette's TestClient runs on. httpx2 rather than httpx: starlette imports
 # `httpx2 as httpx` under TYPE_CHECKING, so plain httpx types the client as Unknown and
 # basedpyright fails the gate.
-httpx2 = "==2.14.0"
+httpx2 = "==2.16.0"
 basedpyright = "==1.40.2"
-ruff = "==0.17.1"
+ruff = "==0.17.2"
 # The backend's task runner, reading [tool.poe.tasks] from backend/pyproject.toml.
 poethepoet = "==0.49.0"
 # Runs the frontend toolchain and the language servers Zed is pinned to. Test feature,
 # which is what keeps the prod environment Node-free.
-nodejs = "==26.10.0"
+nodejs = "==26.12.1"
 # Pinned here rather than by a "packageManager" field in package.json: pnpm's pmOnFail
 # defaults to "download", so that field would fetch its own version and bypass this pin.
 pnpm = "==12.4.1"
