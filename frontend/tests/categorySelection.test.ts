@@ -201,9 +201,16 @@ test("reads a selection back off the search it was written to", () => {
 });
 
 test("an absent flag reads the root off the selected list, as the backend does", () => {
-  expect(selectionFromSearch({ category: ["Car"] }).root).toBe(false);
-  expect(selectionFromSearch({ not_category: ["Car"] }).root).toBe(true);
-  expect(selectionFromSearch({}).root).toBe(true);
+  // All three keys spelled out, the way validateSearch hands them over: the search
+  // leaves none of them out, it carries them undefined.
+  const absent = {
+    category: undefined,
+    not_category: undefined,
+    category_default: undefined,
+  };
+  expect(selectionFromSearch({ ...absent, category: ["Car"] }).root).toBe(false);
+  expect(selectionFromSearch({ ...absent, not_category: ["Car"] }).root).toBe(true);
+  expect(selectionFromSearch(absent).root).toBe(true);
 });
 
 test("a flip inside a root of the same sign is not a third state", () => {

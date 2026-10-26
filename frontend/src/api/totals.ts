@@ -91,17 +91,19 @@ function isRangeAverageList(payload: unknown): payload is RangeAverage[] {
   return Array.isArray(payload) && payload.every(isRangeAverage);
 }
 
-// The query half of the same contract. group_by and category are optional on both sides
-// and mean the same thing by their absence: sum the categories together and leave the
-// field off the row, and draw from every category rather than the ones named.
+// The query half of the same contract. group_by and the category keys are optional
+// parameters on the backend and mean the same thing by their absence: sum the categories
+// together and leave the field off the row, and draw from every category rather than the
+// ones named. The three category keys are required here and `| undefined` on
+// ExpensesQuery's terms; group_by stays optional, being the one key ungrouped() deletes.
 export interface TotalsQuery {
   currency: string;
   from_date: string;
   to_date: string;
   group_by?: typeof CATEGORY_GROUPING;
-  category?: string[];
-  not_category?: string[];
-  category_default?: CategoryDefault;
+  category: string[] | undefined;
+  not_category: string[] | undefined;
+  category_default: CategoryDefault | undefined;
 }
 
 export async function fetchTotals(

@@ -58,14 +58,16 @@ function isExpenseList(payload: unknown): payload is Expense[] {
 // than an absent one, so there is no "everything" request to fall back to. The three
 // category keys are the exception: all absent is every category on both sides, neither
 // list is ever empty, and the flag is sent only where the backend would otherwise read
-// the root the other way - so the query key holds no dead entry.
+// the root the other way - so the query key holds no dead entry. They are required and
+// `| undefined` rather than optional: this type is the URL search too, and a key left out
+// of a navigate keeps the value it had rather than clearing it.
 export interface ExpensesQuery {
   currency: string;
   from_date: string;
   to_date: string;
-  category?: string[];
-  not_category?: string[];
-  category_default?: CategoryDefault;
+  category: string[] | undefined;
+  not_category: string[] | undefined;
+  category_default: CategoryDefault | undefined;
 }
 
 export async function fetchExpenses(

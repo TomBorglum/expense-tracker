@@ -144,8 +144,8 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   omitting `from_date` would silently reset the range, so every handler spreads the whole
   search and overrides one part - and the three category keys go as **`undefined` rather than
   left out**, `retainSearchParams` keeping a key a navigate omits and the default selection
-  being unreachable otherwise. Pinned by "picking a currency keeps the range and asks again"
-  and its twins.
+  being unreachable otherwise, so all three are **required and `| undefined`** in
+  `ExpensesQuery`. Pinned by tsc and "picking a currency keeps the range and asks again".
 - **A switch between the views keeps the currency, the range and the categories**, through
   `retainSearchParams` in each route's `search.middlewares`; the nav links carry no search
   of their own and `group_by` is deliberately not in the list. **A bare landing URL needs
