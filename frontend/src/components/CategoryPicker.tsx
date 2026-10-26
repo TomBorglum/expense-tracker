@@ -22,11 +22,11 @@ interface CategoryPickerProps {
   readonly onChange: (selection: CategorySelection) => void;
 }
 
-// One row of the panel: the path a tick reports, the label it shows, how deep it sits,
+// One row of the panel: the slug a tick reports, the label it shows, how deep it sits,
 // whether it has children to disclose, whether it is disclosing them, whether every node
 // above it is, its own sign, and whether its subtree carries the other one.
 interface Row {
-  readonly category: string;
+  readonly slug: string;
   readonly label: string;
   readonly depth: number;
   readonly expandable: boolean;
@@ -46,14 +46,14 @@ function flipsOf(selection: CategorySelection): string[] {
   return [...selection.selected, ...selection.deselected];
 }
 
-// The paths that have to be open for every flip to be reachable: each flipped node's
-// parents, walked up through `parent` rather than by splitting a path - the separator is
-// the backend's. The `has` guard skips work already done, and is what stops a payload
-// whose parents form a cycle.
+// The slugs that have to be open for every flip to be reachable: each flipped node's
+// parents, walked up through `parent_slug` rather than by splitting a slug - the
+// separator is the backend's. The `has` guard skips work already done, and is what stops
+// a payload whose parents form a cycle.
 function ancestorsOf(parents: CategoryParents, flips: readonly string[]): Set<string> {
   const open = new Set<string>();
-  for (const path of flips) {
-    let parent = parents.get(path);
+  for (const slug of flips) {
+    let parent = parents.get(slug);
     while (parent !== undefined && !open.has(parent)) {
       open.add(parent);
       parent = parents.get(parent);
@@ -65,20 +65,20 @@ function ancestorsOf(parents: CategoryParents, flips: readonly string[]): Set<st
 // The panel's rows, depth-first from the roots - the whole tree whatever is expanded. A
 // row under a collapsed node is marked rather than dropped, because the selection is
 // reported in this order and a flip that is out of sight has to survive that. Built from
-// `parent` rather than from the order the list arrived in: path order is nearly
-// pre-order, but a level name starting below ":" interleaves - Settlement2024 sorts
-// between Settlement and Settlement:Alice - so a walk that assumed the list was
-// contiguous would nest it under Settlement.
+// `parent_slug` rather than from the order the list arrived in: the list arrives in path
+// order, which is nearly pre-order, but a level name starting below ":" interleaves -
+// Settlement2024 sorts between Settlement and Settlement:Alice - so a walk that assumed
+// the list was contiguous would nest it under Settlement.
 function rows(
   options: readonly Category[],
   selection: CategorySelection,
   parents: CategoryParents,
-  isExpanded: (category: string) => boolean,
+  isExpanded: (slug: string) => boolean,
 ): Row[] {
   const children = new Map<string, Category[]>();
   for (const option of options) {
-    // "" is the root key, which no path can collide with: a level is never empty.
-    const key = option.parent ?? "";
+    // "" is the root key, which no slug can collide with: a level is never empty.
+    const key = option.parent_slug ?? "";
     const siblings = children.get(key);
     if (siblings === undefined) {
       children.set(key, [option]);
@@ -90,55 +90,55 @@ function rows(
   // a node's sign says nothing about a flip below it, and that disagreement is the
   // third state a box has to show.
   const mixed = new Set<string>();
-  function signs(category: string): Set<boolean> {
-    const seen = new Set([isSelected(selection, category, parents)]);
-    for (const child of children.get(category) ?? []) {
-      for (const sign of signs(child.category)) {
+  function signs(slug: string): Set<boolean> {
+    const seen = new Set([isSelected(selection, slug, parents)]);
+    for (const child of children.get(slug) ?? []) {
+      for (const sign of signs(child.slug)) {
         seen.add(sign);
       }
     }
     if (seen.size > 1) {
-      mixed.add(category);
+      mixed.add(slug);
     }
     return seen;
   }
   for (const root of children.get("") ?? []) {
-    signs(root.category);
+    signs(root.slug);
   }
   const tree: Row[] = [];
   function walk(parent: string, depth: number, open: boolean) {
     for (const option of children.get(parent) ?? []) {
-      const expanded = isExpanded(option.category);
+      const expanded = isExpanded(option.slug);
       tree.push({
-        category: option.category,
+        slug: option.slug,
         label: option.name,
         depth,
-        expandable: children.has(option.category),
+        expandable: children.has(option.slug),
         expanded,
         visible: open,
-        checked: isSelected(selection, option.category, parents),
-        mixed: mixed.has(option.category),
+        checked: isSelected(selection, option.slug, parents),
+        mixed: mixed.has(option.slug),
       });
-      walk(option.category, depth + 1, open && expanded);
+      walk(option.slug, depth + 1, open && expanded);
     }
   }
   walk("", 0, true);
-  // A flipped path nobody offered goes first and flat, labelled in full: it has no
-  // parent here to sit under, and so nothing to disclose either, and nothing below it
-  // to disagree with. The rule CurrencySelect applies to a code typed into the address
-  // bar.
-  const offered = new Set(tree.map((row) => row.category));
+  // A flipped slug nobody offered goes first and flat, labelled with the slug itself:
+  // it has no parent here to sit under, and so nothing to disclose either, nothing below
+  // it to disagree with, and no name beside it to label it by. The rule CurrencySelect
+  // applies to a code typed into the address bar.
+  const offered = new Set(tree.map((row) => row.slug));
   return [
     ...flipsOf(selection)
-      .filter((path) => !offered.has(path))
-      .map((path) => ({
-        category: path,
-        label: path,
+      .filter((slug) => !offered.has(slug))
+      .map((slug) => ({
+        slug,
+        label: slug,
         depth: 0,
         expandable: false,
         expanded: false,
         visible: true,
-        checked: isSelected(selection, path, parents),
+        checked: isSelected(selection, slug, parents),
         mixed: false,
       })),
     ...tree,
@@ -147,8 +147,8 @@ function rows(
 
 // What the trigger reads: the two extremes by name, and otherwise the side the selection
 // is stated from - what is missing from everything, or what was picked out of nothing.
-// A single path while it fits beside the other controls, a count once it would not; a
-// pair of paths is longer than w-44 shows, so two is already a count.
+// A single slug while it fits beside the other controls, a count once it would not; a
+// pair of slugs is longer than w-44 shows, so two is already a count.
 function summarize(selection: CategorySelection): string {
   if (isEverything(selection)) {
     return "All categories";
@@ -190,8 +190,8 @@ export function CategoryPicker({
   // rather than a set of open paths: a set would make those ancestors permanently open
   // and their own twisties inert.
   const byDefault = ancestorsOf(parents, flipsOf(selection));
-  function isExpanded(category: string) {
-    return clicked.get(category) ?? byDefault.has(category);
+  function isExpanded(slug: string) {
+    return clicked.get(slug) ?? byDefault.has(slug);
   }
   const all = rows(options, selection, parents, isExpanded);
   const shown = all.filter((row) => row.visible);
@@ -208,21 +208,21 @@ export function CategoryPicker({
   // a branch cannot drop a flip inside it. Unticking a parent carries its children with
   // it: the backend reads a node as its whole subtree, and every flip below the one
   // being set goes, so the cascade cannot leave part of the subtree behind.
-  function toggle(category: string, checked: boolean) {
+  function toggle(slug: string, checked: boolean) {
     onChange(
       toggled(
         selection,
-        category,
+        slug,
         checked,
         parents,
-        all.map((row) => row.category),
+        all.map((row) => row.slug),
       ),
     );
   }
 
-  function toggleExpanded(category: string) {
+  function toggleExpanded(slug: string) {
     const next = new Map(clicked);
-    next.set(category, !isExpanded(category));
+    next.set(slug, !isExpanded(slug));
     setClicked(next);
   }
 
@@ -262,7 +262,7 @@ export function CategoryPicker({
               // The twisty sits outside the label: inside it, a click on the sign would
               // tick the box. So the indent moves out here with it.
               <div
-                key={row.category}
+                key={row.slug}
                 className={`flex items-center gap-2 ${INDENT[Math.min(row.depth, INDENT.length - 1)]}`}
               >
                 {row.expandable ? (
@@ -280,7 +280,7 @@ export function CategoryPicker({
                     aria-expanded={row.expanded}
                     className="w-4 cursor-pointer text-center leading-none"
                     onClick={() => {
-                      toggleExpanded(row.category);
+                      toggleExpanded(row.slug);
                     }}
                   >
                     <span aria-hidden="true">{row.expanded ? "-" : "+"}</span>
@@ -305,7 +305,7 @@ export function CategoryPicker({
                       }
                     }}
                     onChange={(event) => {
-                      toggle(row.category, event.target.checked);
+                      toggle(row.slug, event.target.checked);
                     }}
                   />
                   {row.label}

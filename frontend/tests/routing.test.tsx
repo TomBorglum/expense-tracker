@@ -136,9 +136,7 @@ test("leaves the grouping behind, the expenses view declaring none", async () =>
 
 test("carries the categories between the views as well", async () => {
   const user = userEvent.setup();
-  const router = renderAppAt(
-    "/?category=Stub%20category&category=Other%20stub%20category",
-  );
+  const router = renderAppAt("/?category=stub-category&category=other-stub-category");
   await screen.findByRole("table", { name: "Expenses" });
 
   await user.click(navLink("Totals"));
@@ -147,15 +145,15 @@ test("carries the categories between the views as well", async () => {
   expect(router.state.location.search).toEqual({
     currency: "DKK",
     ...YEAR,
-    category: ["Stub category", "Other stub category"],
+    category: ["stub-category", "other-stub-category"],
   });
 
   await user.click(navLink("Expenses"));
 
   await screen.findByRole("table", { name: "Expenses" });
   expect(router.state.location.search.category).toEqual([
-    "Stub category",
-    "Other stub category",
+    "stub-category",
+    "other-stub-category",
   ]);
 });
 
@@ -165,7 +163,7 @@ test("carries both lists and the root default between the views", async () => {
   // across rather than merely be forgotten.
   const user = userEvent.setup();
   const router = renderAppAt(
-    "/?not_category=Stub%20category&category=Stub%20category%3ANested%20stub" +
+    "/?not_category=stub-category&category=stub-category:nested-stub" +
       "&category_default=all",
   );
   await screen.findByRole("table", { name: "Expenses" });
@@ -176,8 +174,8 @@ test("carries both lists and the root default between the views", async () => {
   expect(router.state.location.search).toEqual({
     currency: "DKK",
     ...YEAR,
-    category: "Stub category:Nested stub",
-    not_category: "Stub category",
+    category: "stub-category:nested-stub",
+    not_category: "stub-category",
     category_default: "all",
   });
 });
@@ -187,9 +185,7 @@ test("leaves no category key behind when the default selection is picked again",
   // mention, so all three have to be navigated as undefined rather than left out -
   // otherwise the default selection would be unreachable from any URL naming one.
   const user = userEvent.setup();
-  const router = renderAppAt(
-    "/totals?not_category=Stub%20category&category_default=all",
-  );
+  const router = renderAppAt("/totals?not_category=stub-category&category_default=all");
   await screen.findByRole("table", { name: "Totals" });
   const trigger = screen.getByRole("button", { name: /^Categories / });
   await waitFor(() => {
@@ -205,17 +201,18 @@ test("leaves no category key behind when the default selection is picked again",
   expect(router.state.location.searchStr).not.toContain("category");
 });
 
-test("carries a category path across the views unsplit", async () => {
+test("carries a category slug across the views unsplit", async () => {
   const user = userEvent.setup();
-  const router = renderAppAt("/?category=Stub%20category%3ANested%20stub");
+  const router = renderAppAt("/?category=stub-category%3Anested-stub");
   await screen.findByRole("table", { name: "Expenses" });
 
   await user.click(navLink("Totals"));
 
   await screen.findByRole("table", { name: "Totals" });
   // One value, retained whole: retainSearchParams copies what validateSearch read, and
-  // a separator is nothing either of them knows about.
-  expect(router.state.location.search.category).toBe("Stub category:Nested stub");
+  // a separator is nothing either of them knows about. Typed as its own escape here,
+  // which is the one form a slug can still arrive percent-encoded in.
+  expect(router.state.location.search.category).toBe("stub-category:nested-stub");
 });
 
 test("spells a list as a key repeated once per value", async () => {
@@ -239,26 +236,28 @@ test("spells the deselected list as a repeated key as well", async () => {
   expect(new URLSearchParams(searchStr).getAll("not_category")).toEqual(["A", "B"]);
 });
 
-test("spells a category path with the separator it carries", async () => {
+test("spells a category slug with the separator it carries", async () => {
   // A colon is legal in a query as it stands, so the serializer puts back the one a form
-  // submission would escape: a path reads in the address bar the way it reads everywhere
-  // else. Typed either way it arrives whole - a path is one category, not two, so
-  // neither the serializer nor validateSearch may split it.
-  const router = renderAppAt("/?category=Settlement%3AAlice&category=Car");
+  // submission would escape: a slug reads in the address bar the way it reads everywhere
+  // else. It is the one escape a slug can still produce, every other character in one
+  // being carried raw - and it arrives whole typed either way, a slug being one category
+  // and not two, so neither the serializer nor validateSearch may split it.
+  const router = renderAppAt("/?category=settlement%3Aalice&category=car");
   await screen.findByRole("table", { name: "Expenses" });
   const searchStr = router.state.location.searchStr;
-  expect(searchStr).toContain("category=Settlement:Alice&category=Car");
+  expect(searchStr).toContain("category=settlement:alice&category=car");
   expect(searchStr).not.toContain("%3A");
   expect(new URLSearchParams(searchStr).getAll("category")).toEqual([
-    "Settlement:Alice",
-    "Car",
+    "settlement:alice",
+    "car",
   ]);
 });
 
 test("escapes a value that holds the separator's own escape", async () => {
-  // The one value putting the colon back could damage: a category whose name reads
-  // "%3A" is serialized as "%253A", which holds no "%3A" to replace, and still parses
-  // back as the text it was.
+  // The one value putting the colon back could damage: a value reading "%3A" is
+  // serialized as "%253A", which holds no "%3A" to replace, and still parses back as the
+  // text it was. No slug reads that way, so this is a hand-typed URL - which the
+  // serializer carries as the opaque text it carries every value as.
   const router = renderAppAt("/?category=A%253AB");
   await screen.findByRole("table", { name: "Expenses" });
   expect(router.state.location.searchStr).toContain("category=A%253AB");

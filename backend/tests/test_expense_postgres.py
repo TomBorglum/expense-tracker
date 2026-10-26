@@ -1,6 +1,6 @@
 """The loader and the expenses endpoint against a real PostgreSQL server.
 
-Every test here TRUNCATEs both tables, before and after. That wipes whatever
+Every test here TRUNCATEs all three tables, before and after. That wipes whatever
 `pixi run backend-load-expenses` put in a developer's database - run it again
 afterwards. Doing it before as well as after stops a killed run poisoning the next one.
 """
@@ -29,7 +29,7 @@ from expense_tracker import (
 )
 from expense_tracker.config import database_url
 from expense_tracker.expense_loader import ExpenseFileError, load_directory, main
-from expense_tracker.expense_repository import Expense, LoadedExpenseFile
+from expense_tracker.expense_repository import Category, Expense, LoadedExpenseFile
 
 # Registered in pyproject.toml, which --strict-markers requires.
 pytestmark = pytest.mark.postgres
@@ -57,13 +57,13 @@ _SUMMARY = TypeAdapter(_Summarised[SummaryPayload])
 
 
 async def _truncate() -> None:
-    """Both tables in one statement: PostgreSQL refuses to truncate a referenced one
+    """All three in one statement: PostgreSQL refuses to truncate a referenced one
     alone, and RESTART IDENTITY keeps ids predictable across tests."""
     engine = create_async_engine(database_url())
     try:
         async with AsyncSession(engine) as session:
             _ = await session.execute(
-                text("TRUNCATE expense, loaded_expense_file RESTART IDENTITY")
+                text("TRUNCATE category, expense, loaded_expense_file RESTART IDENTITY")
             )
             await session.commit()
     finally:
@@ -85,6 +85,17 @@ async def _expenses() -> list[tuple[Decimal, str, datetime.date, str, str]]:
             return [
                 (r.amount, r.currency, r.expense_date, r.category, r.key) for r in rows
             ]
+    finally:
+        await engine.dispose()
+
+
+async def _categories() -> list[tuple[str, str, int, str]]:
+    """The category rows as (category, slug, level, first_filename), by category."""
+    engine = create_async_engine(database_url())
+    try:
+        async with AsyncSession(engine) as session:
+            rows = await session.scalars(select(Category).order_by(Category.category))
+            return [(r.category, r.slug, r.level, r.first_filename) for r in rows]
     finally:
         await engine.dispose()
 
@@ -300,6 +311,90 @@ def test_an_edited_file_is_refused_by_name_and_load_date(tmp_path: Path) -> None
     ]
 
 
+def test_a_backfilled_file_that_would_repoint_a_slug_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The one case the two slug invariants pull apart, and the loud end of it.
+
+    02 is loaded alone, so Going-Out takes the bare slug. Backfilling 01 - a name that
+    sorts before it - puts Going Out first in the order key, which would move
+    going-out onto it and Going-Out onto going-out-1. A URL already holding going-out
+    would then mean another category, so the run stops instead.
+    """
+    _ = _write(tmp_path, "02.yaml", "200.00\tDKK\t06/01/2026\tGoing-Out:Lunch")
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+    _ = _write(tmp_path, "01.yaml", "100.00\tDKK\t05/01/2026\tGoing Out:Dinner")
+
+    pending = load_directory(tmp_path, database_url())
+    with pytest.raises(
+        ExpenseFileError,
+        match=r"01\.yaml: loading this would change the slug of 'Going-Out'",
+    ):
+        _ = asyncio.run(pending)
+
+    # The refusal is inside 01's transaction, so nothing of it landed - neither its
+    # expenses nor the category rows that would have renumbered 02's.
+    assert [category for *_rest, category, _key in asyncio.run(_expenses())] == [
+        "Going-Out:Lunch"
+    ]
+    assert [name for name, _sha, _count in asyncio.run(_ledger())] == ["02.yaml"]
+
+
+def test_a_category_level_with_no_slug_is_refused_as_a_file_problem(
+    tmp_path: Path,
+) -> None:
+    """A level of punctuation alone passes the path CHECK and has no slug, so the rule
+    raises - and the loader reports it as the file it came in, not as a traceback."""
+    _ = _write(tmp_path, "01.yaml", "100.00\tDKK\t05/01/2026\tCar:%")
+
+    pending = load_directory(tmp_path, database_url())
+    with pytest.raises(
+        ExpenseFileError, match=r"01\.yaml: category level has no slug: '%'"
+    ):
+        _ = asyncio.run(pending)
+
+    assert asyncio.run(_expenses()) == []
+    assert asyncio.run(_categories()) == []
+
+
+def test_a_later_file_never_renumbers_a_slug_already_assigned(
+    tmp_path: Path,
+) -> None:
+    """The second invariant over the real database: a month file arriving in name order
+    only ever takes the next free suffix, whatever it names."""
+    _ = _write(tmp_path, "01.yaml", "100.00\tDKK\t05/01/2026\tGoing Out:Dinner")
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+    _ = _write(tmp_path, "02.yaml", "200.00\tDKK\t06/01/2026\tGoing-Out:Lunch")
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/categories", params={"to_level": "1"})
+
+    body = _CATEGORIES.validate_json(response.content).items
+    assert [(row.category, row.slug) for row in body] == [
+        ("Going Out", "going-out"),
+        ("Going-Out", "going-out-1"),
+    ]
+
+
+def test_a_rebuild_reproduces_the_slugs_an_incremental_load_arrived_at(
+    tmp_path: Path,
+) -> None:
+    """The first invariant over the real database, which is what makes a shared link
+    survive a db-reset: the same files loaded one at a time and all at once agree."""
+    _ = _write(tmp_path, "01.yaml", "100.00\tDKK\t05/01/2026\tGoing Out:Dinner")
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+    _ = _write(tmp_path, "02.yaml", "200.00\tDKK\t06/01/2026\tGoing-Out:Lunch")
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+    incremental = asyncio.run(_categories())
+
+    # Exactly what `backend-db-reset`, `backend-db-init` and a reload would do.
+    asyncio.run(_truncate())
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+
+    assert asyncio.run(_categories()) == incremental
+
+
 def test_a_file_that_fails_midway_leaves_earlier_files_committed(
     tmp_path: Path,
 ) -> None:
@@ -505,7 +600,7 @@ def test_a_category_returns_only_the_expenses_in_it(tmp_path: Path) -> None:
     _load_three_categories(tmp_path)
 
     with TestClient(create_app()) as client:
-        response = client.get("/api/expenses", params={"category": "Food"})
+        response = client.get("/api/expenses", params={"category": "food"})
 
     assert response.status_code == 200
     body = _EXPENSES.validate_json(response.content).items
@@ -520,7 +615,7 @@ def test_two_categories_return_the_expenses_in_either(tmp_path: Path) -> None:
     _load_three_categories(tmp_path)
 
     with TestClient(create_app()) as client:
-        response = client.get("/api/expenses", params={"category": ["Food", "Car"]})
+        response = client.get("/api/expenses", params={"category": ["food", "car"]})
 
     assert [
         (row.date, row.category)
@@ -538,7 +633,7 @@ def test_a_category_nobody_spent_in_is_still_an_empty_list(tmp_path: Path) -> No
     _load_three_categories(tmp_path)
 
     with TestClient(create_app()) as client:
-        response = client.get("/api/expenses", params={"category": "Travel"})
+        response = client.get("/api/expenses", params={"category": "travel"})
 
     assert response.status_code == 200
     assert _EXPENSES.validate_json(response.content).items == []
@@ -551,7 +646,7 @@ def test_a_category_narrows_what_the_totals_are_taken_over(tmp_path: Path) -> No
 
     with TestClient(create_app()) as client:
         response = client.get(
-            "/api/expenses/totals", params={"period": "month", "category": "Car"}
+            "/api/expenses/totals", params={"period": "month", "category": "car"}
         )
 
     # Only February holds a Car row, so January is not a period at all.
@@ -573,7 +668,7 @@ def test_a_category_matches_its_descendants_as_well(tmp_path: Path) -> None:
     _load_a_tree(tmp_path)
 
     with TestClient(create_app()) as client:
-        response = client.get("/api/expenses", params={"category": "Settlement"})
+        response = client.get("/api/expenses", params={"category": "settlement"})
 
     assert response.status_code == 200
     body = _EXPENSES.validate_json(response.content).items
@@ -592,7 +687,7 @@ def test_a_depth_one_category_still_matches_exactly_what_it_did(
     _load_a_tree(tmp_path)
 
     with TestClient(create_app()) as client:
-        response = client.get("/api/expenses", params={"category": "Groceries"})
+        response = client.get("/api/expenses", params={"category": "groceries"})
 
     body = _EXPENSES.validate_json(response.content).items
     assert [(row.date, row.category) for row in body] == [("2026-01-05", "Groceries")]
@@ -602,7 +697,7 @@ def test_a_mid_level_node_matches_itself_and_everything_below(tmp_path: Path) ->
     _load_a_tree(tmp_path)
 
     with TestClient(create_app()) as client:
-        response = client.get("/api/expenses", params={"category": "Settlement:Alice"})
+        response = client.get("/api/expenses", params={"category": "settlement:alice"})
 
     body = _EXPENSES.validate_json(response.content).items
     assert [row.category for row in body] == [
@@ -616,7 +711,7 @@ def test_a_leaf_matches_only_itself(tmp_path: Path) -> None:
 
     with TestClient(create_app()) as client:
         response = client.get(
-            "/api/expenses", params={"category": "Settlement:Alice:Spain"}
+            "/api/expenses", params={"category": "settlement:alice:spain"}
         )
 
     body = _EXPENSES.validate_json(response.content).items
@@ -631,7 +726,7 @@ def test_a_node_and_its_own_child_return_each_row_once(tmp_path: Path) -> None:
     with TestClient(create_app()) as client:
         response = client.get(
             "/api/expenses",
-            params=[("category", "Settlement"), ("category", "Settlement:Alice")],
+            params=[("category", "settlement"), ("category", "settlement:alice")],
         )
 
     body = _EXPENSES.validate_json(response.content).items
@@ -642,24 +737,52 @@ def test_a_node_and_its_own_child_return_each_row_once(tmp_path: Path) -> None:
     ]
 
 
-def test_a_wildcard_in_a_category_name_is_matched_literally(tmp_path: Path) -> None:
-    """autoescape=True, which nothing else in the suite reaches. Without it the LIKE
-    reads the % in the name as a wildcard, and 1005:Fees - which starts with 100 and
-    has a separator later - would come back as though it sat under 100%."""
+def _load_wildcard_names(directory: Path) -> None:
+    """Three categories whose slugs put one level-prefix beside a longer one.
+
+    100% and 100%:Fees slug to 100 and 100:fees, because % is not a character a slug
+    can hold; 1005:Fees slugs to 1005:fees. So 100 is a character-prefix of 1005 and
+    not a level-prefix of it, which is the distinction the match turns on.
+    """
     _ = _write(
-        tmp_path,
+        directory,
         "01.yaml",
         "100.00\tDKK\t05/01/2026\t100%",
         "200.00\tDKK\t06/01/2026\t100%:Fees",
         "300.00\tDKK\t07/01/2026\t1005:Fees",
     )
-    _ = asyncio.run(load_directory(tmp_path, database_url()))
+    _ = asyncio.run(load_directory(directory, database_url()))
+
+
+def test_a_slug_is_not_a_prefix_of_a_longer_sibling(tmp_path: Path) -> None:
+    """_under's two legs over slugs: 1005:Fees starts with 100 and has a separator
+    later, and is still not under 100 - because the match is by level."""
+    _load_wildcard_names(tmp_path)
 
     with TestClient(create_app()) as client:
-        response = client.get("/api/expenses", params={"category": "100%"})
+        response = client.get("/api/expenses", params={"category": "100"})
 
     body = _EXPENSES.validate_json(response.content).items
     assert [row.category for row in body] == ["100%", "100%:Fees"]
+
+
+def test_a_wildcard_in_a_requested_category_is_matched_literally(
+    tmp_path: Path,
+) -> None:
+    """autoescape=True, which nothing else in the suite reaches.
+
+    A stored slug can hold neither % nor _, so the data cannot reach this clause any
+    more - but a query value is checked on neither side, so ?category= still can.
+    Without autoescape this LIKE is '%:%', which every slug carrying a separator
+    matches, and the request would come back holding more than any category does.
+    """
+    _load_wildcard_names(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"category": "%"})
+
+    # No slug is the one-character string "%", and none begins "%:" either.
+    assert _EXPENSES.validate_json(response.content).items == []
 
 
 def test_deselecting_a_category_returns_every_other_one(tmp_path: Path) -> None:
@@ -668,7 +791,7 @@ def test_deselecting_a_category_returns_every_other_one(tmp_path: Path) -> None:
     _load_three_categories(tmp_path)
 
     with TestClient(create_app()) as client:
-        response = client.get("/api/expenses", params={"not_category": "Food"})
+        response = client.get("/api/expenses", params={"not_category": "food"})
 
     assert response.status_code == 200
     body = _EXPENSES.validate_json(response.content).items
@@ -688,7 +811,7 @@ def test_a_deselected_child_is_left_out_of_its_selected_parent(
     with TestClient(create_app()) as client:
         response = client.get(
             "/api/expenses",
-            params={"category": "Settlement", "not_category": "Settlement:Alice"},
+            params={"category": "settlement", "not_category": "settlement:alice"},
         )
 
     body = _EXPENSES.validate_json(response.content).items
@@ -707,8 +830,8 @@ def test_a_selected_path_survives_the_deselected_root_it_sits_under(
             "/api/expenses",
             params={
                 "category_default": "all",
-                "not_category": "Settlement",
-                "category": "Settlement:Alice",
+                "not_category": "settlement",
+                "category": "settlement:alice",
             },
         )
 
@@ -754,30 +877,36 @@ def test_the_empty_selection_leaves_the_totals_without_a_period(
     assert _SUMMARY.validate_json(response.content).summary == []
 
 
-def test_a_wildcard_in_a_deselected_name_is_matched_literally(
+def test_a_wildcard_in_a_deselected_category_is_matched_literally(
     tmp_path: Path,
 ) -> None:
     """autoescape reaches the deselected list too, both flips being the same clause:
-    without it 1005:Fees would be read as sitting under 100% and left out as well."""
-    _ = _write(
-        tmp_path,
-        "01.yaml",
-        "100.00\tDKK\t05/01/2026\t100%",
-        "200.00\tDKK\t06/01/2026\t100%:Fees",
-        "300.00\tDKK\t07/01/2026\t1005:Fees",
-    )
-    _ = asyncio.run(load_directory(tmp_path, database_url()))
+    without it every row would read as deselected and the list would come back
+    empty."""
+    _load_wildcard_names(tmp_path)
 
     with TestClient(create_app()) as client:
-        response = client.get("/api/expenses", params={"not_category": "100%"})
+        response = client.get("/api/expenses", params={"not_category": "%"})
+
+    body = _EXPENSES.validate_json(response.content).items
+    assert [row.category for row in body] == ["100%", "100%:Fees", "1005:Fees"]
+
+
+def test_deselecting_a_slug_leaves_a_longer_sibling_in(tmp_path: Path) -> None:
+    """The level-prefix rule through the other flip: 1005:Fees is not under 100."""
+    _load_wildcard_names(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses", params={"not_category": "100"})
 
     body = _EXPENSES.validate_json(response.content).items
     assert [row.category for row in body] == ["1005:Fees"]
 
 
 def test_a_node_with_no_expense_of_its_own_is_still_listed(tmp_path: Path) -> None:
-    """Settlement is where nobody filed anything directly, so only the per-level
-    truncation puts it in the list - and without it the node could not be picked."""
+    """Settlement is where nobody filed anything directly, and it is still a row the
+    picker can offer - because the loader writes every ancestor, not because a longer
+    path is truncated down to it. Without it the node could not be picked."""
     _load_a_tree(tmp_path)
 
     with TestClient(create_app()) as client:
@@ -790,6 +919,77 @@ def test_a_node_with_no_expense_of_its_own_is_still_listed(tmp_path: Path) -> No
         ("Settlement:Alice", "Alice", "Settlement"),
         ("Settlement:Bob", "Bob", "Settlement"),
         ("SettlementFund", "SettlementFund", None),
+    ]
+
+
+def test_every_listed_node_carries_the_slug_the_loader_assigned(
+    tmp_path: Path,
+) -> None:
+    """The slug pair beside the display pair, over a tree an ancestor sits in: a
+    parent's slug is the prefix of its children's, which is what lets a picker build
+    the tree from parent_slug without splitting anything."""
+    _load_a_tree(tmp_path)
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/categories", params={"to_level": "3"})
+
+    body = _CATEGORIES.validate_json(response.content).items
+    assert [(row.category, row.slug, row.parent_slug) for row in body] == [
+        ("Groceries", "groceries", None),
+        ("Settlement", "settlement", None),
+        ("Settlement:Alice", "settlement:alice", "settlement"),
+        ("Settlement:Alice:Spain", "settlement:alice:spain", "settlement:alice"),
+        ("Settlement:Bob", "settlement:bob", "settlement"),
+        ("SettlementFund", "settlementfund", None),
+    ]
+
+
+def test_colliding_siblings_are_given_numbered_slugs(tmp_path: Path) -> None:
+    """Two names that kebab to one slug, which is the case the suffix exists for.
+
+    The bare slug goes to the one the order key reaches first - here the path, both
+    being in the same file - and nothing is refused: the names are upstream data.
+    """
+    _ = _write(
+        tmp_path,
+        "01.yaml",
+        "100.00\tDKK\t05/01/2026\tGoing Out:Jalsa+pool",
+        "200.00\tDKK\t06/01/2026\tGoing-Out:Lunch",
+    )
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+
+    with TestClient(create_app()) as client:
+        response = client.get("/api/expenses/categories", params={"to_level": "2"})
+
+    body = _CATEGORIES.validate_json(response.content).items
+    assert [(row.category, row.slug) for row in body] == [
+        ("Going Out", "going-out"),
+        ("Going Out:Jalsa+pool", "going-out:jalsa-pool"),
+        ("Going-Out", "going-out-1"),
+        ("Going-Out:Lunch", "going-out-1:lunch"),
+    ]
+
+
+def test_a_numbered_slug_filters_only_its_own_subtree(tmp_path: Path) -> None:
+    """The suffix is what keeps the two apart as filters, which is the whole point of
+    handing one out: going-out must not reach the subtree going-out-1 names."""
+    _ = _write(
+        tmp_path,
+        "01.yaml",
+        "100.00\tDKK\t05/01/2026\tGoing Out:Jalsa+pool",
+        "200.00\tDKK\t06/01/2026\tGoing-Out:Lunch",
+    )
+    _ = asyncio.run(load_directory(tmp_path, database_url()))
+
+    with TestClient(create_app()) as client:
+        first = client.get("/api/expenses", params={"category": "going-out"})
+        second = client.get("/api/expenses", params={"category": "going-out-1"})
+
+    assert [row.category for row in _EXPENSES.validate_json(first.content).items] == [
+        "Going Out:Jalsa+pool"
+    ]
+    assert [row.category for row in _EXPENSES.validate_json(second.content).items] == [
+        "Going-Out:Lunch"
     ]
 
 
@@ -866,16 +1066,16 @@ def test_totals_name_the_same_paths_the_list_endpoint_shows(tmp_path: Path) -> N
             params=[
                 ("period", "month"),
                 ("group_by", "category"),
-                ("category", "Settlement"),
-                ("category", "Settlement:Alice"),
+                ("category", "settlement"),
+                ("category", "settlement:alice"),
             ],
         )
         ungrouped = client.get(
             "/api/expenses/totals",
             params=[
                 ("period", "month"),
-                ("category", "Settlement"),
-                ("category", "Settlement:Alice"),
+                ("category", "settlement"),
+                ("category", "settlement:alice"),
             ],
         )
 

@@ -18,7 +18,7 @@ from expense_tracker import (
 from expense_tracker.category_filter import EVERYTHING, CategorySelection
 from expense_tracker.currency_repository import CurrencyRateRecord
 from expense_tracker.date_range import UNBOUNDED, DateRange
-from expense_tracker.expense_repository import ExpenseRecord
+from expense_tracker.expense_repository import CategoryRecord, ExpenseRecord
 from expense_tracker.level_range import MAX_LEVEL, TOP_LEVEL, LevelRange
 
 # The origin a browser would send. Any value works against a wildcard policy.
@@ -975,20 +975,35 @@ def test_totals_refuse_a_from_date_that_is_not_a_date(client: TestClient) -> Non
 
 
 def test_categories_endpoint_returns_json(
-    client: TestClient, category_names: list[str]
+    client: TestClient, category_nodes: list[CategoryRecord]
 ) -> None:
     response = client.get("/api/expenses/categories")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     assert response.headers["Cache-Control"] == "no-store"
     assert _CATEGORIES.validate_json(response.content).items == [
-        CategoryPayload(category="Insurance", name="Insurance"),
-        CategoryPayload(category="Housing", name="Housing"),
-        CategoryPayload(category="Housing:Rent", name="Rent", parent="Housing"),
+        CategoryPayload(category="Insurance", name="Insurance", slug="insurance"),
+        CategoryPayload(category="Housing", name="Housing", slug="housing"),
+        CategoryPayload(
+            category="Housing:Rent",
+            name="Rent",
+            slug="housing:rent",
+            parent="Housing",
+            parent_slug="housing",
+        ),
+        # The slug is the repository's, suffix and all, and parent_slug is the path
+        # above *it* - not the slug of the path above, which nothing here could derive.
+        CategoryPayload(
+            category="Going Out:Jalsa+pool",
+            name="Jalsa+pool",
+            slug="going-out-1:jalsa-pool",
+            parent="Going Out",
+            parent_slug="going-out-1",
+        ),
     ]
     # The fixture is the other half of that literal; if it changes, this should fail
     # rather than quietly assert against itself.
-    assert len(category_names) == 3
+    assert len(category_nodes) == 4
 
 
 def test_categories_endpoint_preserves_the_repository_order(client: TestClient) -> None:
@@ -997,7 +1012,12 @@ def test_categories_endpoint_preserves_the_repository_order(client: TestClient) 
     body = _CATEGORIES.validate_json(
         client.get("/api/expenses/categories").content
     ).items
-    assert [row.category for row in body] == ["Insurance", "Housing", "Housing:Rent"]
+    assert [row.category for row in body] == [
+        "Insurance",
+        "Housing",
+        "Housing:Rent",
+        "Going Out:Jalsa+pool",
+    ]
 
 
 def test_categories_endpoint_returns_an_empty_list_when_nothing_is_loaded(
@@ -1081,14 +1101,16 @@ def test_a_malformed_level_range_is_refused(
     assert requested_levels == []
 
 
-def test_a_depth_one_category_carries_no_parent_key(client: TestClient) -> None:
+def test_a_depth_one_category_carries_neither_parent_key(client: TestClient) -> None:
     """Absent rather than empty, so "no parent" and "a parent named nothing" cannot be
-    confused. Read as plain objects: the model would not show the difference."""
+    confused - and both parent keys go together, since a depth-1 slug has no path above
+    it either. Read as plain objects: the model would not show the difference."""
     body = _RAW_ROWS.validate_json(client.get("/api/expenses/categories").content).items
     assert [sorted(row) for row in body] == [
-        ["category", "name"],
-        ["category", "name"],
-        ["category", "name", "parent"],
+        ["category", "name", "slug"],
+        ["category", "name", "slug"],
+        ["category", "name", "parent", "parent_slug", "slug"],
+        ["category", "name", "parent", "parent_slug", "slug"],
     ]
 
 

@@ -1,5 +1,7 @@
-"""Category paths, and the categories a request asks for read off a query string."""
+"""Category paths, their URL slugs, and the categories a request asks for."""
 
+import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -8,6 +10,23 @@ from dataclasses import dataclass
 # unable to contain it - so splitting and joining a path is lossless and nothing here,
 # or on the wire, needs escaping.
 SEPARATOR = ":"
+
+# ae, oe and aa for the three Danish letters, applied after lower() so only the
+# lowercase forms need naming. Written as escapes because committed source is ASCII:
+# these are ae-ligature, o-slash and a-ring.
+_TRANSLITERATED = str.maketrans({"\u00e6": "ae", "\u00f8": "oe", "\u00e5": "aa"})
+
+# Every run of anything a slug cannot hold, collapsed to one dash. Matching what is
+# *not* kept, rather than dropping what is not alphanumeric, is what keeps the output
+# ASCII: str.isalnum() is true for a-ring and for sharp s, which would otherwise
+# survive NFKD and reach a URL.
+_NOT_IN_SLUG = re.compile(r"[^a-z0-9]+")
+
+# One level of a slug, and a whole slug path. The Python mirror of schema.sql's CHECK on
+# category.slug; SEPARATOR is interpolated rather than spelled, so the separator keeps
+# its single declaration above. Used by the tests to state the shape slug_level builds.
+_SLUG_LEVEL = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+SLUG_PATH = re.compile(rf"\A{_SLUG_LEVEL}(?:{SEPARATOR}{_SLUG_LEVEL})*\Z")
 
 # The two values ?category_default= takes, naming the root's own sign. Anything else is
 # refused rather than ignored, the way validate_currency_code refuses rather than
@@ -20,6 +39,14 @@ ALL_CATEGORIES = "all"
 
 class CategoryFilterError(Exception):
     """The expenses cannot be read over the requested categories."""
+
+
+class CategorySlugError(Exception):
+    """A category level has no slug, so it cannot be named in a URL.
+
+    Raised only while loading, which is the only thing that derives a slug, so no
+    create_app() handler answers it - the loader turns it into an ExpenseFileError.
+    """
 
 
 def split_path(path: str) -> tuple[str, ...]:
@@ -43,6 +70,27 @@ def path_name(path: str) -> str:
 def strip_path(path: str) -> str:
     """Each level stripped, which is what strip() meant when a path held one level."""
     return SEPARATOR.join(level.strip() for level in path.split(SEPARATOR))
+
+
+def slug_level(name: str) -> str:
+    """One level's slug: lower kebab case over a-z0-9, or CategorySlugError.
+
+    The base slug only. Two siblings can share one, which is what the loader hands a
+    numbered suffix to; this function knows nothing of its neighbours.
+    """
+    folded = name.lower().translate(_TRANSLITERATED)
+    # NFKD so a letter carrying a diacritic splits into the letter and a combining
+    # mark, which the next line drops - leaving e for e-acute rather than a dash.
+    decomposed = unicodedata.normalize("NFKD", folded)
+    bare = "".join(
+        character for character in decomposed if not unicodedata.combining(character)
+    )
+    slug = _NOT_IN_SLUG.sub("-", bare).strip("-")
+    if not slug:
+        # A level of punctuation alone, or of letters no transliteration reaches. There
+        # is nothing to fall back on that would still name this category and no other.
+        raise CategorySlugError(f"category level has no slug: {name!r}")
+    return slug
 
 
 @dataclass(frozen=True)

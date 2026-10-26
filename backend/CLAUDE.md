@@ -19,9 +19,6 @@ otherwise correct change, or nothing does; each bullet says which.
 - **`create_app()` opens no socket.** The engine is built by the lifespan in `deps.py`,
   which keeps `TestClient(app)` (without `with`) database-free and `uvicorn --factory`
   working. Moving engine creation into the factory breaks the entire HTTP suite.
-- **Every collection body is an object holding `items`**, never a bare array, so a body
-  can gain a field without breaking a client; a new endpoint goes through `_collection`.
-  Pinned by `test_every_collection_is_an_object_holding_items`.
 - **An empty table is 200 with an empty `items` array, not 503.** A database nobody has
   loaded yet is a legitimate state, so both repositories raise only from their `except`
   arm. `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` + twins.
@@ -56,16 +53,24 @@ otherwise correct change, or nothing does; each bullet says which.
 
 ## The loaders
 
-- **The two loaders differ on reloading, and that difference is the design.**
+- **The three loader shapes differ on reloading, and that difference is the design.**
   `expense_loader` is append-only: its ledger skips a file whose sha256 matches and
-  *refuses* one that changed. `currency_loader` has no ledger and replaces the whole
+  *refuses* one that changed - and a month file is rewritten in place upstream, so that
+  refusal is the ordinary path and the rebuild is the cure, not a loader that replaces a
+  changed file's rows. `currency_loader` has no ledger and replaces the whole
   `currency_rate` table every run, a rate being a current fact rather than an event, so
-  editing `rates.tsv` and reloading is supported. It parses every file before deleting
-  anything, in one transaction. Pinned by `test_an_edited_rate_replaces_the_old_one`.
-- **A month file is rewritten in place upstream, so the rebuild is the normal path.** A
-  later export adds records to the month they fall in, which the refusal above catches as
-  an edit; a loader replacing a changed file's rows is what it exists instead of.
+  editing `rates.tsv` and reloading is supported; it parses every file before deleting
+  anything, in one transaction. The `category` table is the third: derived state the
+  expense loader extends and verifies inside each file's own transaction. Pinned by
+  `test_an_edited_rate_replaces_the_old_one` and
   `test_an_edited_file_is_refused_by_name_and_load_date`.
+- **The loader assigns the slugs, and the two invariants are checked, not assumed.**
+  `assign_slugs` orders nodes by `(first filename, path)`, so a reset and a reload
+  reproduce the mapping and a later-named file can only append; one that would **move** a
+  stored slug is refused, as is a level that slugs to nothing, and colliding siblings are
+  numbered per parent instead. So the write is a plain `insert()`: the idiomatic
+  `on_conflict_do_nothing()` would absorb exactly those two refusals.
+  `test_a_rebuild_reproduces_the_slugs_an_incremental_load_arrived_at` + five twins.
 
 ## Conversion
 
@@ -125,20 +130,19 @@ otherwise correct change, or nothing does; each bullet says which.
 
 - **The dates and the categories filter in SQL, not in the route.** The `DateRange` and the
   `CategorySelection` go to `list_expenses`, which adds one `>=`, one `<=` and one `CASE` -
-  `= path OR LIKE path || ':%'` per arm, `autoescape` for a level holding `%` or `_`. Both
-  bounds are **inclusive** and open on their own; `everything()` adds no clause at all, and
-  nothing selected is a bare `false()`, so the empty selection is a request rather than the
-  unfiltered one. Pinned by the postgres suite.
+  `= slug OR LIKE slug || ':%'` per arm over a join to `category`, `autoescape` because a
+  **query** value is unvalidated. Both bounds are **inclusive** and open on their own;
+  `everything()` adds no clause and so no join, and nothing selected is a bare `false()`,
+  so the empty selection is a request rather than the unfiltered one. Postgres suite.
 - **A selection states where it changes, never what it covers.** The root carries a sign -
-  `?category_default=`, `all` unless `?category=` names a path, which keeps every request
+  `?category_default=`, `all` unless `?category=` names a slug, which keeps every request
   written before anything could be deselected meaning what it meant, and why `all` has to
-  be sendable - and each `?category=`/`?not_category=` value flips a subtree, **the longest
-  path over a row deciding**. `flips()` owns that order, longest first and by **levels**
-  rather than characters. `test_flips_are_ordered_longest_path_first` and the flag's own
-  twin.
+  be sendable - and each value flips a subtree, **the longest slug over a row deciding**.
+  `flips()` owns that order, longest first and by **levels** rather than characters.
+  `test_flips_are_ordered_longest_path_first` and the flag's own twin.
 - **All three types validate in `__post_init__`, so the repository does not.** `DateRange`
   refuses `start > end`, `LevelRange` a level outside `1..MAX_LEVEL`, and
-  `CategorySelection` a blank name and a path flipped both ways, at **every** construction,
+  `CategorySelection` a blank value and a slug flipped both ways, at **every** construction,
   so `list_expenses` stops trusting its caller; a second check gives one rule two homes. An
   **empty** pair of lists is legal, being the default.
   `test_the_type_refuses_an_inverted_range_however_it_is_built`.
@@ -147,24 +151,20 @@ otherwise correct change, or nothing does; each bullet says which.
   refuses them first, as `validate_currency_code` refuses rather than uppercases. Both
   bounds are read before either is compared, so an unreadable value is refused as itself:
   `test_a_malformed_bound_is_refused_before_the_two_are_compared`.
-- **A category is a `:`-separated path, and a value matches a node and every path below
-  it.** `category_filter.SEPARATOR` is its only declaration in Python; `schema.sql`'s CHECK
-  stops a level holding it, so nothing escapes. Matching is by **level, never character** -
-  `Foodstuffs` is not under `Food`, hence `_under`'s two legs - and over depth-1 data it is
-  plain equality. Each **level** is stripped, not each field, or `Settlement : Alice`
-  becomes a node that renders identically and never merges.
+- **A category is a `:`-separated path, the filter matches the slug beside it, and either
+  names a node and every node below it.** `category_filter.SEPARATOR` spells both and is
+  its only declaration in Python; `schema.sql`'s CHECKs stop a level holding it, so nothing
+  escapes. Matching is by **level, never character** - `foodstuffs` is not under `food`,
+  hence `_under`'s two legs. Each **level** is stripped, not each field, or
+  `Settlement : Alice` becomes a node that renders identically and never merges.
   `test_a_category_matches_its_descendants_as_well` and the strip twin.
-- **`GET /api/expenses/categories` is `list_categories`, deduplicated and ordered in SQL,
-  never `list_expenses` deduplicated in the route.** Totals skipped a repository method
-  because conversion had to precede the sum; nothing here converts, and pulling every row
-  for one column is what this prevents. The filter is **not** checked against it.
-  `test_categories_endpoint_preserves_the_repository_order`.
-- **`?from_level=`/`?to_level=` are one `SELECT` per level, `UNION`ed**, each truncating
-  `category` and guarded by `array_length >= depth` - what makes a level exact, a slice
-  past the end returning the array. Every leg needs its own `DISTINCT`, because `union()`
-  over one select emits no `UNION` and one level is the default. An ancestor nothing is
-  filed under **is** listed, which is what makes it selectable, and `MAX_LEVEL` bounds the
-  statement. `test_a_node_with_no_expense_of_its_own_is_still_listed`.
+- **`GET /api/expenses/categories` is `list_categories` over the `category` table, ordered
+  in SQL, never `list_expenses` deduplicated in the route** - pulling every row for one
+  column is what that prevents - and `?from_level=`/`?to_level=` is one
+  `WHERE level IN (...)` over the stored depth, not a `UNION` of truncations. An ancestor
+  nothing is filed under **is** listed because the loader wrote that row, `MAX_LEVEL`
+  bounds the list, and the filter is **not** checked against it.
+  `test_categories_endpoint_preserves_the_repository_order` + the node's own twin.
 
 ## Database and configuration
 

@@ -96,7 +96,7 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   coerces `?from_date=2026` to a number, and the `With` helpers work per value. One value
   parses to a bare string, so `router.state.location.search` is not the validated search;
   assert on `searchStr`. It also **puts back the `:` `URLSearchParams` escapes**, legal in a
-  query and carried by every category path. `routing.test.tsx`.
+  query and the only escape a category slug holds. `routing.test.tsx`.
 - **`src/routeTree.gen.ts` is committed and never hand-edited**, and `globalIgnores` must
   not make eslint a fourth exclusion beside prettier, coverage and Sonar. Why each holds
   is in [`README.md`](../README.md#routing) and the root [`CLAUDE.md`](../CLAUDE.md)
@@ -125,18 +125,18 @@ does; each bullet says which. jsdom evaluates no CSS, so appearance rules are by
   `BASE_CURRENCY`, a rate being never inverted and never composed; `BASE_CURRENCY` itself is
   always offered and needs no rate. A rate list that is pending, 503s, empty or malformed
   leaves the select disabled and **does not disturb the table below it**: they are two
-  requests, and the category list on the same terms: a path it never named is shown flipped
+  requests, and the category list on the same terms: a slug it never named is shown flipped
   all the same.
-- **The picker builds its tree from `parent`, not from the order the list arrived in**: path
-  order is nearly pre-order, but a level name starting below `:` interleaves, so a contiguity
-  walk nests a root under the wrong parent. **Every box is ticked by default, and unticking
-  one unticks its subtree**: a selection is the root's sign plus the paths that flip it
-  (`src/categorySelection.ts`, the mirror of `category_filter.py`), so a flip left below the
-  one being set would keep half a branch ticked under the longest-prefix rule. **Only the
-  render filters a collapsed row away**: the walk covers the whole tree and reports the
-  selection in its order, so a flip out of sight would leave the URL. **Expansion is a map of
-  twisty clicks, never a set of open paths** - a set holds a flip's ancestors open and their
-  own twisties inert. `CategoryPicker.test.tsx`.
+- **The picker builds its tree from `parent_slug`, not from the order the list arrived in**:
+  path order is nearly pre-order, but a level name starting below `:` interleaves, so a
+  contiguity walk nests a root under the wrong parent. **Every box is ticked by default, and
+  unticking one unticks its subtree**: a selection is the root's sign plus the slugs that
+  flip it (`src/categorySelection.ts`, the mirror of `category_filter.py`), so a flip left
+  below the one being set would keep half a branch ticked under the longest-prefix rule.
+  **Only the render filters a collapsed row away**: the walk covers the whole tree and
+  reports the selection in its order, so a flip out of sight would leave the URL.
+  **Expansion is a map of twisty clicks, never a set of open slugs** - a set holds a flip's
+  ancestors open and their own twisties inert. `CategoryPicker.test.tsx`.
 - **The date range is always bounded, and every `navigate` carries the whole search.** No
   clear button and no unbounded mode: `DateRangePicker` holds a half-picked range in local
   state and reports nothing until both ends are set, an empty bound being malformed to the

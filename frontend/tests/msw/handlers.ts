@@ -97,16 +97,29 @@ export const MOCK_CATEGORY_TOTALS: PeriodTotal[] = [
 
 // The two names the mock expenses carry, a third nothing is filed under, and one path
 // below the second, in the path order the backend sends - so a test can tick one and
-// tell it from the rest, and the picker has a tree to build rather than a list.
+// tell it from the rest, and the picker has a tree to build rather than a list. The
+// third one's slug carries a numbered suffix its own path gives no hint of, which the
+// loader hands a colliding sibling: a picker deriving a slug instead of sending the one
+// it was given would tick the right box and send the wrong value.
 export const MOCK_CATEGORIES: Category[] = [
-  { category: "Other stub category", name: "Other stub category" },
-  { category: "Stub category", name: "Stub category" },
+  {
+    category: "Other stub category",
+    name: "Other stub category",
+    slug: "other-stub-category",
+  },
+  { category: "Stub category", name: "Stub category", slug: "stub-category" },
   {
     category: "Stub category:Nested stub",
     name: "Nested stub",
+    slug: "stub-category:nested-stub",
     parent: "Stub category",
+    parent_slug: "stub-category",
   },
-  { category: "Third stub category", name: "Third stub category" },
+  {
+    category: "Third stub category",
+    name: "Third stub category",
+    slug: "third-stub-category-1",
+  },
 ];
 
 // Every collection body is an object holding its rows, so a mock has to be one too.
