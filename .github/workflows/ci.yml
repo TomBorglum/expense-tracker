@@ -31,7 +31,7 @@ jobs:
         with:
           # Full history so SonarCloud can attribute issues to the right commits.
           fetch-depth: 0
-      - uses: TomBorglum/actions/setup-direnv@8bb5c662cb67237681564ec96cbb7ed84bc4aed8 # v3.0.0
+      - uses: TomBorglum/actions/direnv/setup@8bb5c662cb67237681564ec96cbb7ed84bc4aed8 # v3.0.0
       # Every step below calls pixi, which forwards to the stack that owns the command
       # (poe in backend/pyproject.toml, pnpm scripts in frontend/package.json). CI knows
       # one entry point, not two.
