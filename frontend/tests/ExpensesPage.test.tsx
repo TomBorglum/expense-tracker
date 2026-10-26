@@ -74,6 +74,24 @@ function recordRequestedCategories() {
   return requested;
 }
 
+// Records what every expenses request says about categories: both lists as the repeated
+// keys the backend reads, and the root's own sign.
+function recordRequestedSelection() {
+  const requested: Record<string, string[] | string | null>[] = [];
+  server.use(
+    http.get(EXPENSES_URL, ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      requested.push({
+        category: params.getAll("category"),
+        not_category: params.getAll("not_category"),
+        category_default: params.get("category_default"),
+      });
+      return collection(MOCK_EXPENSES);
+    }),
+  );
+  return requested;
+}
+
 function dateRangeTrigger() {
   return screen.getByRole("button", { name: /^Dates / });
 }
@@ -92,6 +110,10 @@ async function categoryTriggerEnabled() {
 // to read or tick. Named by the verb, which is also what says it is currently shut.
 async function expand(name: string) {
   await userEvent.click(screen.getByRole("button", { name: `Expand ${name}` }));
+}
+
+function checked(name: string) {
+  return screen.getByRole<HTMLInputElement>("checkbox", { name }).checked;
 }
 
 function requestedCurrencies(requested: Record<string, string | null>[]) {
@@ -342,11 +364,15 @@ test("offers the categories the backend lists, labelled by their own level", asy
   expect(names).toEqual(MOCK_CATEGORIES.map((item) => item.name));
 });
 
-test("sends no category when the URL names none", async () => {
-  const requested = recordRequestedCategories();
+test("sends nothing about categories when the URL names none", async () => {
+  // The default selects every category and says so by sending no key at all, which is
+  // the request this page made before a category could be deselected.
+  const requested = recordRequestedSelection();
   renderPageAt("/");
   await screen.findByRole("table", { name: "Expenses" });
-  expect(requested).toEqual([[]]);
+  expect(requested).toEqual([
+    { category: [], not_category: [], category_default: null },
+  ]);
   expect(categoryTrigger().textContent).toBe("All categories");
 });
 
@@ -374,8 +400,10 @@ test("reads a single category the URL names", async () => {
   ).toBe(true);
 });
 
-test("ticking a category keeps the currency and the range, and asks again", async () => {
-  const requested = recordRequestedCategories();
+test("unticking a category keeps the currency and the range, and asks again", async () => {
+  // Unticking, because every box starts ticked - and one key leaves with it, whatever
+  // the size of the tree, which is what keeps the URL short.
+  const requested = recordRequestedSelection();
   const router = renderPageAt("/?currency=EUR&from_date=2025-01-01&to_date=2025-12-31");
   await screen.findByRole("table", { name: "Expenses" });
   await categoryTriggerEnabled();
@@ -385,20 +413,79 @@ test("ticking a category keeps the currency and the range, and asks again", asyn
 
   // The URL as a string rather than as the parsed search: one value parses back to a
   // bare string, and what matters here is that the other three survived the navigate.
+  // No category_default beside it - a selected root is what an absent flag already
+  // means once nothing is selected by name.
   await waitFor(() => {
     expect(router.state.location.searchStr).toBe(
-      "?currency=EUR&from_date=2025-01-01&to_date=2025-12-31&category=Stub+category",
+      "?currency=EUR&from_date=2025-01-01&to_date=2025-12-31&not_category=Stub+category",
     );
   });
   await waitFor(() => {
-    expect(requested).toEqual([[], ["Stub category"]]);
+    expect(requested.at(-1)).toEqual({
+      category: [],
+      not_category: ["Stub category"],
+      category_default: null,
+    });
   });
 });
 
+test("reads a deselected category the URL names", async () => {
+  // The state the whole control exists for, arriving from the address bar: one path out
+  // and every other box still ticked, including one the backend has yet to list.
+  const requested = recordRequestedSelection();
+  renderPageAt("/?not_category=Stub%20category");
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(requested).toEqual([
+    { category: [], not_category: ["Stub category"], category_default: null },
+  ]);
+  expect(categoryTrigger().textContent).toBe("All but Stub category");
+  await categoryTriggerEnabled();
+  await userEvent.click(categoryTrigger());
+  expect(checked("Stub category")).toBe(false);
+  expect(checked("Other stub category")).toBe(true);
+});
+
+test("asks for an empty selection rather than for every category", async () => {
+  // A request all the same, and an empty table is a 200: this is the view a user adds
+  // categories back to one at a time, so it has to render as empty rather than full.
+  const requested: Record<string, string[] | string | null>[] = [];
+  server.use(
+    http.get(EXPENSES_URL, ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      requested.push({
+        category: params.getAll("category"),
+        category_default: params.get("category_default"),
+      });
+      return collection([]);
+    }),
+  );
+  renderPageAt("/?category_default=none");
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(requested).toEqual([{ category: [], category_default: "none" }]);
+  expect(categoryTrigger().textContent).toBe("No categories");
+  expect(screen.getByText("No expenses match the selected criteria.")).toBeTruthy();
+  await categoryTriggerEnabled();
+  await userEvent.click(categoryTrigger());
+  expect(checked("Stub category")).toBe(false);
+});
+
+test("drops a root default it does not name rather than sending it on", async () => {
+  // group_by's terms rather than the two lists': the backend names exactly two values,
+  // so anything else is read as an absent flag here instead of a 422 nobody could act
+  // on - and the request is the default selection, which is what an absent flag means.
+  const requested = recordRequestedSelection();
+  renderPageAt("/?category_default=every");
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(requested).toEqual([
+    { category: [], not_category: [], category_default: null },
+  ]);
+  expect(categoryTrigger().textContent).toBe("All categories");
+});
+
 test("requests a nested category by its whole path", async () => {
-  // The box reads as its own level, so this is what proves the tick reports the path:
+  // The box reads as its own level, so this is what proves the click reports the path:
   // "Nested stub" on its own would match nothing the backend holds.
-  const requested = recordRequestedCategories();
+  const requested = recordRequestedSelection();
   const router = renderPageAt("/");
   await screen.findByRole("table", { name: "Expenses" });
   await categoryTriggerEnabled();
@@ -406,12 +493,32 @@ test("requests a nested category by its whole path", async () => {
   await expand("Stub category");
   await userEvent.click(screen.getByRole("checkbox", { name: "Nested stub" }));
   await waitFor(() => {
-    expect(requested.at(-1)).toEqual(["Stub category:Nested stub"]);
+    expect(requested.at(-1)?.not_category).toEqual(["Stub category:Nested stub"]);
   });
-  // Percent-encoded in the URL, which is what a separator costs in the address bar.
+  // The separator as it stands in the URL, a colon being legal in a query; the space is
+  // what a form submission spells as a plus.
   expect(router.state.location.searchStr).toContain(
-    "category=Stub+category%3ANested+stub",
+    "not_category=Stub+category:Nested+stub",
   );
+});
+
+test("unticking a parent leaves nothing of its subtree in the URL", async () => {
+  // The cascade, against the URL rather than the model: the child's flip is dropped as
+  // the parent's is added, so the two cannot name overlapping halves of one branch.
+  const requested = recordRequestedSelection();
+  const router = renderPageAt("/?not_category=Stub%20category%3ANested%20stub");
+  await screen.findByRole("table", { name: "Expenses" });
+  await categoryTriggerEnabled();
+  await userEvent.click(categoryTrigger());
+
+  await userEvent.click(screen.getByRole("checkbox", { name: "Stub category" }));
+
+  await waitFor(() => {
+    expect(requested.at(-1)?.not_category).toEqual(["Stub category"]);
+  });
+  expect(
+    new URLSearchParams(router.state.location.searchStr).getAll("not_category"),
+  ).toEqual(["Stub category"]);
 });
 
 test("asks the categories endpoint for the levels the picker shows", async () => {
@@ -432,21 +539,53 @@ test("asks the categories endpoint for the levels the picker shows", async () =>
   });
 });
 
-test("clearing the selection drops the parameter from the URL", async () => {
-  const requested = recordRequestedCategories();
+test("selecting every category leaves no parameter of its own in the URL", async () => {
+  // The risk retainSearchParams carries: a key the next navigate keeps would be one the
+  // picker could not get rid of, and the default selection has to be reachable.
+  const requested = recordRequestedSelection();
   const router = renderPageAt("/?category=Stub%20category");
   await screen.findByRole("table", { name: "Expenses" });
   await categoryTriggerEnabled();
 
   await userEvent.click(categoryTrigger());
-  await userEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  await userEvent.click(screen.getByRole("button", { name: "Select all" }));
 
   // Undefined rather than an empty list: absent is what unfiltered means on the wire.
   await waitFor(() => {
     expect(router.state.location.search).toEqual(YEAR);
   });
+  expect(router.state.location.searchStr).not.toContain("category");
   await waitFor(() => {
-    expect(requested).toEqual([["Stub category"], []]);
+    expect(requested.at(-1)).toEqual({
+      category: [],
+      not_category: [],
+      category_default: null,
+    });
+  });
+});
+
+test("selecting none sends the flag and nothing else", async () => {
+  // One parameter rather than one per category, which is also what makes a category
+  // imported later deselected too.
+  const requested = recordRequestedSelection();
+  const router = renderPageAt("/?not_category=Stub%20category");
+  await screen.findByRole("table", { name: "Expenses" });
+  await categoryTriggerEnabled();
+
+  await userEvent.click(categoryTrigger());
+  await userEvent.click(screen.getByRole("button", { name: "Select none" }));
+
+  await waitFor(() => {
+    expect(router.state.location.searchStr).toBe(
+      "?currency=DKK&from_date=2026-01-01&to_date=2026-12-31&category_default=none",
+    );
+  });
+  await waitFor(() => {
+    expect(requested.at(-1)).toEqual({
+      category: [],
+      not_category: [],
+      category_default: "none",
+    });
   });
 });
 

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -159,6 +159,52 @@ test("carries the categories between the views as well", async () => {
   ]);
 });
 
+test("carries both lists and the root default between the views", async () => {
+  // The one state that needs all three keys: everything except a root, with a branch of
+  // it kept. If any of the three failed to carry, the selection would change on the way
+  // across rather than merely be forgotten.
+  const user = userEvent.setup();
+  const router = renderAppAt(
+    "/?not_category=Stub%20category&category=Stub%20category%3ANested%20stub" +
+      "&category_default=all",
+  );
+  await screen.findByRole("table", { name: "Expenses" });
+
+  await user.click(navLink("Totals"));
+
+  await screen.findByRole("table", { name: "Totals" });
+  expect(router.state.location.search).toEqual({
+    currency: "DKK",
+    ...YEAR,
+    category: "Stub category:Nested stub",
+    not_category: "Stub category",
+    category_default: "all",
+  });
+});
+
+test("leaves no category key behind when the default selection is picked again", async () => {
+  // The risk retainSearchParams carries: it keeps a key the next navigate does not
+  // mention, so all three have to be navigated as undefined rather than left out -
+  // otherwise the default selection would be unreachable from any URL naming one.
+  const user = userEvent.setup();
+  const router = renderAppAt(
+    "/totals?not_category=Stub%20category&category_default=all",
+  );
+  await screen.findByRole("table", { name: "Totals" });
+  const trigger = screen.getByRole("button", { name: /^Categories / });
+  await waitFor(() => {
+    expect(trigger.hasAttribute("disabled")).toBe(false);
+  });
+
+  await user.click(trigger);
+  await user.click(screen.getByRole("button", { name: "Select all" }));
+
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual({ currency: "DKK", ...YEAR });
+  });
+  expect(router.state.location.searchStr).not.toContain("category");
+});
+
 test("carries a category path across the views unsplit", async () => {
   const user = userEvent.setup();
   const router = renderAppAt("/?category=Stub%20category%3ANested%20stub");
@@ -183,17 +229,40 @@ test("spells a list as a key repeated once per value", async () => {
   expect(new URLSearchParams(searchStr).getAll("category")).toEqual(["A", "B"]);
 });
 
-test("spells a category path as the one value it is", async () => {
-  // The separator percent-encodes, and the value still arrives whole: a path is one
-  // category, not two, so neither the serializer nor validateSearch may split it.
+test("spells the deselected list as a repeated key as well", async () => {
+  // The same spelling for the second list, which is what lets the backend read the two
+  // on the same terms.
+  const router = renderAppAt("/?not_category=A&not_category=B");
+  await screen.findByRole("table", { name: "Expenses" });
+  const searchStr = router.state.location.searchStr;
+  expect(searchStr).toContain("not_category=A&not_category=B");
+  expect(new URLSearchParams(searchStr).getAll("not_category")).toEqual(["A", "B"]);
+});
+
+test("spells a category path with the separator it carries", async () => {
+  // A colon is legal in a query as it stands, so the serializer puts back the one a form
+  // submission would escape: a path reads in the address bar the way it reads everywhere
+  // else. Typed either way it arrives whole - a path is one category, not two, so
+  // neither the serializer nor validateSearch may split it.
   const router = renderAppAt("/?category=Settlement%3AAlice&category=Car");
   await screen.findByRole("table", { name: "Expenses" });
   const searchStr = router.state.location.searchStr;
-  expect(searchStr).toContain("category=Settlement%3AAlice&category=Car");
+  expect(searchStr).toContain("category=Settlement:Alice&category=Car");
+  expect(searchStr).not.toContain("%3A");
   expect(new URLSearchParams(searchStr).getAll("category")).toEqual([
     "Settlement:Alice",
     "Car",
   ]);
+});
+
+test("escapes a value that holds the separator's own escape", async () => {
+  // The one value putting the colon back could damage: a category whose name reads
+  // "%3A" is serialized as "%253A", which holds no "%3A" to replace, and still parses
+  // back as the text it was.
+  const router = renderAppAt("/?category=A%253AB");
+  await screen.findByRole("table", { name: "Expenses" });
+  expect(router.state.location.searchStr).toContain("category=A%253AB");
+  expect(router.state.location.search.category).toBe("A%3AB");
 });
 
 test("reads every parameter as the string it was typed", async () => {

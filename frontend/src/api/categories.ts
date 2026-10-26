@@ -29,6 +29,13 @@ export interface CategoriesQuery {
 // backend's MAX_LEVEL - any value inside that cap is a valid request.
 export const CATEGORY_LEVELS: CategoriesQuery = { to_level: "3" };
 
+// The two values ?category_default= takes, naming the root's own sign. Declared here
+// rather than beside ExpensesQuery because both query types carry them and the picker's
+// model reads them: the same reason CATEGORY_GROUPING sits in totals.ts.
+export const ALL_CATEGORIES = "all";
+export const NO_CATEGORIES = "none";
+export type CategoryDefault = typeof ALL_CATEGORIES | typeof NO_CATEGORIES;
+
 export const CATEGORIES_PATH = "/api/expenses/categories";
 
 // Exported for the same reason EXPENSES_URL is: msw resolves a path-only handler against
@@ -74,6 +81,13 @@ export function categoryFilter(value: unknown): string[] | undefined {
   const values = Array.isArray(value) ? value : [value];
   const names = values.filter((item): item is string => typeof item === "string");
   return names.length === 0 ? undefined : names;
+}
+
+// The root's sign as validateSearch reads it, on group_by's terms rather than the two
+// lists': the backend names exactly two values, so anything else is an absent flag here
+// instead of a 422 nobody could act on - and the type then guarantees what is sent.
+export function categoryDefault(value: unknown): CategoryDefault | undefined {
+  return value === ALL_CATEGORIES || value === NO_CATEGORIES ? value : undefined;
 }
 
 // A factory rather than the constant it was, for the reason expensesQueryOptions is

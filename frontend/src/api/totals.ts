@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { type CategoryDefault } from "./categories";
 import { fetchCollection } from "./fetchList";
 
 // The wire contract, written out by hand, the same way expenses.ts writes out its own.
@@ -90,15 +91,19 @@ function isRangeAverageList(payload: unknown): payload is RangeAverage[] {
   return Array.isArray(payload) && payload.every(isRangeAverage);
 }
 
-// The query half of the same contract. group_by and category are optional on both sides
-// and mean the same thing by their absence: sum the categories together and leave the
-// field off the row, and draw from every category rather than the ones named.
+// The query half of the same contract. group_by and the category keys are optional
+// parameters on the backend and mean the same thing by their absence: sum the categories
+// together and leave the field off the row, and draw from every category rather than the
+// ones named. The three category keys are required here and `| undefined` on
+// ExpensesQuery's terms; group_by stays optional, being the one key ungrouped() deletes.
 export interface TotalsQuery {
   currency: string;
   from_date: string;
   to_date: string;
   group_by?: typeof CATEGORY_GROUPING;
-  category?: string[];
+  category: string[] | undefined;
+  not_category: string[] | undefined;
+  category_default: CategoryDefault | undefined;
 }
 
 export async function fetchTotals(
@@ -116,9 +121,15 @@ export async function fetchTotals(
     // ungrouped request is the one that omits the parameter altogether.
     url.searchParams.set("group_by", query.group_by);
   }
-  // Appended rather than set: the backend reads the key once per value.
+  // Appended rather than set: the backend reads either key once per value.
   for (const name of query.category ?? []) {
     url.searchParams.append("category", name);
+  }
+  for (const name of query.not_category ?? []) {
+    url.searchParams.append("not_category", name);
+  }
+  if (query.category_default !== undefined) {
+    url.searchParams.set("category_default", query.category_default);
   }
   return fetchCollection(
     TOTALS_PATH,

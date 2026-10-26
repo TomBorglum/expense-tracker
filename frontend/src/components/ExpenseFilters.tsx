@@ -8,6 +8,7 @@ import {
   targetCurrencies,
 } from "../api/currencies";
 import { type ExpensesQuery } from "../api/expenses";
+import { selectionFromSearch, selectionToSearch } from "../categorySelection";
 import { CategoryPicker } from "./CategoryPicker";
 import { CurrencySelect } from "./CurrencySelect";
 import { DateRangePicker } from "./DateRangePicker";
@@ -54,13 +55,14 @@ export function ExpenseFilters({ search, onChange, children }: ExpenseFiltersPro
         }}
       />
       <CategoryPicker
-        selected={search.category ?? []}
+        selection={selectionFromSearch(search)}
         options={categoryOptions}
         disabled={categoryOptions.length === 0}
         onChange={(next) => {
-          // Undefined rather than [], so an emptied selection leaves the URL and the
-          // request the way an absent parameter does.
-          onChange({ category: next.length === 0 ? undefined : next });
+          // All three keys every time, undefined where the selection says nothing: the
+          // route spreads this over the whole search, so a key left out would keep the
+          // value it had rather than being cleared.
+          onChange(selectionToSearch(next));
         }}
       />
       {children}

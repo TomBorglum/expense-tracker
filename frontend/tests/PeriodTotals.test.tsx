@@ -17,6 +17,9 @@ const QUERY: TotalsQuery = {
   currency: BASE_CURRENCY,
   from_date: "2026-01-01",
   to_date: "2026-12-31",
+  category: undefined,
+  not_category: undefined,
+  category_default: undefined,
 };
 
 const GROUPED: TotalsQuery = { ...QUERY, group_by: CATEGORY_GROUPING };
@@ -314,6 +317,7 @@ test("asks the API for the parameters it was given", async () => {
     }),
   );
   renderPeriodTotals({
+    ...QUERY,
     currency: "EUR",
     from_date: "2025-01-01",
     to_date: "2025-12-31",

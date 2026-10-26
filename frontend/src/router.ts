@@ -25,7 +25,10 @@ function stringifySearch(search: Record<string, unknown>): string {
       }
     }
   }
-  const text = params.toString();
+  // URLSearchParams escapes every character outside the unreserved set, the category
+  // separator among them; a colon is legal in a query, so it goes back in. A value
+  // holding the text "%3A" was escaped to "%253A", which this does not match.
+  const text = params.toString().replaceAll("%3A", ":");
   return text === "" ? "" : `?${text}`;
 }
 

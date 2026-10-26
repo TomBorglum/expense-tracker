@@ -17,6 +17,9 @@ const QUERY: ExpensesQuery = {
   currency: BASE_CURRENCY,
   from_date: "2026-08-01",
   to_date: "2026-08-31",
+  category: undefined,
+  not_category: undefined,
+  category_default: undefined,
 };
 
 function renderExpensesTable(query: ExpensesQuery = QUERY) {
@@ -172,6 +175,7 @@ test("asks the API for the parameters it was given", async () => {
     }),
   );
   renderExpensesTable({
+    ...QUERY,
     currency: "EUR",
     from_date: "2025-01-01",
     to_date: "2025-12-31",
