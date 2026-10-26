@@ -332,6 +332,30 @@ def _ancestry(path: str) -> tuple[str, ...]:
     return tuple(SEPARATOR.join(levels[:depth]) for depth in range(1, len(levels) + 1))
 
 
+def _first_filenames(nodes: Iterable[CategoryNode]) -> dict[str, str]:
+    """The earliest filename each node and each of its ancestors was seen in."""
+    first: dict[str, str] = {}
+    for node in nodes:
+        for path in _ancestry(node.category):
+            seen = first.get(path)
+            if seen is None or node.filename < seen:
+                first[path] = node.filename
+    return first
+
+
+def _free_name(base: str, taken: set[str]) -> str:
+    """The base level slug, or the lowest numbered one its siblings leave free."""
+    # The next free one rather than base-1 outright: a sibling genuinely named
+    # "Going Out 1" slugs to going-out-1 on its own, and taking that would repoint
+    # its URL at another category.
+    name = base
+    suffix = 0
+    while name in taken:
+        suffix += 1
+        name = f"{base}-{suffix}"
+    return name
+
+
 def assign_slugs(nodes: Iterable[CategoryNode]) -> dict[str, AssignedCategory]:
     """Every node's slug, keyed by its real path, with the ancestors filled in.
 
@@ -346,12 +370,7 @@ def assign_slugs(nodes: Iterable[CategoryNode]) -> dict[str, AssignedCategory]:
     on it, and the numbering is per sibling group: a parent's slug already separates one
     branch from another.
     """
-    first: dict[str, str] = {}
-    for node in nodes:
-        for path in _ancestry(node.category):
-            seen = first.get(path)
-            if seen is None or node.filename < seen:
-                first[path] = node.filename
+    first = _first_filenames(nodes)
 
     by_level: dict[int, list[str]] = defaultdict(list)
     for path in first:
@@ -362,15 +381,7 @@ def assign_slugs(nodes: Iterable[CategoryNode]) -> dict[str, AssignedCategory]:
     for level in sorted(by_level):
         for path in sorted(by_level[level], key=lambda path: (first[path], path)):
             parent = path_parent(path)
-            base = slug_level(path_name(path))
-            name = base
-            suffix = 0
-            # The next free one rather than base-1 outright: a sibling genuinely named
-            # "Going Out 1" slugs to going-out-1 on its own, and taking that would
-            # repoint its URL at another category.
-            while name in taken[parent]:
-                suffix += 1
-                name = f"{base}-{suffix}"
+            name = _free_name(slug_level(path_name(path)), taken[parent])
             taken[parent].add(name)
             assigned[path] = AssignedCategory(
                 slug=(
