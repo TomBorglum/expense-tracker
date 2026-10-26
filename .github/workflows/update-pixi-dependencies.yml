@@ -30,7 +30,7 @@ jobs:
   # and .envrc needs no stubbed directives - `use pixi` and `dotenv_if_exists` are both
   # defined by setup-direnv and direnv itself.
   update:
-    uses: TomBorglum/workflows/.github/workflows/update-pixi-dependencies.yml@4ffb14cb79301f3def270fe8837a9570dcf07eef # v1.0.0
+    uses: TomBorglum/workflows/.github/workflows/update-pixi-dependencies.yml@7f08799c4365838af1cf7f2efebcea0a01704002 # v1.0.1
     secrets:
       app-client-id: ${{ secrets.AUTOMATION_APP_CLIENT_ID }}
       app-private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
