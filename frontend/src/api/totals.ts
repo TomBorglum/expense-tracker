@@ -122,11 +122,11 @@ export async function fetchTotals(
     url.searchParams.set("group_by", query.group_by);
   }
   // Appended rather than set: the backend reads either key once per value.
-  for (const name of query.category ?? []) {
-    url.searchParams.append("category", name);
+  for (const slug of query.category ?? []) {
+    url.searchParams.append("category", slug);
   }
-  for (const name of query.not_category ?? []) {
-    url.searchParams.append("not_category", name);
+  for (const slug of query.not_category ?? []) {
+    url.searchParams.append("not_category", slug);
   }
   if (query.category_default !== undefined) {
     url.searchParams.set("category_default", query.category_default);

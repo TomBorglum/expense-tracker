@@ -73,15 +73,21 @@ class CurrencyPayload(BaseModel):
 class CategoryPayload(BaseModel):
     """One category as GET /api/expenses/categories sends it.
 
-    `category` is the whole colon-separated path. `name` is its last level and `parent`
-    the path above it, so no client has to know what joins one level to the next.
-    `parent` is dumped with exclude_none, so a depth-1 category carries no such key at
-    all rather than an empty one.
+    `category` is the whole colon-separated path and `name` is its last level: between
+    them, what to show the user. `slug` is the same path spelled for a URL, and is what
+    ?category= and ?not_category= take - so a client identifies a category by `slug` and
+    displays `name`, never parsing either.
+
+    `parent` and `parent_slug` are the paths above, which is what lets a client build
+    the tree without knowing what joins one level to the next. Both are dumped with
+    exclude_none, so a depth-1 category carries neither key rather than an empty one.
     """
 
     category: str
     name: str
+    slug: str
     parent: str | None = None
+    parent_slug: str | None = None
 
 
 class PeriodTotalPayload(BaseModel):
@@ -301,10 +307,17 @@ def create_app() -> FastAPI:
         levels = parse_level_range(from_level, to_level)
         payload = [
             CategoryPayload(
-                category=path, name=path_name(path), parent=path_parent(path)
+                category=node.category,
+                name=path_name(node.category),
+                slug=node.slug,
+                parent=path_parent(node.category),
+                # The same helper over the slug: a slug is a path of the same shape,
+                # joined by the same separator, which is what spares a client splitting
+                # one.
+                parent_slug=path_parent(node.slug),
             )
             # The repository's order, reproduced untouched.
-            for path in await expenses.list_categories(levels)
+            for node in await expenses.list_categories(levels)
         ]
         # exclude_none for the reason the totals dump has it: a depth-1 category has no
         # parent, and an absent key says that where an empty string would not.

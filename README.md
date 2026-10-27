@@ -21,7 +21,7 @@ expense-tracker/
   .github/                      # CI, release-please, dependabot
   backend/
     pyproject.toml              # hatchling, ruff, pytest, basedpyright, poe tasks
-    schema.sql                  # the whole schema: two tables and an index
+    schema.sql                  # the whole schema: four tables and their indexes
     data/currencies/            # the committed exchange rates, loaded into the database
     src/expense_tracker/        # __init__ (the API), deps, config, db,
                                 #   expense_repository, expense_loader
@@ -100,9 +100,9 @@ error state until something answers on 8000.
 | `GET /api/expenses` | `[{"amount", "currency", "date", "category", "key"}, ...]` - the `ExpensePayload` model |
 | `GET /api/expenses?currency=EUR` | The same, restated in one currency |
 | `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
-| `GET /api/expenses?category=Food&category=Housing` | Only the expenses in either category, or under it |
-| `GET /api/expenses?not_category=Food` | Every expense except the ones in Food, or under it; `category_default` names the root's own sign |
-| `GET /api/expenses/categories` | `[{"category", "name", "parent"}, ...]` - the `CategoryPayload` model, every category at the levels asked for, once each, in path order; takes `from_level` and `to_level` |
+| `GET /api/expenses?category=food&category=housing` | Only the expenses in either category, or under it - each value a category **slug** |
+| `GET /api/expenses?not_category=food` | Every expense except the ones in `food`, or under it; `category_default` names the root's own sign |
+| `GET /api/expenses/categories` | `[{"category", "name", "slug", "parent", "parent_slug"}, ...]` - the `CategoryPayload` model, every category at the levels asked for, once each, in path order; takes `from_level` and `to_level` |
 | `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and the three category parameters too; its body carries a `summary` beside `items` |
 | `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
 
@@ -203,22 +203,28 @@ and are tested in `backend/tests/test_date_range.py`.
 
 ### Asking for one or more categories
 
-`?category=` narrows the list to the expenses in the category named. **The key repeats
-once per value**, so `?category=Food&category=Housing` is every expense in either, and a
-value given twice counts once. Give none and the request is the one that was there
-before the parameter existed.
+**Every value is a slug, never a category path.** A slug is the URL spelling of a
+category - `going-out:jalsa-pool` for `Going Out:Jalsa+pool` - assigned once as the
+expenses are loaded and sent on every payload that names a category; see
+[Category slugs](#category-slugs). A path in `?category=` matches nothing, the way any
+other unknown value does.
+
+`?category=` narrows the list to the expenses in the category whose slug it names. **The
+key repeats once per value**, so `?category=food&category=housing` is every expense in
+either, and a value given twice counts once. Give none and the request is the one that was
+there before the parameter existed.
 
 `?not_category=` is the same key read the other way: every expense **except** the ones in
 the category named. The two compose, because what a request states is not a list of
 categories but **where the selection changes**: the root has a sign, each value flips a
-subtree, and **the longest path over a row decides**. So `?category=Settlement` is the
-settlements alone, `?not_category=Settlement` is everything else, and
-`?category=Settlement&not_category=Settlement:Alice` is the settlements except hers. A
-path in both lists is refused rather than resolved - two flips of the same length over
-one path, so neither is the longer one.
+subtree, and **the longest slug over a row decides**. So `?category=settlement` is the
+settlements alone, `?not_category=settlement` is everything else, and
+`?category=settlement&not_category=settlement:alice` is the settlements except hers. A
+slug in both lists is refused rather than resolved - two flips of the same length over
+one node, so neither is the longer one.
 
 `?category_default=` is the root's own sign, `all` or `none`. Absent, it is `all` unless
-`?category=` names a path, in which case it is `none`: that is what keeps a request naming
+`?category=` names a slug, in which case it is `none`: that is what keeps a request naming
 categories meaning those and no others, which is what it meant before anything could be
 deselected. So the flag is needed in exactly two places - `?category_default=none` alone,
 which selects **nothing** and is `200 {"items": []}` rather than every row, and
@@ -226,46 +232,52 @@ which selects **nothing** and is `200 {"items": []}` rather than every row, and
 branch of that subtree kept. A client that sends none of the three asks for every
 category, as it always did.
 
-A value is matched the way the loader stored it: **stripped level by level, then
-verbatim**, so `?category=%20Food` is `Food` and `?category=food` is another category
-altogether. That is the loader's own rule rather than a second one - it strips every
-level of every field and keeps the case it read - so the filter meets a stored value on
-the terms it was stored under, and the API never folds case on a client's behalf, as it
-never uppercases a currency code.
+A value is matched the way the loader stored the slug: **stripped level by level, then
+verbatim**, so `?category=%20food` is `food` and `?category=Food` matches nothing, every
+slug being lower case. That is the loader's own strip rather than a second rule, so the
+filter meets a stored value on the terms it was stored under, and the API folds no case on
+a client's behalf, as it never uppercases a currency code.
 
-**A value matches the node it names together with every path below it.** So
-`?category=Settlement` is every settlement and `?category=Settlement:Alice` is only
+**A value matches the node it names together with every node below it.** So
+`?category=settlement` is every settlement and `?category=settlement:alice` is only
 hers. Over categories that carry no path the two are the same thing, which is why every
 request written before paths existed still means exactly what it meant.
 
-The filtering is one `WHERE` clause beside the two date clauses - a `CASE` whose arms are
-the flips in longest-path order, each `= path OR LIKE path || ':%'`, falling through to the
-root's sign - not a pass over the rows in Python, and it
+The filtering is one `WHERE` clause beside the two date clauses - a join from
+`expense.category` to the `category` table, then a `CASE` whose arms are the flips in
+longest-slug order, each `= slug OR LIKE slug || ':%'`, falling through to the root's
+sign - not a pass over the rows in Python, and it
 composes with `?currency=`, `?from_date=` and `?to_date=` the way
 those compose with each other: all three narrow the query, and the conversion runs over
-whatever they left. `schema.sql` gained no index for it - the table is small and
-`expense_oldest_first_idx` already orders the scan. **A category nobody has spent in is
+whatever they left. `expense` gained no index for it - the table is small and
+`expense_oldest_first_idx` already orders the scan - while `category` carries one for the
+slug it is joined on and one for the level the list is read by. **A category nobody has
+spent in is
 `200 {"items": []}`**, for the reason an empty table is: it is an answer, not a fault.
 The filter is not checked against the list below first - a category is whatever a file
 said, and the check would be a second query on every request.
 
 `GET /api/expenses/categories` is that list: every category at the levels asked for,
-**once each and in path order**, as
-`{"items": [{"category": "Settlement:Alice", "name": "Alice", "parent": "Settlement"}]}`.
-`name` is the path's last level and `parent` the path above it, so **no client has to
-know what joins one level to the next**; a depth-1 category carries no `parent` key at
-all rather than an empty one. The deduplication and the ordering are the repository's,
-`list_categories` in `backend/src/expense_tracker/expense_repository.py`, not a pass over
-the rows in Python: the route reproduces the order it is handed, as the other three do.
+**once each and in path order**, as `{"items": [{"category": "Settlement:Alice", "name":
+"Alice", "slug": "settlement:alice", "parent": "Settlement", "parent_slug":
+"settlement"}]}`. `name` is the path's last level and `parent` the path above it, so **no
+client has to know what joins one level to the next**; a depth-1 category carries neither
+parent key at all rather than an empty one. `slug` is what the three filter parameters
+take and `parent_slug` is the slug above it, so a client keys its own tree on the pair it
+sends and shows `name` - it derives no slug of its own, there being nothing in a path to
+derive one of the numbered ones from. The ordering is the repository's, `list_categories`
+in `backend/src/expense_tracker/expense_repository.py`, not a pass over the rows in
+Python: the route reproduces the order it is handed, as the other three do.
 
 `?from_level=` and `?to_level=` choose the depths, both inclusive. **Absent, they are the
 top level alone** - the response this endpoint gave before they existed - and an absent
 `to_level` is whatever `from_level` is, so `?from_level=2` is exactly depth 2 while
-`?to_level=3` is depths 1 through 3. Each level is one `SELECT` truncating `category` to
-that depth, `UNION`ed, so **an ancestor nobody filed anything directly under is still
-listed**: `Settlement` appears even when every settlement is `Settlement:<someone>`, and
-without that it could not be selected. `MAX_LEVEL` in
-`backend/src/expense_tracker/level_range.py` bounds how many legs a client can ask for.
+`?to_level=3` is depths 1 through 3. The `category` table holds one row per node with its
+own depth, so the range is a plain `WHERE level IN (...)`, and **an ancestor nobody filed
+anything directly under is still listed**: `Settlement` appears even when every settlement
+is `Settlement:<someone>`, because the loader wrote that row too, and without it the node
+could not be selected. `MAX_LEVEL` in
+`backend/src/expense_tracker/level_range.py` bounds how many levels a client can name.
 The cluster is `initdb --locale=C`, so name order is byte order - `Zoo` before `apple` -
 which is the order Python's `sorted()` gives too. **An empty table is
 `200 {"items": []}`** and an unreachable database
@@ -278,7 +290,7 @@ A blank value is a `422` carrying the same plain-string `detail`:
 | `?category=` | `{"detail": "category must not be blank"}` |
 | `?category=%20` | `{"detail": "category must not be blank"}` |
 | `?not_category=` | `{"detail": "category must not be blank"}` |
-| `?category=Food&not_category=Food` | `{"detail": "category both selected and deselected: Food"}` |
+| `?category=food&not_category=food` | `{"detail": "category both selected and deselected: food"}` |
 | `?category_default=every` | `{"detail": "unknown category_default: every"}` |
 | `?from_level=two` | `{"detail": "from_level must be a whole number"}` |
 | `?from_level=0` | `{"detail": "from_level must be 1 or more"}` |
@@ -301,17 +313,63 @@ is the whole reason the second level is not a column of its own.
 The separator is declared twice and only twice: `SEPARATOR` in `category_filter.py`, and
 the `expense_category_is_a_path` CHECK in `schema.sql` that refuses an empty level. That
 CHECK is what makes **no level able to contain the separator**, so splitting a path or
-joining one back up is lossless and **nothing anywhere needs escaping** - not the SQL,
-not the URL, not the payload. Matching is by level rather than by characters, which is
-why the clause has two legs: `Foodstuffs` is not under `Food`.
+joining one back up is lossless and **nothing needs escaping between the levels** - not
+the SQL, not the URL, not the payload. Matching is by level rather than by characters,
+which is why the clause has two legs: `foodstuffs` is not under `food`.
 
 PostgreSQL's own `ltree` models exactly this and is deliberately not used. Its labels
 forbid a space in a name, it is a contrib extension this project would have to depend on,
 and with the CHECK above a prefix match on plain `text` is already exact. It stays the
-upgrade path if the table ever outgrows the scan. For the same reason the level query is
-one `SELECT` per level rather than a `generate_series` join: the union reads as the rule
-and keeps `MAX_LEVEL` meaningful, and `generate_series` is the form to switch to on the
-day that cap is dropped.
+upgrade path if the table ever outgrows the scan.
+
+#### Category slugs
+
+A category path is what a file said, and **what a file said is not safe to put in a
+URL**. `Going Out:Jalsa+pool` carries a space and a plus; percent-encode them and the
+address bar reads `Going%20Out%3AJalsa%2Bpool`, and the plus cannot be freed the way the
+colon is, `+` being what `application/x-www-form-urlencoded` already spells a space as. So
+the value a user reads and the value a URL carries part company: every category also has a
+**slug**, and the slug is what the API takes and what the frontend puts in the URL.
+
+A slug holds `a-z`, `0-9`, `-` within a level and `:` between levels, and nothing else -
+the one character in it a query escapes is the colon, which `frontend/src/router.ts` puts
+back, so a category URL carries no percent sign at all. One level becomes one slug level
+by lower-casing it, transliterating the three Danish letters (`ae`, `oe`, `aa`) and
+stripping any other diacritic, then collapsing each run of anything left to a single `-`
+and trimming the ends: `Jalsa & pool` is `jalsa-pool`, `100%` is `100`. A level that comes
+out empty - punctuation alone, or letters no transliteration reaches - is refused while
+loading rather than given a fallback that would name this category and some other.
+
+Two siblings can want one slug, and the **second is numbered rather than refused**:
+`Going Out` is `going-out` and `Going-Out` is `going-out-1`, with the next free number
+taken, so a real `Going Out 1` beside them keeps `going-out-1` for itself and pushes the
+collision to `going-out-2`. The numbering is **per sibling group**, a parent's own slug
+already separating the branches. Upstream data is never asked to change for it.
+
+Which sibling gets the bare slug is decided by **order of first appearance in file-name
+order, then by path within a file**, which makes the assignment a function of the loaded
+files and nothing else. Two invariants follow, and both are checked rather than assumed:
+
+- **The same files give the same slugs**, however they were loaded, so a link survives a
+  `backend-db-reset` and a reload.
+- **Loading a new file never changes a slug already assigned.** A later month sorts last
+  and can only append.
+
+The one case that would break the second is **backfilling** - loading `2024-01.yaml` after
+`2026-*.yaml`, where the earlier name sorts ahead of the slugs already assigned. The
+loader recomputes every slug on every file, compares them with the stored ones, and
+**refuses the file** if any would move, naming the category and both slugs, on the same
+terms as any other file problem. The fix is the rebuild that is the ordinary path here
+anyway.
+
+The slugs live in the `category` table, one row per node with its path, its slug, its
+depth and the file it first appeared in - the ancestors included, since an ancestor's slug
+is a component of every slug below it, and since a node nothing is filed directly under
+still has to be selectable. `UNIQUE (slug)` sits behind the assignment as a backstop: with
+the numbering correct it cannot fire, so a violation is a bug in this project rather than
+anything the data did. `slug_level` is in `category_filter.py` and `assign_slugs` in
+`expense_loader.py`, both of which know no database; the tests are in
+`backend/tests/test_category_filter.py` and `backend/tests/test_expense_loader.py`.
 
 ### Asking for totals
 
@@ -427,9 +485,9 @@ than passing it to a router with no such route.
 
 ## Database
 
-PostgreSQL, holding three tables: `loaded_expense_file` and `expense`, which together are
-a view of the files in `$EXPENSE_DATA_DIR`, and `currency_rate`, which is a view of
-`backend/data/currencies/`. See [Loading expenses](#loading-expenses) and
+PostgreSQL, holding four tables: `loaded_expense_file`, `expense` and `category`, which
+together are a view of the files in `$EXPENSE_DATA_DIR`, and `currency_rate`, which is a
+view of `backend/data/currencies/`. See [Loading expenses](#loading-expenses) and
 [Loading exchange rates](#loading-exchange-rates).
 
 The server is a **pixi dependency**, not a container. `postgresql` is pinned in
@@ -472,14 +530,14 @@ a server: the `postgres`-marked tests need it, and the two loaders do too.
 
 ### Schema and access
 
-`backend/schema.sql` is the entire schema and the only DDL. There is no Alembic - two
-append-only tables rebuildable from the expense files do not earn a migration
+`backend/schema.sql` is the entire schema and the only DDL. There is no Alembic - a
+handful of tables rebuildable from the expense files do not earn a migration
 tool - and the app issues no DDL of its own, so nothing but `db-init` ever runs it.
 Every statement in it is idempotent, because `db-init` re-runs against live clusters.
 Generated keys use `GENERATED ALWAYS AS IDENTITY` rather than `bigserial`, which
 PostgreSQL's own
 [Don't Do This](https://wiki.postgresql.org/wiki/Don%27t_Do_This) page advises against
-for new applications. The `LoadedExpenseFile` and `Expense` models declare the same
+for new applications. The `LoadedExpenseFile`, `Expense` and `Category` models declare the same
 tables a second time, in Python, with nothing checking the agreement; change both
 together.
 
@@ -490,7 +548,7 @@ Access is SQLAlchemy 2 async over asyncpg, split across five modules:
 | `__init__.py` | `create_app()`, the route, the exception handler, `ExpensePayload` |
 | `deps.py` | the lifespan, the per-request session, and the `provide_expense_repository` seam |
 | `expense_loader.py` | the month-file parser and the `python -m` entry point - the only thing that writes |
-| `expense_repository.py` | `LoadedExpenseFile`, `Expense`, and the expense repository |
+| `expense_repository.py` | `LoadedExpenseFile`, `Expense`, `Category`, and the expense repository |
 | `db.py` | the declarative `Base` every repository module builds on |
 | `config.py` | the database connection settings, and nothing else |
 
@@ -601,7 +659,7 @@ here. An `import` states the rest.
 | `datetime` | RFC 3339, with an offset | The day it names is `expense_date`; the offset is never applied |
 | `amount` | decimal | At most two decimal places; may be negative; never zero |
 | `currency` | ISO 4217 alpha-3 | Uppercase |
-| `category` | a `:`-separated path | Each level stripped; no level may be empty |
+| `category` | a `:`-separated path | Each level stripped; no level may be empty, nor slug to nothing |
 | `key` | the bank's own text for the record | Stripped; never blank |
 
 A third decimal place is refused rather than rounded away by `numeric(12, 2)` in
@@ -626,8 +684,16 @@ purchases, so the rows themselves cannot say whether they have been loaded, and 
 them would silently collapse a pair of same-day fill-ups into one and make the month
 come up short.
 
-Each file is its own transaction: its ledger row and its expenses commit together or
-not at all, so a run that dies half way can simply be re-run.
+Each file is its own transaction: its ledger row, its expenses and the category rows it
+introduces commit together or not at all, so a run that dies half way can simply be
+re-run.
+
+**The `category` table is derived rather than added to**, which is a third shape beside
+the two loaders' own: `expense` is append-only and `currency_rate` is replaced whole,
+while `category` is extended and verified. Each file's load recomputes every slug from the
+stored rows plus that file's own categories, refuses the file if a stored slug would
+move, and inserts the nodes that are new, ancestors included. What it refuses and why is
+[Category slugs](#category-slugs).
 
 **Editing a loaded file is refused.** A known filename arriving with a different digest
 stops the run, naming the file and when it was taken in. Skipping it would make a typo
@@ -655,7 +721,9 @@ It is the cure for a **schema change**, too. Every statement in `schema.sql` is
 `CREATE ... IF NOT EXISTS`, so `db-init` adds what is missing but never renames or alters
 what is already there. Pulling a branch that changes a column or a table name means
 resetting the cluster, not re-running `db-init`. A branch that only *adds* a table - as
-`currency_rate` did - needs no reset, just `db-init`.
+`currency_rate` did - needs no reset, just `db-init`. A table the loader is what fills -
+as `category` is - needs the reset all the same once anything is loaded: the ledger would
+skip every file and so write no rows into it.
 
 ### Loading exchange rates
 
@@ -815,7 +883,7 @@ categories, and that selection is the `?category=`, `?not_category=` and
 `?category_default=` the table and the totals ask the API for - **each list repeats its
 key once per value**, as described under
 [Asking for one or more categories](#asking-for-one-or-more-categories). The filtering
-stays the backend's: the frontend sends paths and drops no row of its own, and the totals
+stays the backend's: the frontend sends slugs and drops no row of its own, and the totals
 view hands the same selection to its subtotal and its breakdown, so a period is summed
 over the expenses it is split by.
 
@@ -826,12 +894,13 @@ and no node costs a round trip to read; `from_level` is the backend's own parame
 nothing here sends it.
 
 **The panel is a tree, indented, and each box reads as its own level** - `Alice` under
-`Settlement`, not `Settlement:Alice` - which is what the payload's `name` and `parent` are
-for: nothing on this side splits a path, so the separator stays the backend's alone. The
-tree is built from `parent` rather than from the order the list arrived in, because path
-order is only nearly pre-order: a level name beginning with a character below `:` sorts
-between a node and its own children, and a walk that trusted the order would nest it in
-the wrong place.
+`Settlement`, not `Settlement:Alice` - which is what the payload's `name` and `parent_slug`
+are for: nothing on this side splits a path or a slug, so the separator stays the
+backend's alone, and **no slug is ever derived here** - the one the payload carries is the
+one that goes out. The tree is built from `parent_slug` rather than from the order the
+list arrived in, because path order is only nearly pre-order: a level name beginning with
+a character below `:` sorts between a node and its own children, and a walk that trusted
+the order would nest it in the wrong place.
 
 **Every box starts ticked**, because the default is every category and the panel says so
 rather than leaving an empty list to mean the same thing. **Unticking a box unticks its
@@ -841,7 +910,7 @@ in again, which is how one branch of something otherwise deselected is kept: unt
 `Settlement`, tick `Alice` under it, and the request is everything except the settlements,
 hers included.
 
-**A box reports the whole path**, so `Alice` is `Settlement:Alice` on the wire. What the
+**A box reports the whole slug**, so `Alice` is `settlement:alice` on the wire. What the
 URL carries is not the list of ticked categories but **where the selection departs from
 the root's sign**: dropping one category out of forty is one `not_category` value rather
 than thirty-nine `category` ones. `frontend/src/categorySelection.ts` is where that is
@@ -853,15 +922,16 @@ the next, and **Select all** and **Select none** reach the two extremes in one c
 both present and each disabled at the end it leads to, so the panel is the same size
 whatever is selected. Select none is what makes a selection additive: empty it and tick
 the few categories you want, rather than untick the many you do not. The trigger reads
-**All categories** or **No categories** at the extremes, names the single path that is
+**All categories** or **No categories** at the extremes, names the single slug that is
 missing or the single one that is picked, and counts past that - a fixed width either way,
 so the filter row never moves as the selection changes.
 
 The selection lives in the **URL** alongside the rest, and is spelled the way the API
-reads it: `/?not_category=Car` is a link worth sending and one you can type by hand. A
-path keeps its separator there - `?not_category=Settlement:Alice` - because a colon is
+reads it: `/?not_category=car` is a link worth sending and one you can type by hand. A
+slug keeps its separator there - `?not_category=settlement:alice` - because a colon is
 legal in a query string as it stands: `URLSearchParams` escapes it to `%3A` and the
-router puts it back, so the URL reads the way the categories do. Typed either way it
+router puts it back, so the URL reads the way the categories do and **carries no percent
+sign at all**, which is the whole point of a slug. Typed either way it
 arrives as the single value it is. The empty selection is `?category_default=none` on
 its own, and the default selection is no category parameter at all - which is why all
 three are navigated together, `undefined` where empty: `retainSearchParams` keeps a key
@@ -871,12 +941,13 @@ would be a trap.
 That is the router's own doing - `frontend/src/router.ts` replaces TanStack Router's
 default search serializer, which would write a JSON array and turn a hand-typed
 `?from_date=2026` into a number, with one that repeats a key per value and reads every
-parameter as the string it was typed, leaving the separator in a path alone (a value
+parameter as the string it was typed, leaving the separator in a slug alone (a value
 that itself reads `%3A` is escaped to `%253A`, which the put-back cannot reach).
-`validateSearch` folds one value or several into a list and checks nothing else: a name
+`validateSearch` folds one value or several into a list and checks nothing else: a slug
 the ledger does not hold is passed through and answered with an empty `items` array, an
 empty `?category=` with the 422 `category_filter.py` raises, and either is shown as it
-stands - a path the list does not offer still appears, flipped, at the top.
+stands - a slug the list does not offer still appears, flipped and labelled with itself,
+at the top.
 
 A list that has not arrived, fails, or comes back empty leaves the control disabled and
 does not disturb the table below - they are two requests, like the rate table and the

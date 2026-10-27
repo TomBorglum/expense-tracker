@@ -1,8 +1,8 @@
 -- The whole schema: the expenses this API reports on, and the rates they convert at.
 --
 -- There is no migration tool and the app issues no DDL, so nothing but
--- `pixi run backend-db-init` ever runs this. The LoadedExpenseFile, Expense and
--- CurrencyRate models under src/expense_tracker/ are these tables declared a second
+-- `pixi run backend-db-init` ever runs this. The LoadedExpenseFile, Expense, Category
+-- and CurrencyRate models under src/expense_tracker/ are these tables declared a second
 -- time, in Python, with nothing checking the agreement. Change both halves together.
 --
 -- Every statement is idempotent, because db-init re-runs against live clusters.
@@ -71,6 +71,46 @@ CREATE TABLE IF NOT EXISTS expense (
 -- Exactly the order GET /api/expenses asks for, tiebreak included.
 CREATE INDEX IF NOT EXISTS expense_oldest_first_idx
     ON expense (expense_date, id);
+
+-- One row per node of the category tree, holding the slug that names it in a URL.
+--
+-- Ancestors are rows too, not only the paths expenses are filed under: a node's slug is
+-- a component of every slug below it, so it has to be stored rather than truncated out
+-- of a descendant. It is also what makes the UNIQUE below reach an ancestor collision -
+-- Going Out:Dinner and Going-Out:Lunch slug to two unique paths while their depth-1
+-- ancestors are one slug meaning two categories.
+--
+-- Derived state, unlike the append-only expense rows: the loader recomputes the whole
+-- assignment, refuses to proceed if a stored slug would change, and inserts what is new.
+CREATE TABLE IF NOT EXISTS category (
+    id             bigint  GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    -- The real path, as the expense rows spell it and as the user is shown it.
+    category       text    NOT NULL UNIQUE,
+    -- The URL path: each level lower kebab case over a-z0-9, levels joined by the same
+    -- separator. Needs no percent-encoding anywhere in a URL, which is the whole point
+    -- of it. UNIQUE is a backstop for a bug in the assignment, not a data-quality gate:
+    -- two categories that would share a slug are given numbered suffixes instead.
+    slug           text    NOT NULL UNIQUE,
+    -- How many levels deep the path is, so listing one level is a plain WHERE.
+    level          integer NOT NULL,
+    -- The first file, in name order, that mentions this node. The order the slugs are
+    -- handed out in, stored so a load does not re-read the whole directory to find it.
+    first_filename text    NOT NULL,
+    CONSTRAINT category_is_a_path  CHECK (category ~ '^[^:]+(:[^:]+)*$'),
+    CONSTRAINT category_slug_shape
+        CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*(:[a-z0-9]+(-[a-z0-9]+)*)*$'),
+    CONSTRAINT category_level_positive     CHECK (level >= 1),
+    CONSTRAINT category_filename_not_blank CHECK (first_filename <> '')
+);
+
+-- Exactly the order GET /api/expenses/categories asks for, with the level it filters on
+-- leading.
+CREATE INDEX IF NOT EXISTS category_by_level_idx
+    ON category (level, category);
+
+-- What the slug filter joins an expense to.
+CREATE INDEX IF NOT EXISTS category_by_slug_idx
+    ON category (slug);
 
 -- One row per data line of data/currencies/*.tsv: what one currency is worth in another.
 --

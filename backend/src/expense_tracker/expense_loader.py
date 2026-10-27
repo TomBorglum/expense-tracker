@@ -9,7 +9,8 @@ import datetime
 import hashlib
 import re
 import sys
-from collections.abc import Callable
+from collections import defaultdict
+from collections.abc import Callable, Iterable
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal, NamedTuple, cast
@@ -18,11 +19,19 @@ import yaml
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError
 from pydantic_core import PydanticCustomError
 from sqlalchemy import URL, insert, select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from .category_filter import strip_path
+from .category_filter import (
+    SEPARATOR,
+    CategorySlugError,
+    path_name,
+    path_parent,
+    slug_level,
+    split_path,
+    strip_path,
+)
 from .config import database_url
-from .expense_repository import Expense, ExpenseRecord, LoadedExpenseFile
+from .expense_repository import Category, Expense, ExpenseRecord, LoadedExpenseFile
 
 # At most two decimal places, because the column is numeric(12, 2) and a third would
 # be rounded away in silence. No limit on the integer digits - the column owns range.
@@ -283,6 +292,149 @@ def _changed_file_error(
     )
 
 
+def _changed_slug_error(
+    filename: str, category: str, stored: str, recomputed: str
+) -> ExpenseFileError:
+    """A file whose categories would repoint a slug already handed out.
+
+    Reachable by one thing only: a file whose name sorts before one already loaded, and
+    which names a category colliding with a sibling that holds the bare slug. Every
+    other file sorts last, so everything it introduces is numbered after what is there.
+    """
+    return ExpenseFileError(
+        f"{filename}: loading this would change the slug of {category!r} from"
+        + f" {stored!r} to {recomputed!r}, and a slug already assigned is never"
+        + " repointed - a URL holding it would come to mean another category."
+        + " This file sorts before one already loaded: load it in name order, or"
+        + " rebuild with `backend-db-reset`, `backend-db-init` and"
+        + " `backend-load-expenses`."
+    )
+
+
+class CategoryNode(NamedTuple):
+    """One category path and the file it was seen in."""
+
+    category: str
+    filename: str
+
+
+class AssignedCategory(NamedTuple):
+    """One node's slug and the order key it was assigned by: a category row to be."""
+
+    slug: str
+    level: int
+    first_filename: str
+
+
+def _ancestry(path: str) -> tuple[str, ...]:
+    """The path and every ancestor above it, shallowest first."""
+    levels = split_path(path)
+    return tuple(SEPARATOR.join(levels[:depth]) for depth in range(1, len(levels) + 1))
+
+
+def _first_filenames(nodes: Iterable[CategoryNode]) -> dict[str, str]:
+    """The earliest filename each node and each of its ancestors was seen in."""
+    first: dict[str, str] = {}
+    for node in nodes:
+        for path in _ancestry(node.category):
+            seen = first.get(path)
+            if seen is None or node.filename < seen:
+                first[path] = node.filename
+    return first
+
+
+def _free_name(base: str, taken: set[str]) -> str:
+    """The base level slug, or the lowest numbered one its siblings leave free."""
+    # The next free one rather than base-1 outright: a sibling genuinely named
+    # "Going Out 1" slugs to going-out-1 on its own, and taking that would repoint
+    # its URL at another category.
+    name = base
+    suffix = 0
+    while name in taken:
+        suffix += 1
+        name = f"{base}-{suffix}"
+    return name
+
+
+def assign_slugs(nodes: Iterable[CategoryNode]) -> dict[str, AssignedCategory]:
+    """Every node's slug, keyed by its real path, with the ancestors filled in.
+
+    Ancestors are nodes in their own right, because a parent's slug is a component of
+    every slug beneath it; each takes the earliest filename any of its descendants was
+    seen in.
+
+    The order key is that filename and then the path, so it is a function of the loaded
+    data alone - never of the order the files happened to be loaded in. That is what
+    makes a rebuild reproduce the slugs a run of incremental loads arrived at. Levels
+    are walked shallowest first, so a parent's slug is settled before the children built
+    on it, and the numbering is per sibling group: a parent's slug already separates one
+    branch from another.
+    """
+    first = _first_filenames(nodes)
+
+    by_level: dict[int, list[str]] = defaultdict(list)
+    for path in first:
+        by_level[len(split_path(path))].append(path)
+
+    assigned: dict[str, AssignedCategory] = {}
+    taken: dict[str | None, set[str]] = defaultdict(set)
+    for level in sorted(by_level):
+        for path in sorted(by_level[level], key=lambda path: (first[path], path)):
+            parent = path_parent(path)
+            name = _free_name(slug_level(path_name(path)), taken[parent])
+            taken[parent].add(name)
+            assigned[path] = AssignedCategory(
+                slug=(
+                    name if parent is None else assigned[parent].slug + SEPARATOR + name
+                ),
+                level=level,
+                first_filename=first[path],
+            )
+    return assigned
+
+
+async def _extend_categories(
+    session: AsyncSession, filename: str, records: Iterable[ExpenseRecord]
+) -> None:
+    """Adds this file's category nodes to the table, or raises ExpenseFileError.
+
+    Recomputed over every node rather than extended in place, so what is written is
+    what a rebuild from an empty database would write. A stored slug that the recompute
+    disagrees with stops the run: a slug once handed out is never repointed.
+    """
+    stored = (await session.scalars(select(Category))).all()
+    nodes = [CategoryNode(row.category, row.first_filename) for row in stored]
+    nodes.extend(CategoryNode(record.category, filename) for record in records)
+    try:
+        assigned = assign_slugs(nodes)
+    except CategorySlugError as exc:
+        # Turned into the error main() prints, for the reason _category's refusals are:
+        # a traceback is the wrong shape of output for a problem in the data.
+        raise ExpenseFileError(f"{filename}: {exc}") from exc
+
+    for row in stored:
+        if assigned[row.category].slug != row.slug:
+            raise _changed_slug_error(
+                filename, row.category, row.slug, assigned[row.category].slug
+            )
+
+    known = {row.category for row in stored}
+    fresh = sorted(path for path in assigned if path not in known)
+    if fresh:
+        _ = await session.execute(
+            insert(Category),
+            [
+                {
+                    "category": path,
+                    "slug": assigned[path].slug,
+                    "level": assigned[path].level,
+                    "first_filename": assigned[path].first_filename,
+                }
+                for path in fresh
+            ],
+        )
+
+
 async def load_directory(directory: Path, url: URL) -> LoadSummary:
     """Loads every *.yaml in `directory`, in name order, one transaction per file."""
     # Before the engine is built, so a mistyped path fails without opening a socket.
@@ -314,6 +466,11 @@ async def load_directory(directory: Path, url: URL) -> LoadSummary:
                     raise _changed_file_error(path.name, recorded.loaded_at)
 
                 records = parse_expense_records(path.name, data)
+                # Inside this file's transaction, so a refused slug leaves neither the
+                # ledger row nor the expenses behind. A plain insert, never
+                # on_conflict_do_nothing: a conflict here is a bug in the assignment
+                # rather than a row to skip, and the UNIQUE is what exposes it.
+                await _extend_categories(session, path.name, records)
                 # The ledger row first, for its generated id. RETURNING rather than a
                 # second SELECT: one round trip, and the value cannot be raced.
                 file_id = (

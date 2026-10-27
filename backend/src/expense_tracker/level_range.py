@@ -10,8 +10,9 @@ from dataclasses import dataclass
 # redundant beside re.match and kept for the day the call site is not.
 _LEVEL = re.compile(r"\A\d{1,4}\Z", re.ASCII)
 
-# The deepest level a request may ask for. list_categories unions one SELECT per level,
-# so an unbounded to_level is an unbounded statement; no real tree goes near this.
+# The deepest level a request may ask for. list_categories names every level of the
+# range in one IN clause, so an unbounded to_level is an unbounded statement; no real
+# tree goes near this.
 MAX_LEVEL = 10
 
 

@@ -12,7 +12,11 @@ from expense_tracker.category_filter import EVERYTHING, CategorySelection
 from expense_tracker.currency_repository import CurrencyRateRecord, CurrencyRepository
 from expense_tracker.date_range import UNBOUNDED, DateRange
 from expense_tracker.deps import provide_currency_repository, provide_expense_repository
-from expense_tracker.expense_repository import ExpenseRecord, ExpenseRepository
+from expense_tracker.expense_repository import (
+    CategoryRecord,
+    ExpenseRecord,
+    ExpenseRepository,
+)
 from expense_tracker.level_range import TOP_LEVEL, LevelRange
 
 
@@ -24,7 +28,7 @@ class _FakeExpenseRepository(ExpenseRepository):
     _ranges: list[DateRange]
     _categories: list[CategorySelection]
     _levels: list[LevelRange]
-    _category_names: Sequence[str]
+    _category_nodes: Sequence[CategoryRecord]
 
     def __init__(
         self,
@@ -32,13 +36,13 @@ class _FakeExpenseRepository(ExpenseRepository):
         ranges: list[DateRange],
         categories: list[CategorySelection],
         levels: list[LevelRange],
-        category_names: Sequence[str] = (),
+        category_nodes: Sequence[CategoryRecord] = (),
     ) -> None:
         self._records = records
         self._ranges = ranges
         self._categories = categories
         self._levels = levels
-        self._category_names = category_names
+        self._category_nodes = category_nodes
 
     @override
     async def list_expenses(
@@ -53,13 +57,15 @@ class _FakeExpenseRepository(ExpenseRepository):
         return self._records
 
     @override
-    async def list_categories(self, levels: LevelRange = TOP_LEVEL) -> Sequence[str]:
+    async def list_categories(
+        self, levels: LevelRange = TOP_LEVEL
+    ) -> Sequence[CategoryRecord]:
         # The range is recorded rather than applied, like the two above: truncating the
-        # names to it here would hide a route that did it again. Handed back as given,
-        # not derived from the records, because deduplicating and ordering are the
-        # repository's job.
+        # nodes to it here would hide a route that did it again. Handed back as given,
+        # not derived from the records, because deduplicating, ordering and slugging are
+        # all the repository's job.
         self._levels.append(levels)
-        return self._category_names
+        return self._category_nodes
 
 
 class _FakeCurrencyRepository(CurrencyRepository):
@@ -99,15 +105,25 @@ def expense_records() -> list[ExpenseRecord]:
 
 
 @pytest.fixture
-def category_names() -> list[str]:
-    """What list_categories answers: two depth-1 names and one path below one of them.
+def category_nodes() -> list[CategoryRecord]:
+    """What list_categories answers: two depth-1 nodes, one below one of them, and one
+    whose slug no rule applied to its path would produce.
 
     Deliberately not alphabetical, so a route that sorts on its own fails the order test
     instead of agreeing with the repository by coincidence, and deliberately not derived
-    from expense_records - the real repository derives an ancestor nothing is filed
+    from expense_records - the real repository lists an ancestor nothing is filed
     directly under, which no list of record categories would contain.
+
+    The last node's slug carries a disambiguating suffix its own path gives no hint of,
+    so a route deriving a slug instead of sending the stored one fails rather than
+    matching by coincidence.
     """
-    return ["Insurance", "Housing", "Housing:Rent"]
+    return [
+        CategoryRecord("Insurance", "insurance"),
+        CategoryRecord("Housing", "housing"),
+        CategoryRecord("Housing:Rent", "housing:rent"),
+        CategoryRecord("Going Out:Jalsa+pool", "going-out-1:jalsa-pool"),
+    ]
 
 
 @pytest.fixture
@@ -149,7 +165,7 @@ def requested_levels() -> list[LevelRange]:
 @pytest.fixture
 def app(
     expense_records: list[ExpenseRecord],
-    category_names: list[str],
+    category_nodes: list[CategoryRecord],
     currency_records: list[CurrencyRateRecord],
     requested_ranges: list[DateRange],
     requested_categories: list[CategorySelection],
@@ -167,7 +183,7 @@ def app(
             requested_ranges,
             requested_categories,
             requested_levels,
-            category_names,
+            category_nodes,
         )
     )
     application.dependency_overrides[provide_currency_repository] = lambda: (

@@ -7,12 +7,17 @@ import { fetchList } from "./fetchList";
 // backend/src/expense_tracker/__init__.py; there is no schema to generate either side
 // from, so the two declarations are kept in step deliberately. Change them together.
 export interface Category {
-  // The whole colon-separated path, which is what ?category= takes.
+  // The whole colon-separated path, which is what both tables show.
   category: string;
   // Its last level, and the path above it - absent on a depth-1 category, which has
   // none. The two are why nothing here splits a path: the separator is the backend's.
   name: string;
   parent?: string;
+  // The same node spelled for a URL, and the slug above it on the same terms as
+  // `parent`. This is what ?category= takes: the backend assigns it as the expenses are
+  // loaded, so nothing here derives one, and a path is never sent.
+  slug: string;
+  parent_slug?: string;
 }
 
 // The query half of the same pair, and only the half this side sends: the picker asks
@@ -53,9 +58,13 @@ function isCategory(payload: unknown): payload is Category {
     typeof payload.category === "string" &&
     "name" in payload &&
     typeof payload.name === "string" &&
+    "slug" in payload &&
+    typeof payload.slug === "string" &&
     // Absent or a string, never null: `in` is what tells a root from a child, the way
-    // isPeriodTotal tells a period holding nothing from one that netted to 0.00.
-    (!("parent" in payload) || typeof payload.parent === "string")
+    // isPeriodTotal tells a period holding nothing from one that netted to 0.00. Both
+    // spellings of the parent follow the one rule.
+    (!("parent" in payload) || typeof payload.parent === "string") &&
+    (!("parent_slug" in payload) || typeof payload.parent_slug === "string")
   );
 }
 
@@ -72,7 +81,7 @@ export function fetchCategories(
   return fetchList(CATEGORIES_PATH, url, isCategoryList, signal);
 }
 
-// The ?category= filter as validateSearch reads it off the URL: one value arrives as a
+// The ?category= filter as validateSearch reads it off the URL: one slug arrives as a
 // string and several as an array, and either becomes the list the query sends. Absent,
 // or nothing usable, is undefined - no filter, which is what an absent key means on the
 // wire too. An empty string is kept: the backend refuses it with a 422, the way it

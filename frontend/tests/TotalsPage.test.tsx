@@ -268,15 +268,15 @@ test("narrows both payloads to the categories the URL names", async () => {
     }),
   );
   renderPageAt(
-    "/totals?group_by=category&category=Stub%20category&category=Other%20stub%20category",
+    "/totals?group_by=category&category=stub-category&category=other-stub-category",
   );
   await screen.findByRole("table", { name: "Totals" });
   await waitFor(() => {
     expect(requested).toHaveLength(2);
   });
   expect(requested).toEqual([
-    ["Stub category", "Other stub category"],
-    ["Stub category", "Other stub category"],
+    ["stub-category", "other-stub-category"],
+    ["stub-category", "other-stub-category"],
   ]);
   expect(screen.getByRole("button", { name: /^Categories / }).textContent).toBe(
     "2 categories",
@@ -305,7 +305,7 @@ test("unticking a category keeps the currency, the range and the grouping", asyn
       ["currency", "EUR"],
       ["from_date", "2026-01-01"],
       ["group_by", CATEGORY_GROUPING],
-      ["not_category", "Stub category"],
+      ["not_category", "stub-category"],
       ["to_date", "2026-12-31"],
     ]);
   });
@@ -338,7 +338,7 @@ test("narrows both payloads to an empty selection too", async () => {
 test("selecting every category drops the parameters from the URL", async () => {
   const user = userEvent.setup();
   recordRequestedParams();
-  const router = renderPageAt("/totals?category=Stub%20category");
+  const router = renderPageAt("/totals?category=stub-category");
   await screen.findByRole("table", { name: "Totals" });
   const trigger = screen.getByRole("button", { name: /^Categories / });
   await waitFor(() => {

@@ -13,7 +13,14 @@ from pathlib import Path
 import pytest
 from sqlalchemy import make_url
 
-from expense_tracker.expense_loader import ExpenseFileError, load_directory, main
+from expense_tracker.category_filter import CategorySlugError
+from expense_tracker.expense_loader import (
+    CategoryNode,
+    ExpenseFileError,
+    assign_slugs,
+    load_directory,
+    main,
+)
 from expense_tracker.expense_loader import parse_expense_records as parse
 
 # The committed backend/tests/data/expenses/, beside this file. The currency tests
@@ -352,3 +359,105 @@ def test_running_without_a_directory_is_a_usage_error(
     monkeypatch.setattr(sys, "argv", ["loader"])
     assert main() == 2
     assert "usage:" in capsys.readouterr().err
+
+
+def _slugs(*nodes: tuple[str, str]) -> dict[str, str]:
+    """assign_slugs over (category, filename) pairs, keeping the slug alone."""
+    assigned = assign_slugs(CategoryNode(path, name) for path, name in nodes)
+    return {path: row.slug for path, row in assigned.items()}
+
+
+def test_every_ancestor_is_assigned_a_slug_of_its_own() -> None:
+    """A parent's slug is a component of its children's, so it is a node in its own
+    right - and listing it is what lets the picker offer a node nothing is filed at."""
+    assert _slugs(("Going Out:Jalsa+pool", "01.yaml")) == {
+        "Going Out": "going-out",
+        "Going Out:Jalsa+pool": "going-out:jalsa-pool",
+    }
+
+
+def test_an_ancestor_takes_the_earliest_filename_of_its_descendants() -> None:
+    """Which is what makes the key a function of the data: the ancestor is in both
+    files, and the earlier one is what a rebuild would reach it through first."""
+    assigned = assign_slugs(
+        [
+            CategoryNode("Car:Tax", "02.yaml"),
+            CategoryNode("Car:Fuel", "01.yaml"),
+        ]
+    )
+    assert assigned["Car"].first_filename == "01.yaml"
+    assert assigned["Car"].level == 1
+    assert assigned["Car:Tax"].level == 2
+
+
+def test_two_siblings_that_kebab_alike_are_numbered() -> None:
+    """The case the suffix exists for. The order key decides who keeps the bare slug;
+    both are in one file here, so it is the path."""
+    assert _slugs(("Going Out", "01.yaml"), ("Going-Out", "01.yaml")) == {
+        "Going Out": "going-out",
+        "Going-Out": "going-out-1",
+    }
+
+
+def test_a_sibling_already_named_like_a_suffix_is_not_trampled() -> None:
+    """ "Going Out 1" slugs to going-out-1 unaided, so the disambiguator has to take the
+    next free one instead of claiming it - or that category's URL would change meaning
+    the day a colliding sibling appeared."""
+    assert _slugs(
+        ("Going Out", "01.yaml"), ("Going Out 1", "01.yaml"), ("Going-Out", "01.yaml")
+    ) == {
+        "Going Out": "going-out",
+        "Going Out 1": "going-out-1",
+        "Going-Out": "going-out-2",
+    }
+
+
+def test_the_same_name_under_two_parents_needs_no_suffix() -> None:
+    """Numbering is per sibling group, because a parent's slug already separates one
+    branch from another. Both keep the bare level slug."""
+    assert _slugs(("Car:Going Out", "01.yaml"), ("Home:Going-Out", "01.yaml")) == {
+        "Car": "car",
+        "Car:Going Out": "car:going-out",
+        "Home": "home",
+        "Home:Going-Out": "home:going-out",
+    }
+
+
+def test_the_assignment_does_not_depend_on_the_order_it_is_given() -> None:
+    """The first invariant, as a property: the key is the data, never the order the
+    files were read in - which is what makes a rebuild reproduce a shared link."""
+    nodes = [
+        ("Going Out:Jalsa+pool", "01.yaml"),
+        ("Going-Out:Lunch", "02.yaml"),
+        ("Car:Tax", "01.yaml"),
+        ("Car", "03.yaml"),
+    ]
+    forwards = _slugs(*nodes)
+    assert _slugs(*reversed(nodes)) == forwards
+    assert _slugs(*sorted(nodes, key=lambda node: node[1], reverse=True)) == forwards
+
+
+def test_a_later_file_leaves_every_slug_already_assigned_alone() -> None:
+    """The second invariant: a month file sorts after what is loaded, so everything it
+    introduces is numbered after it. Nothing already handed out moves."""
+    before = _slugs(("Going Out", "01.yaml"))
+    after = _slugs(("Going Out", "01.yaml"), ("Going-Out", "02.yaml"))
+
+    assert before == {"Going Out": "going-out"}
+    assert after == {"Going Out": "going-out", "Going-Out": "going-out-1"}
+
+
+def test_an_earlier_file_is_what_would_move_one() -> None:
+    """The other side of that, and why the loader refuses a backfill rather than
+    trusting the order to hold: 01 arriving later takes the bare slug off 02's name."""
+    assert _slugs(("Going-Out", "02.yaml"), ("Going Out", "01.yaml")) == {
+        "Going Out": "going-out",
+        "Going-Out": "going-out-1",
+    }
+
+
+def test_a_level_with_no_slug_stops_the_assignment() -> None:
+    """Raised from the rule rather than caught here; load_directory turns it into the
+    ExpenseFileError main() prints."""
+    with pytest.raises(CategorySlugError, match="has no slug"):
+        _ = _slugs(("Car:%", "01.yaml"))

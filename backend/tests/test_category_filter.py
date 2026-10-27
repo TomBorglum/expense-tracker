@@ -2,11 +2,14 @@ import pytest
 
 from expense_tracker.category_filter import (
     EVERYTHING,
+    SLUG_PATH,
     CategoryFilterError,
     CategorySelection,
+    CategorySlugError,
     parse_category_selection,
     path_name,
     path_parent,
+    slug_level,
     split_path,
     strip_path,
 )
@@ -244,3 +247,73 @@ def test_a_value_the_column_could_never_hold_is_not_refused(value: str) -> None:
     assert parse_category_selection([value], None, None) == CategorySelection(
         selected=frozenset({value}), deselected=frozenset(), default=False
     )
+
+
+@pytest.mark.parametrize(
+    ("name", "slug"),
+    [
+        # The case the whole feature exists for: a space and a plus in one name, both
+        # of which a query string would otherwise percent-encode.
+        ("Jalsa+pool", "jalsa-pool"),
+        ("Going Out", "going-out"),
+        # Already a slug, so it is left as it reads.
+        ("groceries", "groceries"),
+        ("Car", "car"),
+        # A run of anything unusable collapses to one dash rather than one each.
+        ("Jalsa & pool", "jalsa-pool"),
+        ("Going  Out", "going-out"),
+        # Trimmed at both ends, so no slug begins or ends with a dash.
+        ("%Fees%", "fees"),
+        ("- Car -", "car"),
+        # A dash the name itself carries is kept, which is what makes "Going-Out"
+        # collide with "Going Out" rather than differ from it.
+        ("Going-Out", "going-out"),
+        # Digits are usable, and only the % goes.
+        ("100%", "100"),
+        ("1005", "1005"),
+    ],
+)
+def test_a_name_slugs_to_lower_kebab_case(name: str, slug: str) -> None:
+    assert slug_level(name) == slug
+
+
+@pytest.mark.parametrize(
+    ("name", "slug"),
+    [
+        # ae-ligature, o-slash and a-ring, spelled out rather than dropped. Written as
+        # escapes because committed source is ASCII.
+        ("Sm\u00f8rrebr\u00f8d", "smoerrebroed"),
+        ("\u00c6blekage", "aeblekage"),
+        ("Gl\u00f8gg", "gloegg"),
+        ("\u00c5rhus", "aarhus"),
+        # Not in the table, so NFKD splits the letter from its mark and the mark goes.
+        ("Caf\u00e9", "cafe"),
+        ("Z\u00fcrich", "zurich"),
+        # Reached by neither, so it collapses like any other unusable run. Sharp s is
+        # the case str.isalnum() would have let through into a URL.
+        ("Stra\u00dfe", "stra-e"),
+    ],
+)
+def test_a_danish_letter_is_transliterated_rather_than_dropped(
+    name: str, slug: str
+) -> None:
+    assert slug_level(name) == slug
+
+
+@pytest.mark.parametrize("name", ["%", "&&&", "---", " ", "\u2014"])
+def test_a_level_with_nothing_to_slug_is_refused(name: str) -> None:
+    """There is nothing to fall back on that would still name this category and no
+    other, so the loader stops rather than inventing one. An em-dash is the last case:
+    usable to a reader, and not a character a URL should carry raw."""
+    with pytest.raises(CategorySlugError, match="has no slug"):
+        _ = slug_level(name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["Jalsa+pool", "Going Out", "Caf\u00e9", "100%", "- Car -", "Sm\u00f8rrebr\u00f8d"],
+)
+def test_every_slug_matches_the_shape_the_column_checks(name: str) -> None:
+    """SLUG_PATH is the Python half of schema.sql's CHECK on category.slug, so a slug
+    this builds can never be one the column would refuse."""
+    assert SLUG_PATH.match(slug_level(name)) is not None

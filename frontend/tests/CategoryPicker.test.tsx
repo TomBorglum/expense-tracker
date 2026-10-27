@@ -9,18 +9,27 @@ import { CategoryPicker } from "@/components/CategoryPicker";
 // Three roots and one path below the first, deliberately not in an order a pre-order
 // walk could be mistaken for: Car2024 sorts between Car and Car:Fuel under the byte
 // order the backend lists in, so a picker reading the list as contiguous would nest it.
+// Groceries carries a slug its own name gives no hint of, which is what the loader hands
+// a colliding sibling: a picker deriving a slug rather than reporting the one it was
+// given would tick the right box and send the wrong value.
 const OPTIONS: Category[] = [
-  { category: "Car", name: "Car" },
-  { category: "Car2024", name: "Car2024" },
-  { category: "Car:Fuel", name: "Fuel", parent: "Car" },
-  { category: "Groceries", name: "Groceries" },
+  { category: "Car", name: "Car", slug: "car" },
+  { category: "Car2024", name: "Car2024", slug: "car2024" },
+  {
+    category: "Car:Fuel",
+    name: "Fuel",
+    slug: "car:fuel",
+    parent: "Car",
+    parent_slug: "car",
+  },
+  { category: "Groceries", name: "Groceries", slug: "groceries-1" },
 ];
 
-// Everything but one path below a root, which is the state the whole control exists for.
+// Everything but one node below a root, which is the state the whole control exists for.
 const WITHOUT_FUEL: CategorySelection = {
   root: true,
   selected: [],
-  deselected: ["Car:Fuel"],
+  deselected: ["car:fuel"],
 };
 
 function trigger() {
@@ -104,23 +113,23 @@ test("reads as no categories when the selection is empty", () => {
 
 test("names the one category that is missing", () => {
   renderPicker(WITHOUT_FUEL);
-  expect(trigger().textContent).toBe("All but Car:Fuel");
+  expect(trigger().textContent).toBe("All but car:fuel");
 });
 
 test("counts what is missing once naming it would not fit", () => {
-  renderPicker({ root: true, selected: [], deselected: ["Car:Fuel", "Groceries"] });
+  renderPicker({ root: true, selected: [], deselected: ["car:fuel", "groceries-1"] });
   expect(trigger().textContent).toBe("All but 2");
 });
 
 test("names one picked category", () => {
-  renderPicker({ root: false, selected: ["Car:Fuel"], deselected: [] });
-  expect(trigger().textContent).toBe("Car:Fuel");
+  renderPicker({ root: false, selected: ["car:fuel"], deselected: [] });
+  expect(trigger().textContent).toBe("car:fuel");
 });
 
-test("counts two, so a pair of paths cannot wrap the filter row", () => {
-  // Two is already a count where two flat names were not: a pair of paths is longer
+test("counts two, so a pair of slugs cannot wrap the filter row", () => {
+  // Two is already a count where two flat names were not: a pair of slugs is longer
   // than the trigger's own width shows.
-  renderPicker({ root: false, selected: ["Car:Fuel", "Groceries"], deselected: [] });
+  renderPicker({ root: false, selected: ["car:fuel", "groceries-1"], deselected: [] });
   expect(trigger().textContent).toBe("2 categories");
 });
 
@@ -178,7 +187,7 @@ test("offers a twisty only where there are children to disclose", async () => {
 });
 
 test("opens the branch a flipped category sits in", async () => {
-  // Otherwise the trigger would read "All but Car:Fuel" over a list with everything
+  // Otherwise the trigger would read "All but car:fuel" over a list with everything
   // ticked in it, and there would be no way to put Fuel back.
   renderPicker(WITHOUT_FUEL);
   await userEvent.click(trigger());
@@ -216,7 +225,7 @@ test("leaves the mark off a parent its whole subtree agrees with", async () => {
 });
 
 test("lets the parent of a flipped category be collapsed again", async () => {
-  // What the map of clicks buys over a set of open paths: a set would hold this branch
+  // What the map of clicks buys over a set of open slugs: a set would hold this branch
   // open for as long as the selection lasted, and the twisty would do nothing.
   renderPicker(WITHOUT_FUEL);
   await userEvent.click(trigger());
@@ -239,8 +248,8 @@ test("keeps a branch expanded across a close and a reopen", async () => {
 });
 
 test("renders a child under its parent rather than where the list put it", async () => {
-  // Built from `parent`, not from list order: Car2024 arrives between Car and Car:Fuel
-  // and still sits at the root, which is what a contiguity walk would get wrong.
+  // Built from `parent_slug`, not from list order: Car2024 arrives between Car and
+  // Car:Fuel and still sits at the root, which a contiguity walk would get wrong.
   renderPicker();
   await userEvent.click(trigger());
   await userEvent.click(twisty("Expand", "Car"));
@@ -259,11 +268,11 @@ test("reports one flip rather than one entry per category left", async () => {
   await userEvent.click(trigger());
   await userEvent.click(checkbox("Car"));
   expect(onChange.mock.calls).toEqual([
-    [{ root: true, selected: [], deselected: ["Car"] }],
+    [{ root: true, selected: [], deselected: ["car"] }],
   ]);
 });
 
-test("reports a child by its whole path, not by the level it shows", async () => {
+test("reports a child by its whole slug, not by the level it shows", async () => {
   const onChange = renderPicker();
   await userEvent.click(trigger());
   await userEvent.click(twisty("Expand", "Car"));
@@ -278,14 +287,14 @@ test("unticking a parent takes the flips below it with it", async () => {
   await userEvent.click(trigger());
   await userEvent.click(checkbox("Car"));
   expect(onChange.mock.calls).toEqual([
-    [{ root: true, selected: [], deselected: ["Car"] }],
+    [{ root: true, selected: [], deselected: ["car"] }],
   ]);
 });
 
 test("shows a child as unticked because its parent is", async () => {
   // The other half of the cascade, which is a reading rather than a stored flip: Fuel
   // carries no value of its own here and still answers for the branch it sits in.
-  renderPicker({ root: true, selected: [], deselected: ["Car"] });
+  renderPicker({ root: true, selected: [], deselected: ["car"] });
   await userEvent.click(trigger());
   await userEvent.click(twisty("Expand", "Car"));
   expect(checkboxes()).toEqual([
@@ -299,7 +308,7 @@ test("shows a child as unticked because its parent is", async () => {
 test("keeps a child ticked that was put back inside an unticked parent", async () => {
   // The longest flip decides, so the two keys together say "everything except Car, but
   // keep its Fuel" - and the box the user has to see to believe that is Fuel's.
-  renderPicker({ root: true, selected: ["Car:Fuel"], deselected: ["Car"] });
+  renderPicker({ root: true, selected: ["car:fuel"], deselected: ["car"] });
   await userEvent.click(trigger());
   expect(checkboxes()).toEqual([
     ["Car", false],
@@ -315,12 +324,12 @@ test("reports a flip in row order, whatever order the boxes were clicked in", as
   const onChange = renderPicker({
     root: true,
     selected: [],
-    deselected: ["Groceries"],
+    deselected: ["groceries-1"],
   });
   await userEvent.click(trigger());
   await userEvent.click(checkbox("Car"));
   expect(onChange.mock.calls).toEqual([
-    [{ root: true, selected: [], deselected: ["Car", "Groceries"] }],
+    [{ root: true, selected: [], deselected: ["car", "groceries-1"] }],
   ]);
 });
 
@@ -335,7 +344,7 @@ test("reports a flip inside a collapsed branch rather than dropping it", async (
   await userEvent.click(checkbox("Groceries"));
 
   expect(onChange.mock.calls).toEqual([
-    [{ root: true, selected: [], deselected: ["Car:Fuel", "Groceries"] }],
+    [{ root: true, selected: [], deselected: ["car:fuel", "groceries-1"] }],
   ]);
 });
 
@@ -372,7 +381,7 @@ test("disables the other action at the other extreme", async () => {
 });
 
 test("goes back to every category in one click", async () => {
-  // Every flip dropped, not merely the root reselected: a deselected path left behind
+  // Every flip dropped, not merely the root reselected: a deselected slug left behind
   // would be a key the URL could not be rid of.
   const onChange = renderPicker(WITHOUT_FUEL);
   await userEvent.click(trigger());
@@ -433,7 +442,7 @@ test("can be worked from the keyboard", async () => {
   expect(document.activeElement).toBe(checkbox("Car"));
   await userEvent.keyboard(" ");
   expect(onChange.mock.calls).toEqual([
-    [{ root: true, selected: [], deselected: ["Car"] }],
+    [{ root: true, selected: [], deselected: ["car"] }],
   ]);
 });
 
@@ -445,25 +454,24 @@ test("is disabled when told to be", async () => {
 });
 
 test("shows a category nobody offered rather than silently dropping it", async () => {
-  // Reachable by typing a name into the address bar: the URL is passed to the backend
-  // unchecked, so the control has to agree with the request that is in flight.
-  // A path, because that is what the address bar carries: it has no parent in the tree
-  // to sit under, so it is labelled in full, listed flat ahead of the rest, and has
-  // nothing to disclose.
-  renderPicker({ root: false, selected: ["Travel:Spain"], deselected: [] }, [
-    { category: "Car", name: "Car" },
-    { category: "Groceries", name: "Groceries" },
+  // Reachable by typing a slug into the address bar: the URL is passed to the backend
+  // unchecked, so the control has to agree with the request that is in flight. The slug
+  // is its own label here - it has no row in the tree to take a name from, no parent to
+  // sit under, and nothing to disclose - and it is listed flat ahead of the rest.
+  renderPicker({ root: false, selected: ["travel:spain"], deselected: [] }, [
+    { category: "Car", name: "Car", slug: "car" },
+    { category: "Groceries", name: "Groceries", slug: "groceries-1" },
   ]);
-  expect(trigger().textContent).toBe("Travel:Spain");
+  expect(trigger().textContent).toBe("travel:spain");
   await userEvent.click(trigger());
   expect(indents()).toEqual([
-    ["Travel:Spain", "pl-0"],
+    ["travel:spain", "pl-0"],
     ["Car", "pl-0"],
     ["Groceries", "pl-0"],
   ]);
   expect(twisties()).toEqual([]);
   expect(checkboxes()).toEqual([
-    ["Travel:Spain", true],
+    ["travel:spain", true],
     ["Car", false],
     ["Groceries", false],
   ]);

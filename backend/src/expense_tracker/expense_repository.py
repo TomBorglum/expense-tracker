@@ -7,25 +7,21 @@ from decimal import Decimal
 from typing import NamedTuple, override
 
 from sqlalchemy import (
-    ARRAY,
     Date,
     DateTime,
     ForeignKey,
     Identity,
-    Integer,
     Numeric,
     Text,
     case,
     false,
-    func,
     select,
     true,
-    union,
 )
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql import ColumnElement, Select
+from sqlalchemy.sql import ColumnElement
 
 from .category_filter import EVERYTHING, SEPARATOR, CategorySelection
 from .date_range import UNBOUNDED, DateRange
@@ -71,6 +67,18 @@ class Expense(Base):
     key: Mapped[str] = mapped_column(Text)
 
 
+class Category(Base):
+    """One row per node of the category tree. Mirrors schema.sql."""
+
+    __tablename__: str = "category"
+
+    id: Mapped[int] = mapped_column(Identity(always=True), primary_key=True)
+    category: Mapped[str] = mapped_column(Text, unique=True)
+    slug: Mapped[str] = mapped_column(Text, unique=True)
+    level: Mapped[int] = mapped_column()
+    first_filename: Mapped[str] = mapped_column(Text)
+
+
 class ExpenseRecord(NamedTuple):
     """One expense detached from the session that read it."""
 
@@ -81,14 +89,25 @@ class ExpenseRecord(NamedTuple):
     key: str
 
 
-def _under(path: str) -> ColumnElement[bool]:
-    """Matches the path itself and every path below it."""
+class CategoryRecord(NamedTuple):
+    """One category node detached from the session that read it.
+
+    The real path and its slug only. `name`, `parent` and `parent_slug` are each the
+    path helpers applied to one of these, so storing them would give one fact two homes.
+    """
+
+    category: str
+    slug: str
+
+
+def _under(slug: str) -> ColumnElement[bool]:
+    """Matches the slug itself and every slug below it."""
     # The separator in the LIKE is what makes this a prefix of levels rather than one
-    # of characters: without it, Food would match Foodstuffs. autoescape because a level
-    # may hold % or _, which the path CHECK does not forbid and a bare LIKE would read
-    # as a wildcard.
-    return (Expense.category == path) | Expense.category.startswith(
-        path + SEPARATOR, autoescape=True
+    # of characters: without it, food would match foodstuffs. autoescape is kept though
+    # a slug holds neither % nor _ - dropping it would lean on the slug alphabet for
+    # nothing, and this is the same clause the real path was matched by.
+    return (Category.slug == slug) | Category.slug.startswith(
+        slug + SEPARATOR, autoescape=True
     )
 
 
@@ -117,24 +136,6 @@ def _selects(selection: CategorySelection) -> ColumnElement[bool] | None:
     ).is_(True)
 
 
-def _at_level(depth: int) -> Select[str]:
-    """Every stored category cut to `depth` levels, over the rows that go that deep."""
-    levels = func.string_to_array(Expense.category, SEPARATOR, type_=ARRAY(Text))
-    return (
-        select(
-            func.array_to_string(levels[1:depth], SEPARATOR, type_=Text).label(
-                "category"
-            )
-        )
-        # What makes a level exact: an array slice past the end returns the array, so
-        # without this a depth-1 row would be listed again at level 2.
-        .where(func.array_length(levels, 1, type_=Integer) >= depth)
-        # Not redundant beside the UNION below: union() over a single select compiles to
-        # a bare SELECT, and one level is what the default request asks for.
-        .distinct()
-    )
-
-
 class ExpenseRepository(ABC):
     """The contract a caller depends on in order to read expenses."""
 
@@ -146,7 +147,7 @@ class ExpenseRepository(ABC):
     @abstractmethod
     async def list_categories(
         self, levels: LevelRange = TOP_LEVEL
-    ) -> Sequence[str]: ...
+    ) -> Sequence[CategoryRecord]: ...
 
 
 class PostgresExpenseRepository(ExpenseRepository):
@@ -177,10 +178,15 @@ class PostgresExpenseRepository(ExpenseRepository):
             statement = statement.where(Expense.expense_date <= dates.end)
         # The order the arms are read in is the type's, like the range's ordering
         # above, and that no name is blank is its guarantee too. A selection covering
-        # everything adds no clause at all, so a request naming no category reaches the
-        # same statement it reached before one could be deselected.
+        # everything adds no clause at all - not even the join - so a request naming no
+        # category reaches the same statement it reached before one could be deselected.
+        #
+        # The join is what turns a slug the request sent into the path a row carries.
+        # Every stored category is a category row, so it drops nothing.
         if (selects := _selects(categories)) is not None:
-            statement = statement.where(selects)
+            statement = statement.join(
+                Category, Category.category == Expense.category
+            ).where(selects)
         try:
             rows = await self._session.execute(
                 statement.order_by(Expense.expense_date, Expense.id)
@@ -193,17 +199,24 @@ class PostgresExpenseRepository(ExpenseRepository):
         return [ExpenseRecord(*row) for row in rows.all()]
 
     @override
-    async def list_categories(self, levels: LevelRange = TOP_LEVEL) -> Sequence[str]:
-        """Every category path at the levels given, once each, in path order.
+    async def list_categories(
+        self, levels: LevelRange = TOP_LEVEL
+    ) -> Sequence[CategoryRecord]:
+        """Every category node at the levels given, with its slug, in path order.
 
-        A path is listed whether or not an expense sits at exactly it, so an ancestor
-        nothing is filed directly under is still a node a client can ask for.
+        A node is listed whether or not an expense sits at exactly it, so an ancestor
+        nothing is filed directly under is still one a client can ask for. That holds
+        because the loader writes every ancestor as a row, rather than because this
+        truncates a longer path.
         """
-        paths = union(*(_at_level(depth) for depth in levels.levels))
+        statement = (
+            select(Category.category, Category.slug)
+            .where(Category.level.in_(list(levels.levels)))
+            .order_by(Category.category)
+        )
         try:
-            names = await self._session.scalars(
-                paths.order_by(paths.selected_columns.category)
-            )
+            rows = await self._session.execute(statement)
         except (SQLAlchemyError, OSError) as exc:
             raise ExpensesUnavailableError("category query failed") from exc
-        return names.all()
+        # The select names the columns in CategoryRecord's field order.
+        return [CategoryRecord(*row) for row in rows.all()]

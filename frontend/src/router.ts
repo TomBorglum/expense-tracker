@@ -26,8 +26,10 @@ function stringifySearch(search: Record<string, unknown>): string {
     }
   }
   // URLSearchParams escapes every character outside the unreserved set, the category
-  // separator among them; a colon is legal in a query, so it goes back in. A value
-  // holding the text "%3A" was escaped to "%253A", which this does not match.
+  // separator among them; a colon is legal in a query, so it goes back in. It is the one
+  // escape a category slug can produce - every other character in one is unreserved -
+  // so this line is what keeps a category URL free of percent-encoding. A value holding
+  // the text "%3A" was escaped to "%253A", which this does not match.
   const text = params.toString().replaceAll("%3A", ":");
   return text === "" ? "" : `?${text}`;
 }

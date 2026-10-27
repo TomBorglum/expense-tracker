@@ -81,11 +81,11 @@ export async function fetchExpenses(
   url.searchParams.set("from_date", query.from_date);
   url.searchParams.set("to_date", query.to_date);
   // Appended rather than set: the backend reads either key once per value.
-  for (const name of query.category ?? []) {
-    url.searchParams.append("category", name);
+  for (const slug of query.category ?? []) {
+    url.searchParams.append("category", slug);
   }
-  for (const name of query.not_category ?? []) {
-    url.searchParams.append("not_category", name);
+  for (const slug of query.not_category ?? []) {
+    url.searchParams.append("not_category", slug);
   }
   if (query.category_default !== undefined) {
     // Set only where it is needed, the way group_by is: an absent flag is what lets the
