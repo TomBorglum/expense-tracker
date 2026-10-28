@@ -7,7 +7,8 @@ name = "expense-tracker"
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
-# Runtime LIBRARIES, folded into every environment. The app itself is installed per
+# Runtime LIBRARIES, folded into every environment that does not opt out - `frontend` is
+# the one that does, at the bottom of this file. The app itself is installed per
 # environment, in the two blocks below.
 [dependencies]
 python = "==3.15.1"
@@ -31,22 +32,22 @@ pydantic = "==2.14.1"
 pydantic-core = "==2.50.1"
 # What expense_loader parses $EXPENSE_DATA_DIR's month files with. Already in the lock as a
 # poethepoet dependency; declared because that module imports it, and here rather than in a
-# feature because the prod wheel ships it.
+# feature because the backend wheel ships it.
 pyyaml = "==6.0.3"
 # What config.py validates the database settings with. Only the BaseSettings half is used;
 # loading backend/.env is direnv's job (`dotenv_if_exists` in .envrc), never the app's.
 pydantic-settings = "==2.16.1"
 
-# The app in two flavours: editable for development, a hatchling-built wheel for prod.
-# See backend/CLAUDE.md.
+# The app in two flavours: editable for development, a hatchling-built wheel for the
+# image. See backend/CLAUDE.md.
 [feature.dev.pypi-dependencies]
 expense-tracker = { path = "backend", editable = true }
 
-[feature.prod.pypi-dependencies]
+[feature.backend.pypi-dependencies]
 expense-tracker = { path = "backend", editable = false }
 
 # Test-only dependencies, isolated in the "test" feature so the lean
-# prod environment can exclude them.
+# backend environment can exclude them.
 [feature.test.dependencies]
 pytest = "==9.1.1"
 pytest-cov = "==7.1.0"
@@ -58,16 +59,21 @@ basedpyright = "==1.40.2"
 ruff = "==0.17.2"
 # The backend's task runner, reading [tool.poe.tasks] from backend/pyproject.toml.
 poethepoet = "==0.49.0"
-# Runs the frontend toolchain and the language servers Zed is pinned to. Test feature,
-# which is what keeps the prod environment Node-free.
+# The server, and the initdb/pg_ctl/psql/createdb binaries the db-* poe tasks drive.
+# Development and CI only: keeping it out of [dependencies] is what keeps it - and libpq,
+# icu, krb5, openldap and liburing behind it - out of the backend environment.
+postgresql = "==18.6"
+
+# The frontend toolchain, in a feature of its own so the `frontend` environment can hold
+# it and nothing else - no python, no PostgreSQL, no editable backend install, which is
+# what lets the SPA image build from a context that has no backend in it. `default`
+# includes this feature too, which is what keeps `pixi run frontend-build` working from a
+# blessed shell and gives Zed the language servers it is pinned to.
+[feature.frontend.dependencies]
 nodejs = "==26.12.1"
 # Pinned here rather than by a "packageManager" field in package.json: pnpm's pmOnFail
 # defaults to "download", so that field would fetch its own version and bypass this pin.
 pnpm = "==12.4.1"
-# The server, and the initdb/pg_ctl/psql/createdb binaries the db-* poe tasks drive.
-# Development and CI only: keeping it out of [dependencies] is what keeps it - and libpq,
-# icu, krb5, openldap and liburing behind it - out of the prod environment.
-postgresql = "==18.6"
 
 # No [activation.env], deliberately: the connection settings are declared once, in
 # backend/.env. See backend/CLAUDE.md.
@@ -78,9 +84,10 @@ postgresql = "==18.6"
 [feature.test.pypi-dependencies]
 import-linter = "==2.15"
 
-# Forwarders, in the test feature so prod has neither poe nor pnpm to forward to. Each
-# names a task defined elsewhere and sets the cwd its runner needs; no command body lives
-# here. Alphabetical, which is the order `pixi task list` prints.
+# Forwarders, each in the feature that carries its runner - poe in the test feature, pnpm
+# in the frontend one - so `backend` has neither to forward to. Each names a task defined
+# elsewhere and sets the cwd its runner needs; no command body lives here. Alphabetical,
+# which is the order `pixi task list` prints.
 [feature.test.tasks]
 # With cwd=backend, poe finds backend/pyproject.toml unaided, so these need no -C.
 backend-db-create = { cmd = "poe db-create", cwd = "backend" }
@@ -101,7 +108,9 @@ backend-test = { cmd = "poe test", cwd = "backend" }
 backend-typecheck = { cmd = "poe typecheck", cwd = "backend" }
 
 # Frontend -> the "scripts" block in frontend/package.json. `install` is a pnpm built-in
-# rather than a script, which is why it alone takes no `run`.
+# rather than a script, which is why it alone takes no `run`. Declared in the frontend
+# feature so `pixi run -e frontend <task>` reaches them with nothing else installed.
+[feature.frontend.tasks]
 frontend-build = { cmd = "pnpm run build", cwd = "frontend" }
 # vite's dev server, the counterpart to backend-dev. The two run side by side.
 frontend-dev = { cmd = "pnpm run dev", cwd = "frontend" }
@@ -119,9 +128,18 @@ frontend-lint-fix = { cmd = "pnpm run lint-fix", cwd = "frontend" }
 frontend-test = { cmd = "pnpm run test", cwd = "frontend" }
 frontend-typecheck = { cmd = "pnpm run typecheck", cwd = "frontend" }
 
-# Two environments on one solve-group, which keeps python pinned identically across both:
-# - default: runtime libraries + test tooling + the editable app -> local dev, CI, editor
-# - prod:    runtime libraries + the app as a wheel -> the API and nothing else
+# Three environments on one solve-group, which is what keeps every shared pin identical
+# across them - python and the runtime libraries between default and backend, node and
+# pnpm between default and frontend:
+# - default:  runtime libraries + test tooling + the frontend toolchain + the editable
+#             app -> local dev, CI, editor
+# - backend:  runtime libraries + the app as a wheel -> the API image and nothing else
+# - frontend: the frontend toolchain alone -> the SPA image and nothing else
+#
+# `no-default-feature` is what makes frontend lean: [dependencies] is the default feature
+# and is folded into every environment that does not say otherwise, so without the flag
+# that environment would carry python, fastapi and asyncpg it never runs.
 [environments]
-default = { features = ["test", "dev"], solve-group = "prod" }
-prod = { features = ["prod"], solve-group = "prod" }
+default = { features = ["test", "frontend", "dev"], solve-group = "shared" }
+backend = { features = ["backend"], solve-group = "shared" }
+frontend = { features = ["frontend"], no-default-feature = true, solve-group = "shared" }

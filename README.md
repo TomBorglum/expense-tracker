@@ -1226,12 +1226,15 @@ forwarder.
 
 ## Environments
 
-`pixi.toml` declares two, on one solve-group so python is pinned identically across both:
+`pixi.toml` declares three, on one solve-group so every shared pin is identical across
+them - python and the runtime libraries between `default` and `backend`, node and pnpm
+between `default` and `frontend`:
 
 | Environment | Contains | Used by |
 | --- | --- | --- |
 | `default` | runtime libraries, test tooling, node, PostgreSQL, and the app **editable** | the editor, local dev, CI, every task |
-| `prod` | runtime libraries and the app as a **wheel** | what an image is built from |
+| `backend` | runtime libraries and the app as a **wheel** | what the API image is built from |
+| `frontend` | node and pnpm, and nothing else | what the SPA image is built from |
 
 The install mode is the difference that matters. An editable install is a redirect to
 `backend/src`: nothing is copied, so the source tree has to stay where it was at install
@@ -1247,28 +1250,42 @@ So the app is declared per feature rather than in the default feature, which is 
 [feature.dev.pypi-dependencies]
 expense-tracker = { path = "backend", editable = true }
 
-[feature.prod.pypi-dependencies]
+[feature.backend.pypi-dependencies]
 expense-tracker = { path = "backend", editable = false }
 ```
 
-`prod` gets a real wheel, built by hatchling, containing `src/expense_tracker` and
+`backend` gets a real wheel, built by hatchling, containing `src/expense_tracker` and
 nothing else. **No correctness property rests on the split.** The app reads its settings
 from the environment and opens no file, so a misconfigured process refuses to start in
 either environment - which you can check directly, clearing what direnv exported first:
 
 ```sh
-pixi install -e prod
+pixi install -e backend
 env -u DATABASE_URL -u PGHOST -u PGPORT -u PGUSER -u PGDATABASE \
-  pixi run -e prod python -c "from expense_tracker.config import database_url; database_url()"
+  pixi run -e backend python -c "from expense_tracker.config import database_url; database_url()"
 # ValidationError: set DATABASE_URL, or all of PGUSER, PGHOST, PGPORT, PGDATABASE
 ```
 
-Swap `-e prod` for `-e default` and it fails identically. This is a change from an
+Swap `-e backend` for `-e default` and it fails identically. This is a change from an
 earlier design in which the wheel was what kept a container away from the developer's
 `backend/.env`; the app no longer reads that file at all, so the guarantee no longer
 depends on how it was installed.
 
-Nothing in CI builds `prod` yet; it is verified by hand until there is an image to build.
+`frontend` is the odd one out, because it is a *toolchain* rather than a payload. It holds
+node and pnpm, it runs `tsc -b && vite build`, and nothing in it reaches the image the SPA
+ships in - nginx serves `dist/`. It is also the only environment that declares
+`no-default-feature = true`: `[dependencies]` **is** the default feature and is folded into
+every environment that does not opt out, so without the flag this one would carry python,
+fastapi and asyncpg it never runs. That leanness is what lets the SPA image build from a
+context with no backend source in it, which in turn keeps a backend commit from
+invalidating its layer cache.
+
+`pixi run frontend-build` from a blessed shell still resolves through `default`, which is
+what the editor and CI use; `pixi run -e frontend frontend-build` is the same build in the
+lean environment, and the two produce byte-identical output.
+
+Nothing in CI builds `backend` or `frontend` yet; both are verified by hand until there is
+an image to build.
 
 ## Configuration
 
