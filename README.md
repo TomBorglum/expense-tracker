@@ -48,6 +48,11 @@ That includes PostgreSQL: the server is a conda-forge package like everything el
 there is nothing to install system-wide and no container to run. See
 [Database](#database).
 
+Docker is the one tool pixi does not supply, and it is needed for `pixi run
+backend-image` alone - a machine without it gets `docker: command not found` from that
+task and nothing else. The development loop never reaches for it. See
+[Container images](#container-images).
+
 `use pixi` is not built into direnv. On a workstation it comes from the direnv library
 [`wsl-cloud-init`](https://github.com/TomBorglum/wsl-cloud-init) provisions; in CI, the
 `setup-direnv` action from [`TomBorglum/actions`](https://github.com/TomBorglum/actions)
@@ -1169,6 +1174,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run backend-format` | `poe format` | Format with ruff |
 | `pixi run backend-format-check` | `poe format-check` | Check formatting without writing changes |
 | `pixi run backend-typecheck` | `poe typecheck` | Type-check with basedpyright (recommended) |
+| `pixi run backend-image` | `poe image` | Build the API container image from the `backend` environment |
 | `pixi run frontend-install` | `pnpm install` | Install frontend dependencies (`--frozen-lockfile`) |
 | `pixi run frontend-dev` | `pnpm run dev` | Run vite's dev server on port 5173 (hot reload) |
 | `pixi run frontend-build` | `pnpm run build` | Build the frontend into `frontend/dist/` |
@@ -1193,8 +1199,10 @@ than reaching for whatever cluster answers on 5432. `pixi task list` prints this
 first column.
 
 CI runs every gate above except the two `dev` tasks, the two `-fix` variants,
-`backend-format`, the two loaders and the four `backend-db-*` tasks other than
-`backend-db-init` on each pull request, then the SonarCloud scan. The loaders are left
+`backend-format`, `backend-image`, the two loaders and the four `backend-db-*` tasks
+other than `backend-db-init` on each pull request, then the SonarCloud scan.
+`backend-image` is left out because it builds rather than checks, and because it is the
+one task that needs a tool the runner's pixi environment does not carry. The loaders are left
 out because they mutate data and CI has no need of them: `test_expense_postgres.py` and
 `test_currency_postgres.py` already put the committed sample files through the real
 database path inside `backend-test`.
@@ -1284,8 +1292,79 @@ invalidating its layer cache.
 what the editor and CI use; `pixi run -e frontend frontend-build` is the same build in the
 lean environment, and the two produce byte-identical output.
 
-Nothing in CI builds `backend` or `frontend` yet; both are verified by hand until there is
-an image to build.
+Nothing in CI builds either environment yet. `backend` now has an image to build -
+`pixi run backend-image`, below - and `frontend` is still verified by hand.
+
+## Container images
+
+`backend/Dockerfile` builds the API image out of the `backend` environment above, in two
+stages: a `ghcr.io/prefix-dev/pixi` builder materialises the environment, and a
+`gcr.io/distroless/base-debian12:nonroot` runtime stage receives the finished prefix and
+nothing that produced it - no pixi, no package cache, no package manager, no shell.
+
+```sh
+pixi run backend-image
+docker run --rm -p 8000:8000 \
+  -e DATABASE_URL=postgresql+asyncpg://user@host:5432/expense_tracker \
+  expense-tracker-backend:dev
+```
+
+The build context is the **repository root** rather than `backend/`, because the
+environment is declared across `pixi.toml` and `pixi.lock` and both of those live there.
+The builder runs `pixi install --locked`, so an image resolves the same lock a developer
+and CI do, and `.dockerignore` keeps this machine's own `.pixi/` prefixes out of the
+context.
+
+Four properties are worth writing down, because nothing checks any of them.
+
+**The prefix keeps the path it was built at.** A conda prefix is not relocatable, and pixi
+rewrites each console script's shebang to an absolute interpreter path inside it:
+
+```sh
+head -1 .pixi/envs/backend/bin/uvicorn
+# #!/home/you/projects/expense-tracker/.pixi/envs/backend/bin/python3.15
+```
+
+So the builder works in `/app` and the runtime stage copies `/app/.pixi/envs/backend` to
+that same path - the repetition in that `COPY` line is the point of it, not a typo. The
+entrypoint then names the interpreter outright rather than the `uvicorn` script, which
+keeps the image from depending on how pixi wrote that line at all.
+
+**There is no shell, and nothing else either.** `/bin` and `/usr/bin` are empty in this
+base, so `docker run --entrypoint /bin/sh` fails with `no such file or directory`, and
+code execution inside the container finds no interpreter to pivot through. `PATH` names
+the prefix alone for the same reason. It also rules out a shell-form `HEALTHCHECK`, and
+the API publishes no health route, so the image declares none.
+
+**`pixi shell-hook`'s exports are written out by `ENV`.** There is no shell to run an
+activation script in, so `PATH`, `SSL_CERT_FILE` and `SSL_CERT_DIR` are set by hand. That
+substitution is complete rather than approximate only because none of the packages pinned
+in `pixi.toml` ships an activation script; one that did would need its exports added
+there. The two SSL names matter because distroless carries no system trust store for the
+prefix's own openssl to find.
+
+**The image has no configuration defaults.** `DATABASE_URL`, or all four `PG*` names, has
+to arrive at `docker run` time: `config.py` validates and the process refuses to start
+otherwise, exactly as it does locally. `.dockerignore` excludes every `.env` variant, the
+two committed ones included, so this checkout's loopback database cannot reach an image.
+
+It runs as UID 65532 - distroless's `nonroot` - owns nothing it can write to, and listens
+on 8000. That port is fixed rather than read from `UVICORN_PORT`, which only the `dev`
+task uses: `docker run -p` is what maps a container port, so a second name for it would be
+one more pair to keep in agreement.
+
+Both bases carry a tag and a digest, the tag naming the version a reader sees and the
+digest deciding what is pulled. Nothing bumps them automatically - `docker` is not among
+the ecosystems in `.github/dependabot.yml` - so a base update is a deliberate edit.
+
+The image is about 405 MB, nearly all of it the prefix: a complete CPython plus the shared
+libraries behind asyncpg, pydantic-core and SQLAlchemy. Two things in it are build-time
+leftovers rather than runtime needs - some 14 MB of C headers under `include/`, and the
+one linker binary that arrives because conda-forge's `python` hard-depends on
+`ld_impl_linux-64`. Neither is reachable without an interpreter, and neither can be
+dropped from `pixi.toml`, only deleted from the prefix.
+
+The SPA image is not built yet; it arrives with `frontend/Dockerfile`.
 
 ## Configuration
 

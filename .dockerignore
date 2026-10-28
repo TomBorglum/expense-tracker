@@ -1,0 +1,45 @@
+# What never belongs in a build context. Both Dockerfiles take the repository root as their
+# context, so one list serves both: this file is about what must not be uploaded to the
+# daemon at all, while each Dockerfile's COPY lines decide what reaches an image.
+
+# The developer's own pixi environments - hundreds of megabytes of prefixes that the build
+# materialises its own copy of, and by far the largest thing a context would otherwise
+# carry. Sending them would also put a prefix built for this machine's absolute paths
+# inside an image that holds it somewhere else.
+.pixi/
+
+# Git history. Neither build reads it, and it carries every past revision of every file.
+.git/
+.gitignore
+.github/
+
+# Restored inside the image by `pnpm install --frozen-lockfile`.
+node_modules/
+
+# Built inside the image by vite; a stale local copy must never be able to win.
+frontend/dist/
+
+# The local PostgreSQL cluster, data directory and server log included.
+backend/.pgdata/
+
+# Bytecode and tool caches, every one of them machine-local.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.import_linter_cache/
+.coverage
+coverage.xml
+coverage/
+
+# Every .env variant, the two committed defaults included. They hold development values -
+# a loopback database and a localhost API origin - and an image that found one would be
+# configured by this checkout instead of by its deployment. The backend reads its settings
+# from the environment and opens no file, so for it such a file could only mislead; the
+# frontend's is inlined by vite at build time, so its image writes the value it wants
+# rather than inheriting one from here. .envrc matches this rule and is excluded with
+# them, nothing in either image being a blessed shell.
+.env*
+
+# Editor and agent state.
+.claude/
+.zed/
