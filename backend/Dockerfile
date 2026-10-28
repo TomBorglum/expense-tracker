@@ -36,7 +36,13 @@ RUN --mount=type=cache,target=/root/.cache/rattler \
     pixi install --locked -e backend
 
 
-FROM gcr.io/distroless/base-debian12:nonroot@sha256:7f0c72cd138b442ae0deeb69c08b1acf5525439ba251a49ad93c320a061567e5
+# base-nossl rather than base: the prefix carries its own openssl and nothing in it links
+# the system one, so Debian's copy would be an unused library that a scanner still
+# inventories and reports CVEs against. The nossl variant is base minus libssl.so.3,
+# libcrypto.so.3, the OpenSSL engines and their dpkg entry - 24.6 MB against 33.1 MB - and
+# keeps glibc, which is what rules `static` out. /etc/ssl/certs/ca-certificates.crt is in
+# both variants and read by neither; see the ENV block below.
+FROM gcr.io/distroless/base-nossl-debian12:nonroot@sha256:be40c00dfabd86576d92666e87e406714d5618342de1a0c213ad232de255172e
 
 # The prefix, at the path the builder wrote it to; the repetition is the point, not a typo.
 # No --chown: nothing in this image writes to the prefix, and root-owned is what keeps it
@@ -45,14 +51,19 @@ COPY --from=builder /app/.pixi/envs/backend /app/.pixi/envs/backend
 
 # What `pixi shell-hook` would export, set by hand because there is no shell here to run an
 # activation script in. None of the packages pinned in pixi.toml ships one, which is what
-# makes this substitution complete rather than approximate. The two SSL names matter because
-# distroless carries no system trust store for the prefix's own openssl to find.
+# makes this substitution complete rather than approximate.
+#
+# SSL_CERT_FILE restates a default rather than correcting one. conda-forge's openssl is
+# built with its own OPENSSLDIR, so it reads ssl/cert.pem out of the prefix and never
+# /etc/ssl - which is why the base's own ca-certificates.crt goes unread - and that path is
+# right here only because the COPY above puts the prefix back where it was built. Naming
+# the file keeps the trust store greppable in this file rather than compiled invisibly into
+# libcrypto. No SSL_CERT_DIR: the prefix's ssl/certs holds a .keep and nothing else.
 #
 # PATH names the prefix and nothing else, because there is nothing else: /bin and /usr/bin
 # are empty in this base, so the usual tail would only suggest otherwise.
 ENV PATH="/app/.pixi/envs/backend/bin" \
-    SSL_CERT_FILE="/app/.pixi/envs/backend/ssl/cacert.pem" \
-    SSL_CERT_DIR="/app/.pixi/envs/backend/ssl/certs"
+    SSL_CERT_FILE="/app/.pixi/envs/backend/ssl/cacert.pem"
 
 # distroless's `nonroot`, written numerically so the image depends on no entry in the base's
 # /etc/passwd.

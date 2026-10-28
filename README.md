@@ -1299,8 +1299,8 @@ Nothing in CI builds either environment yet. `backend` now has an image to build
 
 `backend/Dockerfile` builds the API image out of the `backend` environment above, in two
 stages: a `ghcr.io/prefix-dev/pixi` builder materialises the environment, and a
-`gcr.io/distroless/base-debian12:nonroot` runtime stage receives the finished prefix and
-nothing that produced it - no pixi, no package cache, no package manager, no shell.
+`gcr.io/distroless/base-nossl-debian12:nonroot` runtime stage receives the finished prefix
+and nothing that produced it - no pixi, no package cache, no package manager, no shell.
 
 ```sh
 pixi run backend-image
@@ -1337,11 +1337,17 @@ the prefix alone for the same reason. It also rules out a shell-form `HEALTHCHEC
 the API publishes no health route, so the image declares none.
 
 **`pixi shell-hook`'s exports are written out by `ENV`.** There is no shell to run an
-activation script in, so `PATH`, `SSL_CERT_FILE` and `SSL_CERT_DIR` are set by hand. That
-substitution is complete rather than approximate only because none of the packages pinned
-in `pixi.toml` ships an activation script; one that did would need its exports added
-there. The two SSL names matter because distroless carries no system trust store for the
-prefix's own openssl to find.
+activation script in, so `PATH` and `SSL_CERT_FILE` are set by hand. That substitution is
+complete rather than approximate only because none of the packages pinned in `pixi.toml`
+ships an activation script; one that did would need its exports added there.
+
+`SSL_CERT_FILE` restates OpenSSL's own default rather than correcting one. conda-forge's
+openssl is built with its own `OPENSSLDIR`, so it reads `ssl/cert.pem` out of the prefix
+and never `/etc/ssl` - the base's own `ca-certificates.crt` is present and goes unread -
+and that default lands correctly only because the `COPY` puts the prefix back where it was
+built. Naming the file keeps the trust store greppable in the Dockerfile instead of
+compiled invisibly into libcrypto. There is no `SSL_CERT_DIR`: the prefix's `ssl/certs`
+holds a `.keep` and nothing else.
 
 **The image has no configuration defaults.** `DATABASE_URL`, or all four `PG*` names, has
 to arrive at `docker run` time: `config.py` validates and the process refuses to start
@@ -1353,11 +1359,28 @@ on 8000. That port is fixed rather than read from `UVICORN_PORT`, which only the
 task uses: `docker run -p` is what maps a container port, so a second name for it would be
 one more pair to keep in agreement.
 
+**Why `base-nossl` rather than `base`.** The distroless family stacks up as `static` (no
+libc), `base-nossl` (glibc), `base` (plus libssl and libcrypto), `cc` (plus libstdc++).
+`static` is out because the prefix needs glibc, and `cc` is unnecessary because the prefix
+carries its own libstdc++, which leaves the two middle rungs. `base` differs from
+`base-nossl` by exactly fourteen entries: `libssl.so.3`, `libcrypto.so.3`, three OpenSSL
+engines, one module, their dpkg records and their changelogs. Nothing in the image links
+any of them - the prefix's `_ssl` resolves `libssl.so.3` through its own RPATH - so on
+`base` they would sit there as an unused library that a scanner still inventories out of
+`/var/lib/dpkg/status.d/` and reports CVEs against. That is worth more than the 8.5 MB it
+saves (24.6 MB against 33.1 MB): a release gated on a HIGH or CRITICAL finding should not
+be blocked by a library the application never loads.
+
+Alpine is not an option at any size. conda-forge publishes no musl builds, so every binary
+in the prefix is glibc-linked and would not start there, and the gcompat shim does not
+cover what a CPython prefix asks of libc. It would also bring back a shell and a package
+manager, which is most of what the base above was chosen to be without.
+
 Both bases carry a tag and a digest, the tag naming the version a reader sees and the
 digest deciding what is pulled. Nothing bumps them automatically - `docker` is not among
 the ecosystems in `.github/dependabot.yml` - so a base update is a deliberate edit.
 
-The image is about 405 MB, nearly all of it the prefix: a complete CPython plus the shared
+The image is about 396 MB, nearly all of it the prefix: a complete CPython plus the shared
 libraries behind asyncpg, pydantic-core and SQLAlchemy. Two things in it are build-time
 leftovers rather than runtime needs - some 14 MB of C headers under `include/`, and the
 one linker binary that arrives because conda-forge's `python` hard-depends on
