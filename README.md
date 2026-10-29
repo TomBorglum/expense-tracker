@@ -1529,6 +1529,15 @@ tomborglum/expense-tracker-backend
 tomborglum/expense-tracker-frontend
 ```
 
+The same job derives the OCI metadata: eight `org.opencontainers.image.*` values, carried
+twice over, as labels in the image config and as annotations on its manifest, so a
+registry client can read `source` and `revision` without pulling the image. Two of the
+eight are overridden per image in `build`'s matrix, because metadata-action reads both
+from the repository and so gives both images the same answer: `title`, which would be
+`expense-tracker` for each rather than the Docker Hub repository name, and `description`,
+which is the repository description and therefore had the SPA image advertising the REST
+API.
+
 It is a release workflow and not a deployment workflow. Its whole output is a tag on
 Docker Hub; when such a tag becomes live somewhere is a separate concern, which is also
 why no GitHub Environment is involved - an environment would file deployment records for

@@ -81,6 +81,10 @@ jobs:
   # The untrusted job: the only one that checks out, and the only one that runs anything
   # from the repository. No `id-token` - see the header.
   build:
+    # Named explicitly so the job stays `build (backend)` now that the matrix carries a
+    # second key: GitHub builds a matrix job's default name out of every value in the
+    # combination, which would put a whole sentence in it.
+    name: build (${{ matrix.stack }})
     needs: meta
     runs-on: ubuntu-latest
     permissions:
@@ -89,7 +93,18 @@ jobs:
       # Both images get scanned even when one fails, so one run lists every finding.
       fail-fast: false
       matrix:
-        stack: [backend, frontend]
+        # The description is per image because metadata-action takes it from the
+        # repository, which left the SPA image advertising the REST API. The title is
+        # derived from `stack` below rather than declared here.
+        include:
+          - stack: backend
+            description: >-
+              The expense-tracker REST API - four read-only JSON endpoints over
+              PostgreSQL, served by uvicorn.
+          - stack: frontend
+            description: >-
+              The expense-tracker single-page app - a React and Tailwind bundle
+              served by nginx.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -130,8 +145,19 @@ jobs:
           # `mode=min` is the one-line change if that ever stops being true.
           provenance: mode=max
           sbom: true
-          labels: ${{ needs.meta.outputs.labels }}
-          annotations: ${{ needs.meta.outputs.annotations }}
+          # The shared set, then the two per-image overrides. build-push-action emits one
+          # `--label`/`--annotation` flag per line in the order given, and a repeated key
+          # takes its LAST value - measured against a built image, not assumed. Both
+          # halves are overridden because a label lands in the image config and an
+          # annotation on the manifest, so setting one alone makes the two disagree.
+          labels: |
+            ${{ needs.meta.outputs.labels }}
+            org.opencontainers.image.title=expense-tracker-${{ matrix.stack }}
+            org.opencontainers.image.description=${{ matrix.description }}
+          annotations: |
+            ${{ needs.meta.outputs.annotations }}
+            manifest:org.opencontainers.image.title=expense-tracker-${{ matrix.stack }}
+            manifest:org.opencontainers.image.description=${{ matrix.description }}
 
       # trivy reads an OCI *layout directory* and rejects the archive outright - "stat
       # image.oci.tar/index.json: not a directory". An OCI archive is a tarred layout, so
