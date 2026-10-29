@@ -31,6 +31,11 @@ COPY backend/src ./backend/src
 # --locked refuses to re-resolve, so the lock is the single source of truth here exactly as
 # it is in CI. The cache mounts keep a rebuild to a relink and a wheel build rather than a
 # fresh download of the whole environment; neither mount reaches the stage below.
+#
+# They are warm only where a builder persists, which is this command run locally and not
+# release.yml: setup-buildx-action creates a new builder for each job, and no cache
+# exporter carries a mount's contents - `cache-to` exports build steps, not mounts - so
+# every CI build fills them from scratch.
 RUN --mount=type=cache,target=/root/.cache/rattler \
     --mount=type=cache,target=/root/.cache/uv \
     pixi install --locked -e backend
