@@ -1300,8 +1300,11 @@ same way CI builds them - `pixi run backend-image` and `pixi run frontend-image`
 ## Container images
 
 Two images, one per stack, each built from the lean pixi environment of the same name and
-each taking the repository root as its build context. Both are published to Docker Hub by
-`release.yml`; see [Releases](#releases).
+each taking the repository root as its build context. Each stack declares its own image in
+a `docker-bake.hcl` beside its Dockerfile - the context, the Dockerfile and the two OCI
+values only the stack itself knows - and both the local task below and `release.yml` build
+a target out of that file rather than passing those settings on a command line. Both are
+published to Docker Hub by `release.yml`; see [Releases](#releases).
 
 ### The API image
 
@@ -1319,6 +1322,9 @@ docker run --rm -p 8000:8000 \
 
 The build context is the **repository root** rather than `backend/`, because the
 environment is declared across `pixi.toml` and `pixi.lock` and both of those live there.
+`docker-bake.hcl` states it as `context = ".."`, which bake refuses to read until a caller
+allows it - hence the `--allow=fs.read=..` in the task above, which CI needs none of
+because `docker/bake-action` allows `fs=*` on its own.
 The builder runs `pixi install --locked`, so an image resolves the same lock a developer
 and CI do, and `.dockerignore` keeps this machine's own `.pixi/` prefixes out of the
 context.
@@ -1536,18 +1542,27 @@ eight do not come from there, because metadata-action reads them from the **repo
 and so hands both images the same answer - which had the SPA image advertising the REST
 API and titled both of them `expense-tracker`:
 
-- **`description` is the stack's own**, declared in the manifest that already describes
-  that stack - `[project].description` in `backend/pyproject.toml`, `description` in
-  `frontend/package.json` - and read out of it by the `build` job rather than written in
-  the workflow a second time. A missing or multi-line field fails the job.
-- **`title` is the Docker Hub repository's name**, `expense-tracker-<stack>`, which is a
-  publishing fact rather than something either stack knows about itself, so it stays in
-  the workflow.
+- **`title` and `description` are the stack's own**, declared in its `docker-bake.hcl`
+  beside the context and the Dockerfile and nowhere in the workflow. The image is what
+  knows what it is; the pipeline knows how to combine the pieces.
 
-Both are set as a label *and* as an annotation, because the two land in different places -
-the image config and the manifest - and setting one alone would make them disagree. A
-Dockerfile `LABEL` cannot serve either purpose here: it writes no annotation at all, and a
-`--label` on the build command overrides it.
+Merging those two with the shared set is what the `build` job uses `docker buildx bake`
+for rather than a plain build. metadata-action writes its labels and annotations out as
+bake files of their own, and bake merges a list of files onto one target: `labels` is a map
+and merges per key, so a key the stack names wins and every shared one survives, and
+`annotations` is a list and is appended, a repeated key resolving last-wins in the built
+image. **The stack's own file is therefore loaded last** - reverse the order and the
+repository's description is republished on both images with nothing failing.
+
+The target is spelled `image` in four places: both bake files, metadata-action's
+`bake-target`, and the build step's `targets` and `set:` keys. A `bake-target` naming a
+target nothing builds fails silently - the overrides land nowhere and both images publish
+with no release metadata at all - which is why `CLAUDE.md` carries that pair.
+
+Both values are set as a label *and* as an annotation, because the two land in different
+places - the image config and the manifest - and setting one alone would make them
+disagree. A Dockerfile `LABEL` cannot serve either purpose here: it writes no annotation at
+all, and a `--label` on the build command overrides it.
 
 It is a release workflow and not a deployment workflow. Its whole output is a tag on
 Docker Hub; when such a tag becomes live somewhere is a separate concern, which is also

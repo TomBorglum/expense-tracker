@@ -1,6 +1,5 @@
 {
   "name": "expense-tracker",
-  "description": "The expense-tracker single-page app - a React and Tailwind bundle served by nginx.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +7,7 @@
     "dev": "vite",
     "format": "prettier --write .",
     "format-check": "prettier --check .",
-    "image": "docker build --file Dockerfile --tag expense-tracker-frontend:dev ..",
+    "image": "docker buildx bake --allow=fs.read=.. dev",
     "lint": "eslint . --max-warnings 0",
     "lint-fix": "eslint . --fix",
     "test": "vitest run --coverage",

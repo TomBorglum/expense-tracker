@@ -56,12 +56,16 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tags: ${{ steps.meta.outputs.tags }}
-      labels: ${{ steps.meta.outputs.labels }}
-      annotations: ${{ steps.meta.outputs.annotations }}
+      bake-labels: ${{ steps.bake.outputs.labels }}
+      bake-annotations: ${{ steps.bake.outputs.annotations }}
     steps:
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
+          # The target both stacks' bake files declare, so the generated overrides land on
+          # it. Without this they would land on `docker-metadata-action` and apply to
+          # nothing.
+          bake-target: image
           # Both images, so one derivation serves both; the push job selects the lines
           # belonging to each by its `<image>:` prefix.
           images: |
@@ -77,6 +81,29 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=long
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+
+      # metadata-action writes these bake files into THIS runner's temp directory, so
+      # their paths mean nothing in the build job - the contents travel instead. Deriving
+      # them there instead would give the two images different `created` stamps, which is
+      # the whole reason this job exists.
+      - name: Carry the bake overrides to the build job
+        id: bake
+        env:
+          LABELS_FILE: ${{ steps.meta.outputs.bake-file-labels }}
+          ANNOTATIONS_FILE: ${{ steps.meta.outputs.bake-file-annotations }}
+        run: |
+          set -euo pipefail
+          [ -s "$LABELS_FILE" ] && [ -s "$ANNOTATIONS_FILE" ]
+          delimiter="BAKE_$(openssl rand -hex 16)"
+          {
+            printf 'labels<<%s\n' "$delimiter"
+            cat "$LABELS_FILE"
+            printf '\n%s\n' "$delimiter"
+            printf 'annotations<<%s\n' "$delimiter"
+            cat "$ANNOTATIONS_FILE"
+            printf '\n%s\n' "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+          cat "$LABELS_FILE" "$ANNOTATIONS_FILE"
 
   # The untrusted job: the only one that checks out, and the only one that runs anything
   # from the repository. No `id-token` - see the header.
@@ -97,35 +124,17 @@ jobs:
           # also hold a credential for the repository.
           persist-credentials: false
 
-      # Each stack says what its image is in the manifest that already describes it, and
-      # this reads that rather than the workflow stating it a second time: metadata-action
-      # takes the description from the REPOSITORY, which gives both images the same answer
-      # and had the SPA advertising the REST API. Two manifest formats, so two arms; a
-      # missing or empty field fails the job rather than publishing a blank label.
-      - name: Read the ${{ matrix.stack }} image's own description
-        id: own
+      # The release metadata, written back out as a pair of bake files beside the stack's
+      # own. The build step below loads these FIRST and the stack's file LAST.
+      - name: Stage the shared bake overrides
         env:
-          STACK: ${{ matrix.stack }}
+          LABELS: ${{ needs.meta.outputs.bake-labels }}
+          ANNOTATIONS: ${{ needs.meta.outputs.bake-annotations }}
         run: |
           set -euo pipefail
-          case "$STACK" in
-            backend)
-              description="$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["project"]["description"])' backend/pyproject.toml)"
-              ;;
-            frontend)
-              description="$(jq -re .description frontend/package.json)"
-              ;;
-            *)
-              echo "::error::no manifest is known for the $STACK stack."
-              exit 1
-              ;;
-          esac
-          if [ -z "$description" ] || [ "$(printf '%s' "$description" | wc -l)" -ne 0 ]; then
-            echo "::error::$STACK must declare a one-line description in its manifest."
-            exit 1
-          fi
-          printf 'description=%s\n' "$description" >> "$GITHUB_OUTPUT"
-          echo "$description"
+          mkdir -p /tmp/bake
+          printf '%s\n' "$LABELS" > /tmp/bake/labels.json
+          printf '%s\n' "$ANNOTATIONS" > /tmp/bake/annotations.json
 
       # The docker-container driver, not the default docker one: attestations and the
       # type=oci exporter are BuildKit features the docker driver does not implement.
@@ -133,18 +142,35 @@ jobs:
 
       - name: Build the ${{ matrix.stack }} image
         id: build
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         with:
-          # The repository root, for both stacks: the environments are declared in
-          # pixi.toml and pixi.lock, which live there. Same reason the poe/pnpm `image`
-          # tasks pass `..`.
-          context: .
-          file: ${{ matrix.stack }}/Dockerfile
-          platforms: linux/amd64
+          # The stack's own directory, which is what its bake file's `context` and
+          # `dockerfile` are written against - bake resolves `context` relative to the
+          # working directory and `dockerfile` relative to the context, exactly as
+          # `docker build` does. This is what `poe image` and `pnpm run image` pass too.
+          source: ${{ matrix.stack }}
+          # ORDER IS LOAD-BEARING. bake merges `labels` per key and appends `annotations`,
+          # so the file loaded last wins the keys it names and inherits the rest: the
+          # shared release metadata first, the stack's own description and title last.
+          # Swapping these lines republishes the repository's description on both images
+          # and nothing fails.
+          files: |
+            /tmp/bake/labels.json
+            /tmp/bake/annotations.json
+            docker-bake.hcl
+          targets: image
           # Exported, not pushed. This job must not hold registry credentials, and the
-          # archive is what crosses into the job that does.
-          push: false
-          outputs: type=oci,dest=/tmp/image.oci.tar
+          # archive is what crosses into the job that does. Both are `set` rather than
+          # declared in the bake file: where the artifact lands and what it is built for
+          # are this workflow's decisions, not the stack's.
+          #
+          # No `allow` input is needed even though the context leaves the stack directory:
+          # bake-action passes `--allow fs=*` itself for buildx >= 0.18. A local
+          # `docker buildx bake` has to pass `--allow=fs.read=..`, which is why the two
+          # `image` tasks carry it.
+          set: |
+            image.output=type=oci,dest=/tmp/image.oci.tar
+            image.platform=linux/amd64
           # `mode=max` rather than `true`, and the difference is not cosmetic: given
           # `provenance: true` the action emits `--attest type=provenance,builder-id=...`
           # and leaves BuildKit's own `mode=min` in force, which records LESS than this
@@ -160,21 +186,6 @@ jobs:
           # `mode=min` is the one-line change if that ever stops being true.
           provenance: mode=max
           sbom: true
-          # The shared set, then the two per-image values. build-push-action emits one
-          # `--label`/`--annotation` flag per line in the order given, and a repeated key
-          # takes its LAST value - measured against a built image, not assumed. Both
-          # halves are set because a label lands in the image config and an annotation on
-          # the manifest, so doing one alone makes the two disagree. The title is the
-          # Docker Hub repository's own name, which is a publishing fact rather than
-          # something the stack knows, so it stays here.
-          labels: |
-            ${{ needs.meta.outputs.labels }}
-            org.opencontainers.image.title=expense-tracker-${{ matrix.stack }}
-            org.opencontainers.image.description=${{ steps.own.outputs.description }}
-          annotations: |
-            ${{ needs.meta.outputs.annotations }}
-            manifest:org.opencontainers.image.title=expense-tracker-${{ matrix.stack }}
-            manifest:org.opencontainers.image.description=${{ steps.own.outputs.description }}
 
       # trivy reads an OCI *layout directory* and rejects the archive outright - "stat
       # image.oci.tar/index.json: not a directory". An OCI archive is a tarred layout, so
@@ -237,7 +248,8 @@ jobs:
       # transit, rather than that being read off two logs by eye.
       - name: Stage the archive and its digest
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          # bake-action reports one entry per target rather than a bare digest.
+          DIGEST: ${{ fromJSON(steps.build.outputs.metadata).image['containerimage.digest'] }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/out

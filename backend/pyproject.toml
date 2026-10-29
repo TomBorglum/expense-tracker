@@ -1,7 +1,5 @@
 [project]
 name = "expense-tracker"
-# Also what the image says it is: release.yml reads it for the OCI description label.
-description = "The expense-tracker REST API - four read-only JSON endpoints over PostgreSQL, served by uvicorn."
 version = "0"                    # inert placeholder; release version lives in .release-please-manifest.json
 requires-python = ">=3.14"
 dependencies = []               # runtime deps are conda-pinned in pixi.toml (repo convention, CLAUDE.md)
@@ -104,13 +102,15 @@ dev.cmd = "uvicorn expense_tracker:create_app --factory --reload --reload-dir sr
 dev.deps = ["db-init"]
 format = "ruff format"
 format-check = "ruff format --check"
-# Build the API image, context at the repository root so `pixi install` inside it can read
-# pixi.toml and pixi.lock; everything it contains is in backend/Dockerfile.
+# Build the API image, from the `dev` target in docker-bake.hcl - which is also where the
+# context and the Dockerfile are declared, so release.yml builds the same target. The flag
+# is bake refusing a context above its own directory until a caller allows it; CI passes
+# none, docker/bake-action allowing `fs=*` itself.
 #
 # The first task whose tool pixi does not provide, so a machine without docker gets
 # `docker: command not found` rather than a pixi error. The :dev tag is local and names
 # nothing published; what a release publishes is decided outside this manifest.
-image = "docker build --file Dockerfile --tag expense-tracker-backend:dev .."
+image = "docker buildx bake --allow=fs.read=.. dev"
 # Two linters, one gate: ruff over each file, then import-linter over the graph they form,
 # against [tool.importlinter] below. import-linter's cwd is this directory, which is how it
 # finds its config unaided - no --config flag.
