@@ -36,9 +36,21 @@ server {
     # against the checksum of the PACKAGED one and bails when they differ, which in the
     # unprivileged image they already do, and in any case it runs before the envsubst
     # script above replaces that file wholesale.
-    listen 8080;
-    listen [::]:8080;
+    #
+    # default_server declares what this block would be by accident anyway: nginx makes the
+    # FIRST server on an address:port the default, and conf.d is included by glob, so left
+    # implicit the catch-all below would rest on this file still sorting first. Stated, a
+    # second block claiming it makes nginx refuse to start rather than quietly reorder.
+    # Only one block per address may carry it, which is why both lines do - v4 and v6 are
+    # separate claims.
+    listen 8080 default_server;
+    listen [::]:8080 default_server;
 
+    # `_` is not a wildcard: nginx has no catch-all name, and this is simply an invalid
+    # hostname used by convention to say that name-based virtual hosting is not in use.
+    # What actually routes every request here is default_server above. The Host a
+    # deployment presents is its own business - an ingress, a load balancer, or a browser
+    # on 127.0.0.1:8080 all reach this one server.
     server_name _;
 
     # A document root of our own rather than the base's /usr/share/nginx/html, so the
