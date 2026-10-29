@@ -99,6 +99,8 @@ backend-db-stop = { cmd = "poe db-stop", cwd = "backend" }
 backend-dev = { cmd = "poe dev", cwd = "backend" }
 backend-format = { cmd = "poe format", cwd = "backend" }
 backend-format-check = { cmd = "poe format-check", cwd = "backend" }
+# The one forwarder whose tool pixi does not install: docker has to be on PATH already.
+backend-image = { cmd = "poe image", cwd = "backend" }
 backend-lint = { cmd = "poe lint", cwd = "backend" }
 backend-lint-fix = { cmd = "poe lint-fix", cwd = "backend" }
 backend-load-currencies = { cmd = "poe load-currencies", cwd = "backend" }
