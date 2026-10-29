@@ -120,6 +120,9 @@ frontend-format = { cmd = "pnpm run format", cwd = "frontend" }
 # The formatting gate. .zed/settings.json does not enable format_on_save, so formatting is
 # applied by frontend-format and checked here rather than by the editor.
 frontend-format-check = { cmd = "pnpm run format-check", cwd = "frontend" }
+# The one forwarder here whose tool pixi does not install: docker has to be on PATH
+# already, exactly as for backend-image.
+frontend-image = { cmd = "pnpm run image", cwd = "frontend" }
 frontend-install = { cmd = "pnpm install --frozen-lockfile", cwd = "frontend" }
 # Type-aware, so it builds the same full TS program frontend-typecheck does and then runs
 # every rule over it - about twice the cost, which is why CI puts it last.

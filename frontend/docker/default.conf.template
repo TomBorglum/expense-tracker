@@ -1,0 +1,98 @@
+# Rendered to /etc/nginx/conf.d/default.conf at container start by the base image's own
+# 20-envsubst-on-templates.sh, which strips the .template suffix - so this REPLACES the
+# stock default.conf rather than sitting beside it, and nothing of that file survives.
+#
+# ${API_BASE_URL} is the only substitution. Every other $name below is an nginx variable
+# that has to reach nginx intact; NGINX_ENVSUBST_FILTER in the Dockerfile is what keeps a
+# future environment variable from being mistaken for one.
+
+# Cache-Control is computed here rather than set inside each location, because add_header
+# in a nested block REPLACES the inherited set instead of adding to it: an /assets/ block
+# carrying a Cache-Control of its own would silently drop every security header below. One
+# map and one server-level add_header is what makes that impossible rather than merely
+# avoided.
+#
+# The status is half the key, not decoration. Only a response that actually carries the
+# asset may be cached for a year: a 404 on /assets/ keyed on the path alone would be
+# cached as `immutable` too, so a client that asked for a chunk during a deployment would
+# keep that 404 for a year and have no way to retry.
+map $status $expense_tracker_served {
+    default              "err";
+    ~^(200|204|206|304)$ "ok";
+}
+
+# $uri is what try_files has already resolved, so a client-side route that fell back to
+# the shell is matched here as /index.html and gets no-store. Only /assets/ is
+# content-hashed by vite, so only /assets/ can be cached at all.
+map "$expense_tracker_served$uri" $expense_tracker_cache_control {
+    default      "no-store";
+    ~^ok/assets/ "public, max-age=31536000, immutable";
+}
+
+server {
+    # 8080 rather than 80: this base runs as 101 and cannot bind a privileged port. The
+    # IPv6 line is written out by hand because the base's own
+    # 10-listen-on-ipv6-by-default.sh never reaches this file - it compares default.conf
+    # against the checksum of the PACKAGED one and bails when they differ, which in the
+    # unprivileged image they already do, and in any case it runs before the envsubst
+    # script above replaces that file wholesale.
+    listen 8080;
+    listen [::]:8080;
+
+    server_name _;
+
+    # A document root of our own rather than the base's /usr/share/nginx/html, so the
+    # served set is exactly what vite built. That directory arrives carrying a stock
+    # 50x.html, which this server has no error_page pointing at and which would be served
+    # as an ordinary 200 at /50x.html - a page that names nginx, right after
+    # server_tokens off went to the trouble of not naming it.
+    root /srv/expense-tracker;
+
+    # Keeps the version out of the Server header and off the built-in error pages.
+    server_tokens off;
+
+    # nginx.conf ships `#gzip  on;`, so compression is off unless a server asks for it.
+    # Worth asking for: the one application chunk is 330 kB raw against 105 kB gzipped.
+    gzip on;
+    gzip_vary on;
+    gzip_types text/css application/javascript image/svg+xml;
+
+    # One header set for every response, the 404s below included - `always` is what
+    # extends them past 2xx and 3xx. The CSP is derived from what the built bundle
+    # actually loads, which is narrower than a default-deny policy usually gets to be:
+    #
+    #   script-src 'self'          one module script, and no inline script anywhere
+    #   style-src 'unsafe-inline'  React renders inline `style` ATTRIBUTES (the date
+    #                              picker, and the width hints in the tables), and an
+    #                              attribute is governed by style-src-attr, which falls
+    #                              back to style-src. style-src-elem keeps the tighter
+    #                              rule on the stylesheet itself wherever a browser
+    #                              implements it; Firefox does not, and ignores the
+    #                              directive rather than failing on it.
+    #   img-src data:              daisyUI inlines its checkbox and select glyphs as
+    #                              url("data:image/svg+xml,...") inside the stylesheet.
+    #   connect-src                the one API origin this container was given.
+    #
+    # No font-src: the type scale is system fonts and the bundle declares no @font-face.
+    # frame-ancestors repeats X-Frame-Options for the browsers that honour only one, the
+    # same pair create_app() sets on the API's own responses.
+    add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-elem 'self'; img-src 'self' data:; connect-src ${API_BASE_URL}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Cache-Control $expense_tracker_cache_control always;
+
+    # Hashed assets resolve or 404, and must never reach the SPA fallback below: a missing
+    # chunk answered with index.html arrives at the module loader as HTML and fails as a
+    # syntax error rather than as the 404 it is.
+    location /assets/ {
+        try_files $uri =404;
+    }
+
+    # The SPA fallback, and the only location that falls back. / and /totals are
+    # client-side routes with no file behind them, so anything that is not a real file is
+    # answered with the shell and routed in the browser.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
