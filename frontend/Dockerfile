@@ -82,8 +82,15 @@ COPY --chmod=0755 frontend/docker/40-api-base-url.sh /docker-entrypoint.d/40-api
 # Restricts envsubst to this one name, so every other $name in the template reaches nginx
 # as the nginx variable it is. None of this base's own environment variables collides with
 # one today, which makes this a guard against a future collision rather than a fix for a
-# present bug.
-ENV NGINX_ENVSUBST_FILTER="API_BASE_URL"
+# present bug - but the collision it guards against is silent, which is what earns it the
+# line: a substituted $uri leaves `try_files  / /index.html;`, valid config that starts
+# clean and serves the wrong thing for every request.
+#
+# Anchored, because the base passes this to awk as `name ~ /<filter>/`. Unanchored it is a
+# SUBSTRING match, so it would also cover a future MY_API_BASE_URL_OVERRIDE and stop being
+# the allowlist it is here to be. The backslash escapes the $ for Docker's own parser; awk
+# receives it as a plain anchor.
+ENV NGINX_ENVSUBST_FILTER="^API_BASE_URL\$"
 
 # What the base already runs as, restated numerically so the image depends on no entry in
 # its /etc/passwd - the same reason backend/Dockerfile spells out 65532.
