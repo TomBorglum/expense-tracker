@@ -1294,13 +1294,14 @@ invalidating its layer cache.
 what the editor and CI use; `pixi run -e frontend frontend-build` is the same build in the
 lean environment, and the two produce byte-identical output.
 
-Nothing in CI builds either environment yet. Both now have an image to build by hand -
-`pixi run backend-image` and `pixi run frontend-image`, below.
+Both are built by `release.yml` on a published release, and both can be built by hand the
+same way CI builds them - `pixi run backend-image` and `pixi run frontend-image`, below.
 
 ## Container images
 
 Two images, one per stack, each built from the lean pixi environment of the same name and
-each taking the repository root as its build context. Neither is built by CI yet.
+each taking the repository root as its build context. Both are published to Docker Hub by
+`release.yml`; see [Releases](#releases).
 
 ### The API image
 
@@ -1516,6 +1517,237 @@ Compression is switched on in the server config because `nginx.conf` ships `#gzi
 and it earns its line - the one application chunk is 330 kB raw against 105 kB gzipped.
 The base carries a tag and a digest on the same terms as the backend's two, and nothing
 bumps it automatically.
+
+## Releases
+
+`.github/workflows/release.yml` publishes both images to Docker Hub when release-please's
+GitHub Release is published. Four tags per image, derived once by `docker/metadata-action`
+so the two cannot disagree: `1.1.0`, `1.1`, `sha-<full commit>` and `latest`.
+
+```
+tomborglum/expense-tracker-backend
+tomborglum/expense-tracker-frontend
+```
+
+It is a release workflow and not a deployment workflow. Its whole output is a tag on
+Docker Hub; when such a tag becomes live somewhere is a separate concern, which is also
+why no GitHub Environment is involved - an environment would file deployment records for
+something that is not a deployment, and its one unique feature, required reviewers, is
+ruled out by the workflow being fully automated.
+
+### Why it is three jobs
+
+```
+meta  ->  build (matrix: backend, frontend)  ->  push
+```
+
+**The split exists for one reason, and it is the only interesting thing about the file.**
+`build` runs repository code: a Dockerfile, `pixi install`, `pnpm install`. A malicious
+dependency in any of those is one layer away from push access to published images, so
+`build` is the only job that checks the repository out, and it is granted `contents: read`
+and **no `id-token: write`** - it cannot mint a token AWS would accept, whatever it tries.
+`push` is the mirror image: it holds the credentials and **checks nothing out**, so
+everything that executes in it is either a SHA-pinned action or a `run` block written in
+the workflow file itself. `CLAUDE.md` carries this as an invariant, because collapsing the
+two jobs would read as a simplification.
+
+`build` hands `push` an OCI archive through an artifact, along with the digest it built.
+Untrusted bytes are safe to hand over precisely because `push` never executes them - it
+copies them to a registry. `push` re-derives the digest after staging and fails if it
+moved, so "what was scanned" and "what was published" are provably the same bytes rather
+than two numbers compared by eye.
+
+### How the credential is reached
+
+Docker Hub supports no OIDC for personal accounts, so AWS stands in as the intermediary:
+the job mints a GitHub OIDC token, exchanges it for temporary credentials on an AWS role
+whose trust policy only accepts this repository's release workflow at a version tag, and
+reads a Docker Hub PAT out of SSM Parameter Store. `oidc-smoke-test.yml` proved that path
+and remains the cheapest way to diagnose a claim mismatch.
+
+Three details carry the weight:
+
+- `aws-actions/configure-aws-credentials` runs with `output-credentials: true` and
+  **`output-env-credentials: false`**, so the temporary credentials become step outputs
+  rather than job environment variables. Steps that need them name them; the rest never
+  see them.
+- The PAT is piped **straight** from `aws ssm get-parameter` into
+  `docker login --password-stdin`, so it never occupies a shell variable, a step output or
+  a file. Every step after it needs no secret: `regctl` and `cosign` both read what
+  `docker login` wrote.
+- `cosign-installer` runs **before** `regctl-installer`, which is load-bearing rather than
+  tidy. The regctl installer verifies the binary it downloads against regclient's cosign
+  signature only `if [ -x "$(command -v cosign)" ]`; with cosign absent it fetches the
+  binary and skips verification silently.
+
+**`regctl` rather than buildx** for the push itself. `docker buildx imagetools create`
+requires its sources to already exist in a registry, so it cannot push a local OCI layout;
+`docker load` plus `docker push` needs a `type=docker` export, which is single-platform and
+carries no attestations. regclient copies the index byte for byte, which is what keeps one
+digest across the scan, the push, the attestations and the signature.
+
+### The vulnerability gate
+
+Each image is scanned by Trivy before anything is published, and a HIGH or CRITICAL
+finding fails the release. The scan runs over the **unpacked** OCI layout, and that detail
+is not interchangeable: Trivy rejects an OCI archive outright, and a layout written by
+`regctl image import` leads with a referrers index, which Trivy reads first, resolves
+nothing from, and then reports zero vulnerabilities and success.
+
+So the gate makes **two** assertions, not one. It first requires that Trivy resolved an
+operating system in the image at all, because a passing scan and a scan that examined
+nothing are otherwise the same result, and only then counts findings. A gate that cannot
+tell those apart is not a gate.
+
+Suppressions live in **`.trivyignore.yaml`**, and every entry carries an `expired_at`
+date. On that date Trivy stops honouring the entry and the finding fails the release
+again, so a suppression cannot outlive its reason by being forgotten. The entries there
+today are two CVEs in the frontend's nginx base that are fixed in alpine 3.24.3 while the
+image is still built on 3.24.2 - the pinned digest is already the newest that tag
+resolves to, so only an upstream rebuild clears them, and neither is reachable in an image
+that loads no brotli module and never invokes curl.
+
+### Residual risk, stated rather than hidden
+
+Trust is pinned to `release.yml` at a version tag, but that file is still repository
+content, so anyone able to create a matching tag carrying an altered `release.yml` could
+reach the role. What bounds it is the `main-protection` ruleset - changes to that file land
+only through a reviewed PR - and tags being created by release-please from `main`.
+
+### The AWS objects
+
+Created once, by hand, in region `eu-north-1`. `<account-id>` below is the 12-digit AWS
+account id, which is why the role ARN is a repository **variable** and never a literal in
+the workflow: it keeps the account id out of a world-readable file and out of the diff,
+while `mask-aws-account-id` is what keeps it out of the log.
+
+Everything here sits inside AWS's **always-free** tier, which is a constraint rather than a
+happy accident. IAM, STS, the OIDC provider, a standard-tier SSM parameter and the
+AWS-managed `aws/ssm` key carry no monthly charge, and one `kms:Decrypt` per release sits
+far inside the free 20,000 requests a month. A customer-managed key would be $1/month with
+no free allowance, and buys nothing here: KMS access needs an IAM grant on top of the key
+policy, and this account holds exactly two principals - an administrator who could read any
+parameter under any key, and a release role scoped to one parameter - so the effective
+access set is identical either way. It starts buying something the moment a third principal
+gains broad SSM or KMS permissions.
+
+1. **Docker Hub.** Both repositories created explicitly, so the first push does not decide
+   their visibility, and both **public**: Docker Personal allows unlimited public
+   repositories and exactly one private, so two private ones would need a paid plan. Then
+   a personal access token with **Read & Write** and no Delete; personal-account tokens
+   cannot be scoped per repository.
+
+2. **SSM parameter** `/expense-tracker/release/dockerhub-pat`, SecureString, **standard
+   tier**, encrypted with the default `alias/aws/ssm`. Standard tier is load-bearing
+   twice: an advanced parameter costs $0.05/month, and it would encrypt with
+   `kms:GenerateDataKey` rather than the `kms:Decrypt` the policy below grants.
+
+3. **IAM role** `gha-expense-tracker-release`, created as a Web identity role against the
+   existing `token.actions.githubusercontent.com` provider with audience
+   `sts.amazonaws.com` and nothing attached. The trust policy the wizard generates is
+   roughly `repo:TomBorglum/expense-tracker:*` - any ref, any workflow - and is replaced
+   wholesale:
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "GitHubActionsReleaseTagsOnly",
+         "Effect": "Allow",
+         "Principal": {
+           "Federated": "arn:aws:iam::<account-id>:oidc-provider/token.actions.githubusercontent.com"
+         },
+         "Action": "sts:AssumeRoleWithWebIdentity",
+         "Condition": {
+           "StringEquals": {
+             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+           },
+           "StringLike": {
+             "token.actions.githubusercontent.com:sub": "repo:TomBorglum/expense-tracker:ref:refs/tags/v*",
+             "token.actions.githubusercontent.com:workflow_ref": "TomBorglum/expense-tracker/.github/workflows/release.yml@refs/tags/v*"
+           }
+         }
+       }
+     ]
+   }
+   ```
+
+   `Principal.Federated` is the OIDC provider, which represents **GitHub Actions as a
+   whole** - every repository on github.com - so the `Condition` block is the entire
+   security boundary. The two `StringLike` conditions are deliberately redundant: `sub`
+   alone would admit any workflow in this repository, `workflow_ref` alone would admit
+   this file at any ref. `job_workflow_ref` is deliberately unused, AWS documenting it as
+   the *reusable* workflow's path and this repository having none.
+
+   **IAM Access Analyzer warns** that the `*` in `sub` "can allow requests from more
+   sources than you intended" and recommends naming a branch. It is a false positive: the
+   check fires on the presence of a wildcard without reasoning about its position, and
+   this one sits after the owner, the repository, the `ref:` claim type, `refs/tags/` and
+   the `v`. All it admits is which version number. The advice is also inapplicable, a
+   release having no branch, and its `ref` fallback would carry the same wildcard.
+   `StringLike` offers only `*` and `?`, and `?` matches any character rather than a
+   digit, so narrowing this to digits is not expressible at all; `v*.*.*` is the narrowest
+   shape available and would filter accidents rather than adversaries. Save through it.
+
+   Then one inline policy, and nothing else - in particular no `ssm:DescribeParameters`
+   and no `ssm:GetParametersByPath`, so the role cannot enumerate what else lives under
+   `/expense-tracker/`:
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "ReadDockerHubPat",
+         "Effect": "Allow",
+         "Action": "ssm:GetParameter",
+         "Resource": "arn:aws:ssm:eu-north-1:<account-id>:parameter/expense-tracker/release/dockerhub-pat"
+       },
+       {
+         "Sid": "DecryptViaSsmOnly",
+         "Effect": "Allow",
+         "Action": "kms:Decrypt",
+         "Resource": "arn:aws:kms:eu-north-1:<account-id>:key/<aws/ssm key id>",
+         "Condition": {
+           "StringEquals": { "kms:ViaService": "ssm.eu-north-1.amazonaws.com" }
+         }
+       }
+     ]
+   }
+   ```
+
+   **With a shared key the isolation boundary is that parameter ARN alone.** An
+   AWS-managed key's policy cannot be edited, and `aws/ssm` grants `kms:Decrypt` to
+   `"Principal": {"AWS": "*"}` for any caller in the account authorised for SSM, so the
+   exact parameter path above - not a prefix, not a wildcard - is the only thing keeping
+   this role out of the smoke test's own parameter under the same key.
+
+4. **GitHub repository variable** `AWS_RELEASE_ROLE_ARN`, set to
+   `arn:aws:iam::<account-id>:role/gha-expense-tracker-release`. `AWS_REGION` already
+   exists for the smoke test.
+
+### Verifying a release
+
+```sh
+docker buildx imagetools inspect tomborglum/expense-tracker-backend:1.1.0
+cosign verify tomborglum/expense-tracker-backend@sha256:<digest> \
+  --certificate-identity-regexp '.*expense-tracker.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The `push` job's log is the other half: the claim dump shows the `sub` and `workflow_ref`
+the trust policy was written against, and it is the only place the tag-shaped claims can
+be observed, the smoke test running on `workflow_dispatch` from a branch and so seeing
+branch-shaped ones.
+
+**If the exchange is refused**, read the claim dump, correct the trust policy in the
+console and re-run the failed job: the AWS side is not baked into the tag, so that loop is
+free. **If the workflow file itself is wrong**, re-running cannot help - a `release` event
+runs the file as it exists on the tag - and it needs a `fix:` PR and the patch release it
+cuts. That is what the `pull_request` trigger on this workflow exists to avoid: it builds
+and scans both images on any PR touching a Dockerfile, the lock file, the ignore file or
+the workflow, with the `push` job held back by `if: github.event_name == 'release'`.
 
 ## Configuration
 

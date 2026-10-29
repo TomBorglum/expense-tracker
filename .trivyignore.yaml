@@ -1,0 +1,35 @@
+# Suppressions for the HIGH/CRITICAL gate in .github/workflows/release.yml. Applied to
+# both image scans; an entry that does not match an image is simply inert, and every
+# entry here is in the frontend's nginx base.
+#
+# EVERY ENTRY CARRIES expired_at, AND THAT IS THE POINT. On the date below trivy stops
+# honouring the entry and the finding fails the release again, so a suppression cannot
+# outlive the reason for it by being forgotten. Removing the date instead of extending it
+# turns this file into a permanent blind spot.
+#
+# Both entries are the same situation: fixed in alpine 3.24.3, and
+# nginxinc/nginx-unprivileged:1.31-alpine is still built on 3.24.2. The digest pinned in
+# frontend/Dockerfile is already the newest that tag resolves to, so there is nothing to
+# re-pin to - only an upstream rebuild clears them. Switching to the debian variant of
+# the same image is not the answer and was measured: 60 HIGH/CRITICAL, most with no fix
+# available at all, against these 2.
+#
+# Neither is reachable in this image. nginx-unprivileged:alpine ships no brotli module
+# and frontend/docker/default.conf.template enables gzip, not brotli, so nothing decodes
+# brotli; curl is a base package that no layer of ours invokes - the image runs nginx and
+# one entrypoint script, and the only curl in the repository is in CI.
+#
+# When Dependabot's docker ecosystem lands (README.md, Releases) a base bump should clear
+# both and this file should go back to holding nothing.
+vulnerabilities:
+  - id: CVE-2026-111497
+    statement: >-
+      brotli out-of-bounds write in the decoder. brotli-libs 1.2.0-r1 is present as a curl
+      dependency; fixed in 1.2.1-r0. No brotli module is loaded by nginx and no layer
+      decodes brotli, so there is no path to the decoder in this image.
+    expired_at: 2026-11-30
+  - id: CVE-2026-92392
+    statement: >-
+      curl HTTP/2 upload use-after-free, in curl and libcurl 8.22.0-r0; fixed in 8.23.0-r0.
+      Reachable only by running curl, which this image never does.
+    expired_at: 2026-11-30

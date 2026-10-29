@@ -1,0 +1,364 @@
+name: Release
+
+# Publishes both images to Docker Hub when release-please's GitHub Release is published,
+# and exercises the build half on any pull request that changes what goes into an image.
+#
+# THE ISOLATION PROPERTY THIS FILE EXISTS TO HOLD. `build` runs repository code - a
+# Dockerfile, `pixi install`, `pnpm install` - so it must not be able to reach the Docker
+# Hub credential. It is therefore the only job that checks the repository out, and it has
+# no `id-token: write`; `push` holds the credential and checks nothing out. A malicious
+# dependency pulled into either install step lands in a job that cannot mint a token AWS
+# would accept, whatever it tries. CLAUDE.md states this as an invariant.
+#
+# Docker Hub supports no OIDC for personal accounts, so the push credential is a PAT read
+# from AWS SSM Parameter Store through a role assumed with the GitHub OIDC token.
+# oidc-smoke-test.yml proved that path; README.md, under Releases, documents the AWS
+# objects and how to recreate them.
+#
+# This repository is public, so every line of these logs is world-readable. Nothing here
+# may print the account id or the PAT, and anything added must be masked on the same terms.
+
+on:
+  release:
+    types: [published]
+  # The build half only - `push` is guarded by an `if` below. A release event runs this
+  # file as it exists on the tag, so a bug in it cannot be fixed by re-running the
+  # release; this trigger is what gives the build, scan and artifact path a chance to
+  # fail on the pull request that breaks it instead.
+  pull_request:
+    paths:
+      - .dockerignore
+      - .github/workflows/release.yml
+      - .trivyignore.yaml
+      - backend/Dockerfile
+      - backend/pyproject.toml
+      - frontend/Dockerfile
+      - frontend/docker/**
+      - frontend/package.json
+      - frontend/pnpm-lock.yaml
+      - pixi.lock
+      - pixi.toml
+
+permissions:
+  contents: read
+
+# cancel-in-progress is false deliberately: a run cancelled partway through the push job
+# can leave one image published and the other not, which is worse than a slow queue.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Tags and labels derived ONCE, so the two images and their metadata cannot disagree.
+  # Needs no checkout - metadata-action reads the event context, not the working tree.
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.meta.outputs.tags }}
+      labels: ${{ steps.meta.outputs.labels }}
+      annotations: ${{ steps.meta.outputs.annotations }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: meta
+        with:
+          # Both images, so one derivation serves both; the push job selects the lines
+          # belonging to each by its `<image>:` prefix.
+          images: |
+            tomborglum/expense-tracker-backend
+            tomborglum/expense-tracker-frontend
+          # latest=false turns off the implicit "latest on any semver tag", so the moving
+          # tag is declared below like every other one rather than appearing by default.
+          flavor: latest=false
+          # The semver patterns resolve only on a tag ref, so a pull_request run yields
+          # the sha tag alone - which is all the build half needs, since it never pushes.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+
+  # The untrusted job: the only one that checks out, and the only one that runs anything
+  # from the repository. No `id-token` - see the header.
+  build:
+    needs: meta
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      # Both images get scanned even when one fails, so one run lists every finding.
+      fail-fast: false
+      matrix:
+        stack: [backend, frontend]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here talks to git again, and a job holding repository code must not
+          # also hold a credential for the repository.
+          persist-credentials: false
+
+      # The docker-container driver, not the default docker one: attestations and the
+      # type=oci exporter are BuildKit features the docker driver does not implement.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the ${{ matrix.stack }} image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          # The repository root, for both stacks: the environments are declared in
+          # pixi.toml and pixi.lock, which live there. Same reason the poe/pnpm `image`
+          # tasks pass `..`.
+          context: .
+          file: ${{ matrix.stack }}/Dockerfile
+          platforms: linux/amd64
+          # Exported, not pushed. This job must not hold registry credentials, and the
+          # archive is what crosses into the job that does.
+          push: false
+          outputs: type=oci,dest=/tmp/image.oci.tar
+          # `mode=max` rather than `true`, and the difference is not cosmetic: given
+          # `provenance: true` the action emits `--attest type=provenance,builder-id=...`
+          # and leaves BuildKit's own `mode=min` in force, which records LESS than this
+          # action's default for a public repository when the input is omitted entirely.
+          # Writing `true` would therefore quietly weaken the attestation.
+          provenance: mode=max
+          sbom: true
+          labels: ${{ needs.meta.outputs.labels }}
+          annotations: ${{ needs.meta.outputs.annotations }}
+
+      # trivy reads an OCI *layout directory* and rejects the archive outright - "stat
+      # image.oci.tar/index.json: not a directory". An OCI archive is a tarred layout, so
+      # unpacking is the whole conversion.
+      #
+      # It must be unpacked rather than staged with `regctl image import`: that writes a
+      # layout whose index.json leads with a referrers index, trivy reads the first entry
+      # only, and the scan then finds nothing and reports SUCCESS. The gate below exists
+      # because that failure is silent.
+      - name: Unpack the OCI layout
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/oci
+          tar -xf /tmp/image.oci.tar -C /tmp/oci
+
+      - name: Scan the ${{ matrix.stack }} image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          input: /tmp/oci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          trivyignores: .trivyignore.yaml
+          format: json
+          output: /tmp/trivy.json
+          # The gate is the next step, not this one. Failing here would abort with no list
+          # of what was found, and would not notice a scan that examined nothing.
+          exit-code: 0
+
+      # TWO assertions, because a passing trivy run does not mean the image was scanned.
+      # Pointed at a layout it cannot resolve, trivy reports no findings and exits 0, so
+      # "no vulnerabilities" and "no scan" are the same result. The first assertion is
+      # what tells them apart.
+      - name: Gate on the scan
+        env:
+          STACK: ${{ matrix.stack }}
+        run: |
+          set -euo pipefail
+
+          os="$(jq -r '.Metadata.OS.Family // empty' /tmp/trivy.json)"
+          if [ -z "$os" ]; then
+            echo "::error::trivy resolved no operating system in the $STACK image, so it scanned nothing."
+            jq '{Metadata: .Metadata, Targets: [.Results // [] | .[] | .Target]}' /tmp/trivy.json
+            exit 1
+          fi
+          echo "scanned $STACK: $os $(jq -r '.Metadata.OS.Name // ""' /tmp/trivy.json)"
+
+          jq -r '[.Results // [] | .[] | .Vulnerabilities // [] | .[]]
+                 | if length == 0 then "no HIGH or CRITICAL findings"
+                   else (.[] | "\(.Severity)\t\(.VulnerabilityID)\t\(.PkgName) \(.InstalledVersion) -> \(.FixedVersion // "no fix")")
+                   end' /tmp/trivy.json
+
+          count="$(jq '[.Results // [] | .[] | .Vulnerabilities // [] | .[]] | length' /tmp/trivy.json)"
+          if [ "$count" -gt 0 ]; then
+            echo "::error::$count HIGH or CRITICAL finding(s) in the $STACK image."
+            exit 1
+          fi
+
+      # The digest travels with the archive so the push job can prove nothing changed in
+      # transit, rather than that being read off two logs by eye.
+      - name: Stage the archive and its digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/out
+          mv /tmp/image.oci.tar /tmp/out/image.oci.tar
+          printf '%s\n' "$DIGEST" > /tmp/out/digest
+          cat /tmp/out/digest
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-${{ matrix.stack }}
+          path: /tmp/out/
+          # Long enough to inspect a failed release, short enough not to accumulate.
+          retention-days: 1
+          if-no-files-found: error
+
+  # The trusted job. It checks nothing out: everything that runs in it is either a
+  # SHA-pinned action or a `run` block written in this file.
+  push:
+    needs: [meta, build]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      # A job-level permissions block replaces the workflow-level one outright rather
+      # than merging with it, so contents: read is restated here deliberately - the same
+      # note oidc-smoke-test.yml carries.
+      contents: read
+      id-token: write
+    steps:
+      # The claims AWS conditions on, dumped before any AWS call, so a trust-policy
+      # mismatch is diagnosable from this run rather than from a bare "Not authorized to
+      # perform sts:AssumeRoleWithWebIdentity". This is also the only place the
+      # tag-shaped `sub` and `workflow_ref` can be observed: the smoke test runs on
+      # workflow_dispatch from a branch, so its claims are branch-shaped.
+      #
+      # Only the payload is decoded. The token itself is a live credential for its few
+      # minutes of life and never reaches the log.
+      - name: Show the OIDC token claims
+        run: |
+          set -euo pipefail
+          token="$(curl -fsSL --proto '=https' \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
+            | jq -r .value)"
+          payload="$(echo "$token" | cut -d. -f2)"
+          # base64url -> base64, then pad to a multiple of 4 so base64 -d accepts it.
+          payload="${payload//-/+}"
+          payload="${payload//_//}"
+          while (( ${#payload} % 4 )); do payload+="="; done
+          echo "$payload" | base64 -d | jq .
+
+      # Untrusted bytes, and safe here precisely because nothing in this job executes
+      # them - they are copied to a registry and never run.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: image-*
+          path: /tmp/images
+
+      # BEFORE regctl-installer, and that order is load-bearing rather than tidy: the
+      # regctl installer verifies the binary it downloads against regclient's cosign
+      # signature only `if [ -x "$(command -v cosign)" ]`. With cosign absent it fetches
+      # the binary and skips verification silently. cosign is needed to sign the images
+      # anyway, so installing it first costs nothing and buys the check.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - uses: regclient/actions/regctl-installer@dd58ad94f76adb73d8ac1bf75ed25f01545d5b32 # v0.2.0
+        with:
+          # Pinned rather than the action's `latest` default: this binary copies images
+          # into a registry while the Docker Hub credential is live in the job.
+          release: v0.11.7
+
+      - name: Configure AWS credentials
+        id: creds
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          # A repository variable, not a secret: a role ARN is an address, not a
+          # credential - assuming it needs an OIDC token this trust policy accepts - and
+          # masking it would redact the one field that makes a refused exchange
+          # diagnosable. The account id inside it is masked below instead.
+          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: expense-tracker-release
+          # Short enough that a leaked credential outlives little, long enough for two
+          # image pushes and their signatures.
+          role-duration-seconds: 900
+          mask-aws-account-id: true
+          # The whole point of this pair: the credentials become step outputs and are
+          # NOT written into the job environment, so every later step that needs them
+          # has to name them and the ones that do not never see them.
+          output-credentials: true
+          output-env-credentials: false
+
+      # The only step that touches the PAT. It is piped straight from SSM into
+      # `docker login`, so it never occupies a shell variable, a step output or a file,
+      # and every step after this one needs no secret at all - regctl and cosign both
+      # read the credential `docker login` wrote to ~/.docker/config.json.
+      - name: Read the Docker Hub PAT and log in
+        env:
+          AWS_ACCESS_KEY_ID: ${{ steps.creds.outputs.aws-access-key-id }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.creds.outputs.aws-secret-access-key }}
+          AWS_SESSION_TOKEN: ${{ steps.creds.outputs.aws-session-token }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          aws ssm get-parameter \
+            --name /expense-tracker/release/dockerhub-pat \
+            --with-decryption \
+            --query Parameter.Value \
+            --output text \
+            | docker login docker.io --username tomborglum --password-stdin
+
+      # Both images are staged and checked BEFORE either is copied, so a malformed or
+      # altered archive fails the release with nothing published rather than half of it.
+      - name: Stage both images and verify their digests
+        run: |
+          set -euo pipefail
+          for stack in backend frontend; do
+            dir="/tmp/images/image-$stack"
+            expected="$(cat "$dir/digest")"
+            regctl image import "ocidir:///tmp/staged/$stack:staged" "$dir/image.oci.tar"
+            actual="$(regctl manifest digest "ocidir:///tmp/staged/$stack:staged")"
+            echo "$stack: built $expected, staged $actual"
+            if [ "$expected" != "$actual" ]; then
+              echo "::error::$stack digest changed between build and push."
+              exit 1
+            fi
+          done
+
+      # regctl copies the index byte for byte, which is what keeps ONE digest across the
+      # scan, the push, the attestations and the signature. `docker load` plus
+      # `docker push` cannot: that needs a type=docker export, which is single-platform
+      # and carries no attestations. `docker buildx imagetools create` cannot either - it
+      # requires its sources to already exist in a registry.
+      - name: Copy both images to Docker Hub
+        env:
+          TAGS: ${{ needs.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$TAGS" > /tmp/tags
+          for pair in backend:tomborglum/expense-tracker-backend \
+                      frontend:tomborglum/expense-tracker-frontend; do
+            stack="${pair%%:*}"
+            image="${pair#*:}"
+            matched=0
+            while read -r ref; do
+              [ -n "$ref" ] || continue
+              case "$ref" in "$image:"*) ;; *) continue ;; esac
+              echo "copying $stack -> $ref"
+              regctl image copy "ocidir:///tmp/staged/$stack:staged" "$ref"
+              matched=$((matched + 1))
+            done < /tmp/tags
+            # Without this a derivation that produced no tags for an image would be a
+            # silent no-op, and the release would report success having published nothing.
+            if [ "$matched" -eq 0 ]; then
+              echo "::error::no tag in the derived list belongs to $image."
+              exit 1
+            fi
+            echo "$stack: $matched tag(s) published"
+          done
+
+      # Keyless, reusing this job's own OIDC token, so there is no signing key to hold.
+      # The digest is the index's, so one signature covers the image and its attestations.
+      - name: Sign both published digests
+        run: |
+          set -euo pipefail
+          for pair in backend:tomborglum/expense-tracker-backend \
+                      frontend:tomborglum/expense-tracker-frontend; do
+            stack="${pair%%:*}"
+            image="${pair#*:}"
+            digest="$(cat "/tmp/images/image-$stack/digest")"
+            cosign sign --yes "$image@$digest"
+          done
+
+      - name: Log out of Docker Hub
+        if: always()
+        run: docker logout docker.io
