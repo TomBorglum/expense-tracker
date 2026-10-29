@@ -1586,6 +1586,15 @@ requires its sources to already exist in a registry, so it cannot push a local O
 carries no attestations. regclient copies the index byte for byte, which is what keeps one
 digest across the scan, the push, the attestations and the signature.
 
+Each image carries an SBOM and a SLSA provenance attestation, the provenance at
+`mode=max`. That is a deliberate choice with one consequence worth knowing, because it is
+published rather than merely logged: `mode=max` records the **whole GitHub event payload**
+under `buildDefinition.internalParameters.github_event_payload`, which on a pull request
+is around 6 kB of a 52 kB predicate and includes the pull request body. That is acceptable
+here only because this repository is public and the payload therefore holds nothing that
+is not already public. `mode=min` drops it, at the cost of the build detail that makes
+provenance worth having.
+
 ### The vulnerability gate
 
 Each image is scanned by Trivy before anything is published, and a HIGH or CRITICAL

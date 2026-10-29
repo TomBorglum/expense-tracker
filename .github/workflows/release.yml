@@ -120,6 +120,14 @@ jobs:
           # and leaves BuildKit's own `mode=min` in force, which records LESS than this
           # action's default for a public repository when the input is omitted entirely.
           # Writing `true` would therefore quietly weaken the attestation.
+          #
+          # What mode=max ALSO does, found by reading the first run's output rather than
+          # assumed: it records the entire GitHub event payload under
+          # `buildDefinition.internalParameters.github_event_payload` - on a pull request
+          # that is 6 kB of a 52 kB predicate, pull request body included - and that is
+          # published inside the image. It is acceptable here only because this repository
+          # is public, so the payload carries nothing that is not already public.
+          # `mode=min` is the one-line change if that ever stops being true.
           provenance: mode=max
           sbom: true
           labels: ${{ needs.meta.outputs.labels }}
