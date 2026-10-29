@@ -86,6 +86,12 @@ jobs:
       # their paths mean nothing in the build job - the contents travel instead. Deriving
       # them there instead would give the two images different `created` stamps, which is
       # the whole reason this job exists.
+      #
+      # Each file goes onto ONE line, which is what keeps the output off the multi-line
+      # form: that form needs a `<<` delimiter, and GitHub's web UI reads the `<<` as a
+      # heredoc opener and stops highlighting the rest of this file there. JSON ignores
+      # whitespace between tokens and escapes a newline inside a string, so dropping the
+      # newlines cannot change what either file says.
       - name: Carry the bake overrides to the build job
         id: bake
         env:
@@ -94,15 +100,8 @@ jobs:
         run: |
           set -euo pipefail
           [ -s "$LABELS_FILE" ] && [ -s "$ANNOTATIONS_FILE" ]
-          delimiter="BAKE_$(openssl rand -hex 16)"
-          {
-            printf 'labels<<%s\n' "$delimiter"
-            cat "$LABELS_FILE"
-            printf '\n%s\n' "$delimiter"
-            printf 'annotations<<%s\n' "$delimiter"
-            cat "$ANNOTATIONS_FILE"
-            printf '\n%s\n' "$delimiter"
-          } >> "$GITHUB_OUTPUT"
+          printf 'labels=%s\n' "$(tr -d '\n' < "$LABELS_FILE")" >> "$GITHUB_OUTPUT"
+          printf 'annotations=%s\n' "$(tr -d '\n' < "$ANNOTATIONS_FILE")" >> "$GITHUB_OUTPUT"
           cat "$LABELS_FILE" "$ANNOTATIONS_FILE"
 
   # The untrusted job: the only one that checks out, and the only one that runs anything
