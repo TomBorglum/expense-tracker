@@ -58,7 +58,6 @@ jobs:
       tags: ${{ steps.meta.outputs.tags }}
       labels: ${{ steps.meta.outputs.labels }}
       annotations: ${{ steps.meta.outputs.annotations }}
-      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
