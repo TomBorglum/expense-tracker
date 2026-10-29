@@ -1184,6 +1184,7 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run frontend-test` | `pnpm run test` | Run the frontend tests (vitest) with coverage |
 | `pixi run frontend-format` | `pnpm run format` | Format the frontend with prettier |
 | `pixi run frontend-format-check` | `pnpm run format-check` | Check frontend formatting without writing changes |
+| `pixi run frontend-image` | `pnpm run image` | Build the SPA container image from the `frontend` environment |
 
 Every task sets its own working directory in `pixi.toml` (`backend/` or `frontend/`), so
 `pixi run <task>` behaves the same wherever you invoke it from. No task crosses between
@@ -1199,10 +1200,11 @@ than reaching for whatever cluster answers on 5432. `pixi task list` prints this
 first column.
 
 CI runs every gate above except the two `dev` tasks, the two `-fix` variants,
-`backend-format`, `backend-image`, the two loaders and the four `backend-db-*` tasks
-other than `backend-db-init` on each pull request, then the SonarCloud scan.
-`backend-image` is left out because it builds rather than checks, and because it is the
-one task that needs a tool the runner's pixi environment does not carry. The loaders are left
+`backend-format`, the two `*-image` tasks, the two loaders and the four `backend-db-*`
+tasks other than `backend-db-init` on each pull request, then the SonarCloud scan.
+`backend-image` and `frontend-image` are left out because they build rather than check,
+and because they are the only two tasks needing a tool the runner's pixi environment does
+not carry. The loaders are left
 out because they mutate data and CI has no need of them: `test_expense_postgres.py` and
 `test_currency_postgres.py` already put the committed sample files through the real
 database path inside `backend-test`.
@@ -1292,12 +1294,17 @@ invalidating its layer cache.
 what the editor and CI use; `pixi run -e frontend frontend-build` is the same build in the
 lean environment, and the two produce byte-identical output.
 
-Nothing in CI builds either environment yet. `backend` now has an image to build -
-`pixi run backend-image`, below - and `frontend` is still verified by hand.
+Nothing in CI builds either environment yet. Both now have an image to build by hand -
+`pixi run backend-image` and `pixi run frontend-image`, below.
 
 ## Container images
 
-`backend/Dockerfile` builds the API image out of the `backend` environment above, in two
+Two images, one per stack, each built from the lean pixi environment of the same name and
+each taking the repository root as its build context. Neither is built by CI yet.
+
+### The API image
+
+`backend/Dockerfile` builds it out of the `backend` environment above, in two
 stages: a `ghcr.io/prefix-dev/pixi` builder materialises the environment, and a
 `gcr.io/distroless/base-nossl-debian12:nonroot` runtime stage receives the finished prefix
 and nothing that produced it - no pixi, no package cache, no package manager, no shell.
@@ -1387,7 +1394,128 @@ one linker binary that arrives because conda-forge's `python` hard-depends on
 `ld_impl_linux-64`. Neither is reachable without an interpreter, and neither can be
 dropped from `pixi.toml`, only deleted from the prefix.
 
-The SPA image is not built yet; it arrives with `frontend/Dockerfile`.
+### The SPA image
+
+`frontend/Dockerfile` builds it out of the `frontend` environment, in the same two stages:
+the pixi builder installs node and pnpm and runs `tsc -b && vite build`, and an
+`nginxinc/nginx-unprivileged:1.31-alpine` runtime stage receives `dist/` and nothing that
+produced it - no node, no pnpm, no `node_modules`.
+
+```sh
+pixi run frontend-image
+docker run --rm -p 8080:8080 -e API_BASE_URL=http://127.0.0.1:8000 \
+  expense-tracker-frontend:dev
+```
+
+Alpine here against distroless there is not an inconsistency. The backend image carries a
+conda prefix, which is glibc-linked and could not start on musl; this image carries static
+files and a web server that Alpine packages, so the argument that ruled musl out for the
+API never arises. It does keep a shell, which distroless was partly chosen to be without -
+and it has to, because the configuration below is applied by a shell script at startup.
+
+**The configuration arrives at two different times, and that is the whole design.** The
+backend reads `DATABASE_URL` from the environment when it starts. vite has no equivalent:
+it **inlines** `import.meta.env.VITE_API_BASE_URL` into the bundle at build time, so by the
+time a container starts there is nothing left to read. Baking the origin in would mean one
+image per deployment, and a published image that is not portable is not much of a release
+artifact. So the build bakes a placeholder and the container rewrites it:
+
+```sh
+# in the builder, before vite build
+printf 'VITE_API_BASE_URL=__EXPENSE_TRACKER_API_BASE_URL__\n' > frontend/.env.production.local
+```
+
+`.env.production.local` rather than a build argument or a plain `.env`, because it is
+vite's **highest-precedence** source in production mode. That beats the committed
+`frontend/.env` by a documented rule instead of by how an environment variable happens to
+rank against a dotenv file. `.gitignore`'s `.env*` rule already makes the file
+uncommittable and `.dockerignore`'s keeps a developer's own copy out of the context, so it
+can only ever be the one that line writes.
+
+`frontend/docker/40-api-base-url.sh` does the rewrite, from
+`/docker-entrypoint.d/`, which the base image's entrypoint runs before starting nginx. It
+is copied with `--chmod=0755` deliberately: that entrypoint **skips** a file there that is
+not executable, logging one line and carrying on, so a missing exec bit would serve the
+bundle with its placeholder intact rather than fail.
+
+The script refuses to start the container unless `API_BASE_URL` is an absolute `http(s)`
+URL with no path - the backend's no-defaults rule, applied to the other stack:
+
+```sh
+docker run --rm expense-tracker-frontend:dev
+# ERROR: API_BASE_URL is not set.
+docker run --rm -e API_BASE_URL=http://host/gateway expense-tracker-frontend:dev
+# ERROR: API_BASE_URL must be scheme://host[:port] with no path, query or fragment
+```
+
+That last refusal is the one worth having. All four `api/` modules resolve their requests
+as `new URL("/api/expenses", API_BASE_URL)`, and an absolute path **discards** whatever
+path the base carried - so a value with one would be accepted and then silently ignored at
+every call site. The value is the origin the **browser** calls, not one the container
+resolves, so it is whatever a user's browser can reach.
+
+Three properties here are also unchecked by anything.
+
+**The placeholder's survival is asserted at build time, not at run time.** esbuild does not
+constant-fold `new URL(path, "__TOKEN__")`, so the token reaches the chunk as a string
+literal - but that is a property of the minifier rather than a promise, so the Dockerfile
+ends the builder stage with a `grep -rq` over `dist/` that fails the build if it ever stops
+being true. The startup script deliberately tolerates finding nothing, because a container
+restarted on a filesystem it already rewrote is a normal thing to do, and that tolerance is
+exactly what would otherwise hide a bad build.
+
+**The document root is not the base's.** `dist/` is copied to `/srv/expense-tracker` rather
+than `/usr/share/nginx/html`, because that directory arrives carrying a stock `50x.html`
+that no `error_page` in this config points at and that would be served as an ordinary
+`200` - a page naming nginx, immediately after `server_tokens off` went to the trouble of
+not naming it. The `--chown=101:101` on that `COPY` is load-bearing: the startup script
+rewrites those files as that user.
+
+**`Cache-Control` is computed by two `map`s, not set per location.** `add_header` in a
+nested block **replaces** the inherited set rather than adding to it, so an `/assets/`
+block carrying a `Cache-Control` of its own would silently drop every security header with
+it. One `map` pair and a single server-level `add_header` is what makes that impossible
+instead of merely avoided. The response status is half the key: only a response that
+actually carries an asset may be cached for a year, or a `404` during a deployment would be
+cached as `immutable` too and the client would have no way to retry.
+
+```sh
+curl -sI localhost:8080/                         # Cache-Control: no-store
+curl -sI localhost:8080/totals                   # no-store - the SPA fallback, served the shell
+curl -sI localhost:8080/assets/index-<hash>.js   # public, max-age=31536000, immutable
+curl -sI localhost:8080/assets/missing.js        # 404, and no-store
+```
+
+`/totals` is a client-side route with no file behind it, so `try_files $uri $uri/
+/index.html` answers anything that is not a real file with the shell. `/assets/` is the one
+exception, resolving or `404`ing: a missing chunk answered with `index.html` reaches the
+module loader as HTML and fails as a syntax error rather than as the 404 it is.
+
+**The CSP is derived from what the bundle actually loads**, and is reported as
+`default-src 'none'` plus four allowances. Three are unremarkable - one same-origin module
+script, one same-origin stylesheet, `data:` images because daisyUI inlines its checkbox and
+select glyphs into the CSS, and `connect-src` naming the one API origin. The fourth is
+`style-src 'unsafe-inline'`, which is not avoidable here: React renders inline `style`
+**attributes** for the date picker and the table column widths, and a style attribute is
+governed by `style-src-attr`, which falls back to `style-src`. `style-src-elem 'self'`
+sits beside it so the stylesheet itself keeps the tighter rule wherever a browser
+implements that directive; Firefox does not, and ignores it rather than failing. There is
+no `font-src`: the type scale is system fonts and the bundle declares no `@font-face`.
+
+The build context is the repository root here too, and it contains no backend source. One
+file is the exception and it is worth knowing why: `backend/pyproject.toml` is copied into
+the builder purely so `pixi install --locked` can succeed. pixi validates the lock against
+the **whole** workspace, and the lock records the backend's pypi path dependency, so
+without that file the install fails with `lock file not up-to-date with the workspace` even
+though this environment holds no python at all. Only its metadata is read - `backend/src`
+never enters the build - which is what keeps a backend source change from invalidating any
+layer here.
+
+The image is about 92 MB, and roughly 91 MB of that is the base: `dist/` is some 550 kB.
+Compression is switched on in the server config because `nginx.conf` ships `#gzip  on;`,
+and it earns its line - the one application chunk is 330 kB raw against 105 kB gzipped.
+The base carries a tag and a digest on the same terms as the backend's two, and nothing
+bumps it automatically.
 
 ## Configuration
 
