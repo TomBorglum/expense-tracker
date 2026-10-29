@@ -1754,9 +1754,12 @@ branch-shaped ones.
 console and re-run the failed job: the AWS side is not baked into the tag, so that loop is
 free. **If the workflow file itself is wrong**, re-running cannot help - a `release` event
 runs the file as it exists on the tag - and it needs a `fix:` PR and the patch release it
-cuts. That is what the `pull_request` trigger on this workflow exists to avoid: it builds
-and scans both images on any PR touching a Dockerfile, the lock file, the ignore file or
-the workflow, with the `push` job held back by `if: github.event_name == 'release'`.
+cuts. That is what the `pull_request` trigger on this workflow exists to avoid: every pull
+request builds, scans and gates both images, with the `push` job held back by
+`if: github.event_name == 'release'`, so the file is exercised by the change that breaks it
+rather than first running on a tag. It carries no `paths` filter on purpose - that would be
+a second, unchecked copy of what the Dockerfiles read - and a superseded pull request run
+is cancelled, while a release run never is.
 
 ## Configuration
 

@@ -25,28 +25,29 @@ on:
   # file as it exists on the tag, so a bug in it cannot be fixed by re-running the
   # release; this trigger is what gives the build, scan and artifact path a chance to
   # fail on the pull request that breaks it instead.
+  #
+  # NO `paths` FILTER, deliberately, and the same trigger ci.yml carries. Such a filter is
+  # a hand-written second copy of what the two Dockerfiles read, with nothing checking that
+  # the two agree - and the first draft of it was already wrong, missing
+  # frontend/vite.config.ts, the three frontend/tsconfig*.json and
+  # frontend/pnpm-workspace.yaml, the last of which frontend/Dockerfile copies by name one
+  # line away from the two files the filter did list. Both builds on every pull request
+  # cost about four runner-minutes, free on a public repository, and land off the critical
+  # path because ci.yml's own job takes longer than this whole workflow.
   pull_request:
-    paths:
-      - .dockerignore
-      - .github/workflows/release.yml
-      - .trivyignore.yaml
-      - backend/Dockerfile
-      - backend/pyproject.toml
-      - frontend/Dockerfile
-      - frontend/docker/**
-      - frontend/package.json
-      - frontend/pnpm-lock.yaml
-      - pixi.lock
-      - pixi.toml
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
 
-# cancel-in-progress is false deliberately: a run cancelled partway through the push job
-# can leave one image published and the other not, which is worse than a slow queue.
+# A RELEASE is never cancelled: a run stopped partway through the push job can leave one
+# image published and the other not, which is worse than a slow queue. A pull request has
+# nothing to leave half-done - it never reaches `push` - so a superseded run there is
+# cancelled rather than queued behind the commit that replaced it. Without the event test
+# a burst of pushes to one branch would serialise whole image builds behind each other.
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Tags and labels derived ONCE, so the two images and their metadata cannot disagree.
