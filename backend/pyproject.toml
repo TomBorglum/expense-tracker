@@ -1,5 +1,7 @@
 [project]
 name = "expense-tracker"
+# Also what the image says it is: release.yml reads it for the OCI description label.
+description = "The expense-tracker REST API - four read-only JSON endpoints over PostgreSQL, served by uvicorn."
 version = "0"                    # inert placeholder; release version lives in .release-please-manifest.json
 requires-python = ">=3.14"
 dependencies = []               # runtime deps are conda-pinned in pixi.toml (repo convention, CLAUDE.md)

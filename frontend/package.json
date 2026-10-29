@@ -1,5 +1,6 @@
 {
   "name": "expense-tracker",
+  "description": "The expense-tracker single-page app - a React and Tailwind bundle served by nginx.",
   "private": true,
   "type": "module",
   "scripts": {
