@@ -19,9 +19,9 @@
 # brotli; curl is a base package that no layer of ours invokes - the image runs nginx and
 # one entrypoint script, and the only curl in the repository is in CI.
 #
-# Dependabot's docker ecosystem now covers both bases (README.md, under Container images),
-# so the base bump that clears both arrives on its own; this file should then go back to
-# holding nothing.
+# Dependabot's docker ecosystem covers both bases (README.md, under Container images), so
+# the base bump that clears both arrives on its own; this file then goes back to holding
+# nothing.
 vulnerabilities:
   - id: CVE-2026-111497
     statement: >-
