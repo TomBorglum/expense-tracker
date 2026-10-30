@@ -111,6 +111,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      # Read by the build step's `set:` and by the gate below, which asserts trivy scanned
+      # an image for this platform.
+      PLATFORM: linux/amd64
     strategy:
       # Both images get scanned even when one fails, so one run lists every finding.
       fail-fast: false
@@ -169,7 +173,7 @@ jobs:
           # `image` tasks carry it.
           set: |
             image.output=type=oci,dest=/tmp/image.oci.tar
-            image.platform=linux/amd64
+            image.platform=${{ env.PLATFORM }}
           # `mode=max` rather than `true`, and the difference is not cosmetic: given
           # `provenance: true` the action emits `--attest type=provenance,builder-id=...`
           # and leaves BuildKit's own `mode=min` in force, which records LESS than this
@@ -214,23 +218,36 @@ jobs:
           # of what was found, and would not notice a scan that examined nothing.
           exit-code: 0
 
-      # TWO assertions, because a passing trivy run does not mean the image was scanned.
-      # Pointed at a layout it cannot resolve, trivy reports no findings and exits 0, so
-      # "no vulnerabilities" and "no scan" are the same result. The first assertion is
-      # what tells them apart.
+      # TWO assertions, because a passing trivy run does not mean THIS image was scanned.
+      # Pointed at a layout whose index.json does not lead to the image, trivy resolves the
+      # empty config `{}`, reports no findings and exits 0 - so the first assertion is
+      # identity: what trivy says it scanned has to be a config in this layout declaring
+      # the platform built above. Asserting that it resolved an OS family would catch the
+      # same case, but it would fail a legitimately clean image the day a base carries no
+      # package database, and deleting it would then look like the fix.
       - name: Gate on the scan
         env:
           STACK: ${{ matrix.stack }}
         run: |
           set -euo pipefail
 
-          os="$(jq -r '.Metadata.OS.Family // empty' /tmp/trivy.json)"
-          if [ -z "$os" ]; then
-            echo "::error::trivy resolved no operating system in the $STACK image, so it scanned nothing."
+          # trivy's own claim, checked against the layout rather than the layout walked to
+          # work out what it should have claimed: the empty config sits in the layout too,
+          # beside the image, as the attestation manifest's, so a walk that could reach it
+          # compares one empty value with another. A config declaring a platform cannot be
+          # that one.
+          config="$(jq -r '.Metadata.ImageID // empty' /tmp/trivy.json)"
+          blob="/tmp/oci/blobs/sha256/${config#sha256:}"
+          scanned=""
+          if [ -n "$config" ] && [ -s "$blob" ]; then
+            scanned="$(jq -r '[(.os // ""), (.architecture // "")] | join("/")' "$blob")"
+          fi
+          if [ "$scanned" != "$PLATFORM" ]; then
+            echo "::error::trivy reported $config for the $STACK image, which is no $PLATFORM config in the layout it scanned, so it scanned something else."
             jq '{Metadata: .Metadata, Targets: [.Results // [] | .[] | .Target]}' /tmp/trivy.json
             exit 1
           fi
-          echo "scanned $STACK: $os $(jq -r '.Metadata.OS.Name // ""' /tmp/trivy.json)"
+          echo "scanned $STACK: $config, $(jq -r '.Metadata.OS | if . == null then "no OS packages" else "\(.Family) \(.Name)" end' /tmp/trivy.json), $(jq '.Metadata.DiffIDs | length' /tmp/trivy.json) layers"
 
           jq -r '[.Results // [] | .[] | .Vulnerabilities // [] | .[]]
                  | if length == 0 then "no HIGH or CRITICAL findings"

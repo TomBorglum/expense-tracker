@@ -1638,10 +1638,22 @@ is not interchangeable: Trivy rejects an OCI archive outright, and a layout writ
 `regctl image import` leads with a referrers index, which Trivy reads first, resolves
 nothing from, and then reports zero vulnerabilities and success.
 
-So the gate makes **two** assertions, not one. It first requires that Trivy resolved an
-operating system in the image at all, because a passing scan and a scan that examined
-nothing are otherwise the same result, and only then counts findings. A gate that cannot
-tell those apart is not a gate.
+So the gate makes **two** assertions, not one, and the first is about identity: the
+`ImageID` Trivy reports - the digest of the image config it read - has to name a config
+that is present in the layout just scanned **and** declares the platform the image was
+built for. A passing scan and a scan that examined nothing are otherwise the same result,
+and a gate that cannot tell those apart is not a gate.
+
+The direction matters. Pointed at a layout it cannot walk, Trivy resolves the empty config
+`{}` - `sha256:44136fa3...` - reports no findings and exits 0, and that blob **is** in the
+layout, beside the image, as the attestation manifest's own config. So walking the layout
+to work out what Trivy should have reported can land on the same empty value from both
+sides and agree with itself; checking Trivy's claim against the layout cannot, because
+`{}` declares no platform. Requiring that Trivy resolved an operating system would also
+catch the case, but it would fail a legitimately clean image the day either base carries no
+package database, and deleting the check would then look like the correction. This
+assertion does not care what is inside the image, and it extends the chain the push job
+ends: bake's digest, the archive, the scanned config, the imported digest, the signature.
 
 Suppressions live in **`.trivyignore.yaml`**, and every entry carries an `expired_at`
 date. On that date Trivy stops honouring the entry and the finding fails the release
