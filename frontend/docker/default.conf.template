@@ -3,61 +3,54 @@
 # stock default.conf rather than sitting beside it, and nothing of that file survives.
 #
 # ${API_BASE_URL} is the only substitution. Every other $name below is an nginx variable
-# that has to reach nginx intact; NGINX_ENVSUBST_FILTER in the Dockerfile is what keeps a
-# future environment variable from being mistaken for one.
+# that has to reach nginx intact, and NGINX_ENVSUBST_FILTER in the Dockerfile is what holds
+# envsubst to that one name.
 
-# Cache-Control is computed here rather than set inside each location, because add_header
-# in a nested block REPLACES the inherited set instead of adding to it: an /assets/ block
-# carrying a Cache-Control of its own would silently drop every security header below. One
-# map and one server-level add_header is what makes that impossible rather than merely
-# avoided.
+# Cache-Control is computed here and set once at server level, add_header in a nested block
+# REPLACING the inherited set instead of adding to it. Keeping every header on one
+# directive is what puts the security headers below on every response, /assets/ included.
 #
-# The status is half the key, not decoration. Only a response that actually carries the
-# asset may be cached for a year: a 404 on /assets/ keyed on the path alone would be
-# cached as `immutable` too, so a client that asked for a chunk during a deployment would
-# keep that 404 for a year and have no way to retry.
+# The status is half the key. The year-long `immutable` lifetime belongs to a response that
+# carries the asset, so a 404 on /assets/ during a deployment keeps the default below and
+# stays retryable.
 map $status $expense_tracker_served {
     default              "err";
     ~^(200|204|206|304)$ "ok";
 }
 
 # $uri is what try_files has already resolved, so a client-side route that fell back to
-# the shell is matched here as /index.html and gets no-store. Only /assets/ is
-# content-hashed by vite, so only /assets/ can be cached at all.
+# the shell is matched here as /index.html and gets no-store. /assets/ is what vite
+# content-hashes, and so what this map caches.
 map "$expense_tracker_served$uri" $expense_tracker_cache_control {
     default      "no-store";
     ~^ok/assets/ "public, max-age=31536000, immutable";
 }
 
 server {
-    # 8080 rather than 80: this base runs as 101 and cannot bind a privileged port. The
-    # IPv6 line is written out by hand because the base's own
-    # 10-listen-on-ipv6-by-default.sh never reaches this file - it compares default.conf
-    # against the checksum of the PACKAGED one and bails when they differ, which in the
-    # unprivileged image they already do, and in any case it runs before the envsubst
-    # script above replaces that file wholesale.
+    # 8080, a port this base's nginx binds as 101, where a privileged one is out of reach.
+    # The IPv6 line is written out by hand: the base's own
+    # 10-listen-on-ipv6-by-default.sh compares default.conf against the checksum of the
+    # PACKAGED one and bails when they differ, which in the unprivileged image they do, and
+    # it runs before the envsubst script above replaces that file wholesale.
     #
-    # default_server declares what this block would be by accident anyway: nginx makes the
-    # FIRST server on an address:port the default, and conf.d is included by glob, so left
-    # implicit the catch-all below would rest on this file still sorting first. Stated, a
-    # second block claiming it makes nginx refuse to start rather than quietly reorder.
-    # Only one block per address may carry it, which is why both lines do - v4 and v6 are
-    # separate claims.
+    # default_server is what routes every request to this block. nginx makes the FIRST
+    # server on an address:port the default and conf.d is included by glob, so stating it
+    # puts the catch-all below on this declaration rather than on sort order, and a second
+    # block claiming it makes nginx refuse to start. Only one block per address may carry
+    # it, which is why both lines do - v4 and v6 are separate claims.
     listen 8080 default_server;
     listen [::]:8080 default_server;
 
-    # `_` is not a wildcard: nginx has no catch-all name, and this is simply an invalid
-    # hostname used by convention to say that name-based virtual hosting is not in use.
-    # What actually routes every request here is default_server above. The Host a
+    # `_` is an invalid hostname, used by convention to say that name-based virtual hosting
+    # is not in use; default_server above is what routes every request here. The Host a
     # deployment presents is its own business - an ingress, a load balancer, or a browser
     # on 127.0.0.1:8080 all reach this one server.
     server_name _;
 
     # A document root of our own rather than the base's /usr/share/nginx/html, so the
     # served set is exactly what vite built. That directory arrives carrying a stock
-    # 50x.html, which this server has no error_page pointing at and which would be served
-    # as an ordinary 200 at /50x.html - a page that names nginx, right after
-    # server_tokens off went to the trouble of not naming it.
+    # 50x.html - a page that names nginx, where server_tokens off below does not - and no
+    # error_page here points at it.
     root /srv/expense-tracker;
 
     # Keeps the version out of the Server header and off the built-in error pages.
@@ -79,8 +72,7 @@ server {
     #                              attribute is governed by style-src-attr, which falls
     #                              back to style-src. style-src-elem keeps the tighter
     #                              rule on the stylesheet itself wherever a browser
-    #                              implements it; Firefox does not, and ignores the
-    #                              directive rather than failing on it.
+    #                              implements it; Firefox ignores the directive.
     #   img-src data:              daisyUI inlines its checkbox and select glyphs as
     #                              url("data:image/svg+xml,...") inside the stylesheet.
     #   connect-src                the one API origin this container was given.
@@ -94,9 +86,8 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Cache-Control $expense_tracker_cache_control always;
 
-    # Hashed assets resolve or 404, and must never reach the SPA fallback below: a missing
-    # chunk answered with index.html arrives at the module loader as HTML and fails as a
-    # syntax error rather than as the 404 it is.
+    # Hashed assets resolve or 404, stopping short of the SPA fallback below, so a missing
+    # chunk reaches the module loader as the 404 it is.
     location /assets/ {
         try_files $uri =404;
     }

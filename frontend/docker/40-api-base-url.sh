@@ -5,9 +5,9 @@
 #
 # This script exists because the two stacks take their configuration at different times.
 # The backend reads DATABASE_URL from the environment when it starts; vite inlines
-# VITE_API_BASE_URL into the bundle at build time, so there is nothing left to read. A
-# placeholder substituted at start is what keeps one published image servable against any
-# API origin instead of one image per deployment.
+# VITE_API_BASE_URL into the bundle at build time, so the origin is fixed by the time a
+# container starts. A placeholder substituted here is what makes one published image
+# servable against any API origin.
 
 set -eu
 
@@ -16,9 +16,9 @@ PLACEHOLDER='__EXPENSE_TRACKER_API_BASE_URL__'
 # Matches `root` in default.conf.template, and the destination of the Dockerfile's COPY.
 HTML_ROOT=/srv/expense-tracker
 
-# No default, deliberately, and the same rule config.py applies to the database: a guessed
-# origin is a container that comes up looking healthy and serves an app that cannot reach
-# anything. Refusing to start is the louder half of that pair.
+# Required, on the same rule config.py applies to the database: the origin arrives at run
+# time, and a container given none stops here rather than coming up healthy and serving an
+# app that reaches nothing.
 if [ -z "${API_BASE_URL:-}" ]; then
     echo "$ME: ERROR: API_BASE_URL is not set." >&2
     echo "$ME:        Give the container the origin the BROWSER should call, for example" >&2
@@ -37,9 +37,9 @@ esac
 
 # scheme://host[:port] and nothing after it. The path is the part worth refusing: the
 # bundle resolves every request as new URL("/api/expenses", API_BASE_URL), and an absolute
-# path discards whatever path the base carried - so a value like http://host/gateway would
-# be accepted here and then silently ignored at all four call sites. The character check
-# is what also keeps the value safe as a sed replacement below.
+# path discards whatever path the base carried, so this check is what reports a value like
+# http://host/gateway here rather than leaving it ignored at all four call sites. The
+# character check is what also keeps the value safe as a sed replacement below.
 authority=${API_BASE_URL#*://}
 authority=${authority%/}
 if [ -z "$authority" ] || [ -n "$(printf '%s' "$authority" | tr -d 'A-Za-z0-9.:_[]-')" ]; then
@@ -51,10 +51,10 @@ fi
 # Found rather than named: which chunk the four api/ modules land in is rollup's decision,
 # and its filename carries a content hash that changes with them.
 #
-# Finding nothing is not an error. The image is asserted at build time to carry the
-# placeholder, so the only way to reach this with none left is a container started a
-# second time on a filesystem this script already rewrote - `docker start` after a stop -
-# where the origin is already in place and already correct.
+# Finding nothing is an ordinary outcome. The build asserts the image carries the
+# placeholder, so a run with none left is a container started a second time on a filesystem
+# this script already rewrote - `docker start` after a stop - where the origin is in place
+# and correct.
 files=$(grep -rl "$PLACEHOLDER" "$HTML_ROOT" || true)
 
 if [ -z "$files" ]; then
