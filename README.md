@@ -1464,10 +1464,11 @@ tomborglum/expense-tracker-frontend
 
 **Neither name is written down.** `publish.yml` names the directories, `backend` and
 `frontend`, and `release.yml`'s `meta` job composes
-`<namespace>/<repository>-<directory>` from them - the namespace a literal in that file,
-the repository read from `github.event.repository.name`. **So renaming this GitHub
-repository renames what a release publishes to**, which `CLAUDE.md` carries as a pair that
-nothing checks. The composition is logged on every pull request run.
+`<namespace>/<repository>-<directory>` from them - the namespace an input that
+`publish.yml` fills from the `DOCKERHUB_NAMESPACE` repository variable, the repository
+read from `github.event.repository.name`. **So renaming this GitHub repository renames
+what a release publishes to**, which `CLAUDE.md` carries as a pair that nothing checks.
+The composition is logged on every pull request run.
 
 The same job derives the OCI metadata: eight `org.opencontainers.image.*` values, carried
 twice over, as labels in the image config and as annotations on its manifest, so a
@@ -1509,11 +1510,12 @@ publish.yml  ->  meta  ->  build (matrix: backend, frontend)  ->  push
                  \____________ release.yml ____________________________/
 ```
 
-`publish.yml` is the caller and holds the triggers, the concurrency group and the one
-input: the **directories** to build. `release.yml` is called, and holds everything about
-how an image is built, scanned and pushed. The filenames look inverted on purpose - the
-AWS trust policy below pins `job_workflow_ref`, which names the **called** workflow, so
-`release.yml` keeping its path is what leaves that policy alone.
+`publish.yml` is the caller and holds the triggers, the concurrency group and both
+inputs: the **directories** to build and the **namespace** to publish under.
+`release.yml` is called, and holds everything about how an image is built, scanned and
+pushed. The filenames look inverted on purpose - the AWS trust policy below pins
+`job_workflow_ref`, which names the **called** workflow, so `release.yml` keeping its
+path is what leaves that policy alone.
 
 **The split exists for one reason, and it is the only interesting thing about the file.**
 `build` runs repository code: a Dockerfile, `pixi install`, `pnpm install`. A malicious
@@ -1734,9 +1736,11 @@ one parameter - so that scoping is where the separation lives.
    rather than a prefix - is what holds this role to its own parameter and away from the
    smoke test's under the same key.
 
-4. **GitHub repository variable** `AWS_RELEASE_ROLE_ARN`, set to
-   `arn:aws:iam::<account-id>:role/gha-expense-tracker-release`. `AWS_REGION` already
-   exists for the smoke test.
+4. **GitHub repository variables.** `AWS_RELEASE_ROLE_ARN`, set to
+   `arn:aws:iam::<account-id>:role/gha-expense-tracker-release`, and
+   `DOCKERHUB_NAMESPACE`, set to `tomborglum` - the namespace `publish.yml` passes to
+   `release.yml`, which has to be the account the PAT above belongs to. `AWS_REGION`
+   already exists for the smoke test.
 
 ### Verifying a release
 

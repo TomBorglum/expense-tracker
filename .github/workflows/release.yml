@@ -42,15 +42,22 @@ on:
           directory name - see the `images` step.
         required: true
         type: string
+      namespace:
+        description: >-
+          The Docker Hub namespace every image publishes under, and the account `push`
+          logs in as. Validated in the `images` step, which is also where it becomes half
+          of each repository name.
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 env:
-  # The Docker Hub namespace half of every image name. Still a literal: the `docker login`
-  # in `push` carries the same string, and CLAUDE.md's declared-twice table holds the pair
-  # until both become one input.
-  NAMESPACE: tomborglum
+  # The Docker Hub namespace half of every image name, and the account `push` logs in as.
+  # The caller's, so this file carries nothing specific to one account. Step-level `env`
+  # merges onto this rather than replacing it, which is what lets both readers name it.
+  NAMESPACE: ${{ inputs.namespace }}
 
 jobs:
   # Tags and labels derived ONCE, so no image and its metadata can disagree with another's.
@@ -81,6 +88,13 @@ jobs:
           REPOSITORY: ${{ github.event.repository.name }}
         run: |
           set -euo pipefail
+          # Checked rather than trusted: `required` is satisfied by a key being present,
+          # and an unset repository variable reaches a called workflow as an empty string,
+          # which would otherwise compose a name `docker login` cannot push to.
+          if [[ ! "$NAMESPACE" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+            echo "::error::namespace must be lowercase letters, digits, - or _, got: '$NAMESPACE'"
+            exit 1
+          fi
           printf '%s' "$DIRECTORIES" > /tmp/directories.json
           # A string passes `length > 0` too, so the type is what is checked.
           if ! jq -e 'type == "array" and length > 0' /tmp/directories.json > /dev/null; then
@@ -410,7 +424,7 @@ jobs:
             --with-decryption \
             --query Parameter.Value \
             --output text \
-            | docker login docker.io --username tomborglum --password-stdin
+            | docker login docker.io --username "$NAMESPACE" --password-stdin
 
       # Every image is staged and checked BEFORE any is copied, so a malformed or altered
       # archive fails the release with nothing published rather than half of it. No step
