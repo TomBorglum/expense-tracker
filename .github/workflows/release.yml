@@ -12,7 +12,7 @@ name: Release
 #
 # Docker Hub supports no OIDC for personal accounts, so the push credential is a PAT read
 # from AWS SSM Parameter Store through a role assumed with the GitHub OIDC token.
-# oidc-smoke-test.yml proved that path; README.md, under Releases, documents the AWS
+# oidc-smoke-test.yml exercises that path; README.md, under Releases, documents the AWS
 # objects and how to recreate them.
 #
 # This repository is public, so every line of these logs is world-readable. Nothing here
@@ -28,10 +28,9 @@ on:
   #
   # NO `paths` FILTER, deliberately, and the same trigger ci.yml carries. Such a filter is
   # a hand-written second copy of what the two Dockerfiles read, with nothing checking that
-  # the two agree - and the first draft of it was already wrong, missing
-  # frontend/vite.config.ts, the three frontend/tsconfig*.json and
-  # frontend/pnpm-workspace.yaml, the last of which frontend/Dockerfile copies by name one
-  # line away from the two files the filter did list. Both builds on every pull request
+  # the two agree. It would have to name frontend/vite.config.ts, the three
+  # frontend/tsconfig*.json and frontend/pnpm-workspace.yaml beside the obvious ones, each
+  # of them a file frontend/Dockerfile copies by name. Both builds on every pull request
   # cost about four runner-minutes, free on a public repository, and land off the critical
   # path because ci.yml's own job takes longer than this whole workflow.
   pull_request:

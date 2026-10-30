@@ -1752,19 +1752,18 @@ gains broad SSM or KMS permissions.
    alone would admit any workflow in this repository, `job_workflow_ref` alone would
    admit this file at any ref.
 
-   **The key is `job_workflow_ref`, and `workflow_ref` is no condition key at all** -
-   a distinction that cost the first release a failed run. AWS maps only the claims its
-   condition-key reference lists: `actor`, `actor_id`, `job_workflow_ref`, `repository`,
-   `repository_id`, `repository_owner_id`, `workflow`, `ref`, `environment` and
-   `enterprise_id`, beside `sub` and `aud`. A `StringLike` on a key AWS never populates
-   cannot be satisfied, so the one `Allow` statement does not match and STS answers `Not
-   authorized to perform sts:AssumeRoleWithWebIdentity` - naming no condition, with every
-   other part of the exchange correct. AWS describes `job_workflow_ref` as the *reusable*
-   workflow's path, which is why this policy reached for the other name first; GitHub
-   populates it on every job, equal to `workflow_ref` wherever no reusable workflow is
-   involved, and the claim dump shows both. If `release.yml` ever calls a reusable
-   workflow, the job holding `id-token: write` moves into the called file and this value
-   becomes that file's path, so the condition moves with it.
+   **The key is `job_workflow_ref`, and `workflow_ref` is no condition key at all.** AWS
+   maps only the claims its condition-key reference lists: `actor`, `actor_id`,
+   `job_workflow_ref`, `repository`, `repository_id`, `repository_owner_id`, `workflow`,
+   `ref`, `environment` and `enterprise_id`, beside `sub` and `aud`. A `StringLike` on a
+   key AWS never populates cannot be satisfied, so the one `Allow` statement does not
+   match and STS answers `Not authorized to perform sts:AssumeRoleWithWebIdentity`,
+   naming no condition and with every other part of the exchange correct. AWS describes
+   `job_workflow_ref` as the *reusable* workflow's path; GitHub populates it on every
+   job, equal to the `workflow_ref` claim wherever no reusable workflow is involved, and
+   the claim dump carries both. If `release.yml` ever calls a reusable workflow, the job
+   holding `id-token: write` moves into the called file and this value becomes that
+   file's path, so the condition moves with it.
 
    **IAM Access Analyzer warns** that the `*` in `sub` "can allow requests from more
    sources than you intended" and recommends naming a branch. It is a false positive: the

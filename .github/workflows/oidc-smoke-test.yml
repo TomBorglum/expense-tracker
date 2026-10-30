@@ -33,8 +33,7 @@ jobs:
       # job_workflow_ref in particular, which both trust policies condition on: AWS's
       # condition-key reference describes it as the path to the *reusable* workflow and
       # this repo has none, but GitHub populates it on every job, equal to the
-      # workflow_ref claim - which is itself no AWS condition key. The v2.0.0 release
-      # proved both halves, the second of them the hard way.
+      # workflow_ref claim - which is itself no AWS condition key.
       #
       # Only the payload is decoded. The token itself is a live credential for its few
       # minutes of life and never reaches the log.
