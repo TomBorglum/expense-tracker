@@ -1,7 +1,11 @@
 name: Release
 
-# Publishes both images to Docker Hub when release-please's GitHub Release is published,
-# and exercises the build half on any pull request that changes what goes into an image.
+# Builds, scans and publishes one image per directory it is given. publish.yml is what
+# names them and what carries the triggers: this file is CALLED, never triggered, and
+# that file's header says why it keeps the name it has.
+#
+# Publishes to Docker Hub when release-please's GitHub Release is published, and
+# exercises the build half on any pull request that changes what goes into an image.
 #
 # THE ISOLATION PROPERTY THIS FILE EXISTS TO HOLD. `build` runs repository code - a
 # Dockerfile, `pixi install`, `pnpm install` - and holds the Docker Hub credential at
@@ -18,61 +22,91 @@ name: Release
 # This repository is public, so every line of these logs is world-readable. Nothing here
 # may print the account id or the PAT, and anything added must be masked on the same terms.
 
+# The caller's triggers reach this file through the `github` context, which in a called
+# workflow is always the CALLER's: `github.event_name`, `github.ref` and
+# `github.event.repository` below all read publish.yml's event.
+#
+# publish.yml carries the concurrency group, because GitHub cancels the caller when caller
+# and called share one. A RELEASE is never cancelled: a run stopped partway through the
+# push job can leave one image published and the other not, which is worse than a slow
+# queue. A pull request has nothing to leave half-done - it never reaches `push`.
 on:
-  release:
-    types: [published]
-  # The build half only - `push` is guarded by an `if` below. A release event runs this
-  # file as it exists on the tag, so this trigger is what runs the build, scan and artifact
-  # path on the pull request that touches them, where a fix is still a commit away.
-  #
-  # EVERY PATH, the same trigger ci.yml carries. What the two Dockerfiles read lives in
-  # the Dockerfiles alone - frontend/vite.config.ts, the three frontend/tsconfig*.json and
-  # frontend/pnpm-workspace.yaml beside the obvious ones, each copied by name - so a
-  # `paths` filter here would be a second copy of that list with nothing checking the two
-  # agree. Both builds on every pull request cost about four runner-minutes, free on a
-  # public repository, and land off the critical path because ci.yml's own job takes longer
-  # than this whole workflow.
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_call:
+    inputs:
+      directories:
+        # A JSON array, because `strategy` below reads it through `fromJSON`: that is the
+        # one place `env` cannot reach, so the matrix is what fixes the format.
+        description: >-
+          JSON array of directories to build, one per image, each holding a Dockerfile and
+          a docker-bake.hcl. The repository each image publishes to is composed from the
+          directory name - see the `images` step.
+        required: true
+        type: string
 
 permissions:
   contents: read
 
-# A RELEASE is never cancelled: a run stopped partway through the push job can leave one
-# image published and the other not, which is worse than a slow queue. A pull request has
-# nothing to leave half-done - it never reaches `push` - so a superseded run there is
-# cancelled, which is what keeps a burst of pushes to one branch from serialising whole
-# image builds behind each other.
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  # The Docker Hub namespace half of every image name. Still a literal: the `docker login`
+  # in `push` carries the same string, and CLAUDE.md's declared-twice table holds the pair
+  # until both become one input.
+  NAMESPACE: tomborglum
 
 jobs:
-  # Tags and labels derived ONCE, so the two images and their metadata cannot disagree.
+  # Tags and labels derived ONCE, so no image and its metadata can disagree with another's.
   # Needs no checkout - metadata-action reads the event context, not the working tree.
   meta:
     runs-on: ubuntu-latest
     outputs:
       tags: ${{ steps.meta.outputs.tags }}
+      images: ${{ steps.images.outputs.map }}
       bake-labels: ${{ steps.bake.outputs.labels }}
       bake-annotations: ${{ steps.bake.outputs.annotations }}
     steps:
+      # THE IMAGE NAME IS COMPOSED HERE AND NOWHERE ELSE: <namespace>/<repository>-<dir>.
+      # Both consumers read it back out of this step - metadata-action below from `list`,
+      # the build job from `map` - so the two cannot spell a repository differently.
+      #
+      # `github.event.repository.name` is the CALLER's repository, which is what makes
+      # the image names follow a repository rename. CLAUDE.md records that.
+      #
+      # Two single-line outputs, no heredoc, for the reason the bake step below gives.
+      # `list` is comma-joined: metadata-action splits its `images` input on newlines
+      # only, then CSV-parses each line, and a single line whose fields all lack `=` is
+      # read as plain names. Its log group names what it parsed, so a PR run shows it.
+      - name: Compose the repository each directory publishes to
+        id: images
+        env:
+          DIRECTORIES: ${{ inputs.directories }}
+          REPOSITORY: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$DIRECTORIES" > /tmp/directories.json
+          # A string passes `length > 0` too, so the type is what is checked.
+          if ! jq -e 'type == "array" and length > 0' /tmp/directories.json > /dev/null; then
+            echo "::error::directories must be a non-empty JSON array, got: $DIRECTORIES"
+            exit 1
+          fi
+          jq -r --arg ns "$NAMESPACE" --arg repo "$REPOSITORY" \
+            '[.[] | "\($ns)/\($repo)-\(.)"] | join(",")' \
+            /tmp/directories.json | sed 's/^/list=/' >> "$GITHUB_OUTPUT"
+          jq -c --arg ns "$NAMESPACE" --arg repo "$REPOSITORY" \
+            'map({key: ., value: "\($ns)/\($repo)-\(.)"}) | from_entries' \
+            /tmp/directories.json | sed 's/^/map=/' >> "$GITHUB_OUTPUT"
+          jq -r --arg ns "$NAMESPACE" --arg repo "$REPOSITORY" \
+            '.[] | "\(.) -> \($ns)/\($repo)-\(.)"' /tmp/directories.json
+
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
-          # The target both stacks' bake files declare, so the generated overrides land on
-          # it. The action's own default target is `docker-metadata-action`, which neither
-          # bake file declares.
+          # The target every directory's bake file declares, so the generated overrides
+          # land on it. The action's own default target is `docker-metadata-action`, which
+          # no bake file declares.
           bake-target: image
-          # Both images, so one derivation serves both; the push job selects the lines
-          # belonging to each by its `<image>:` prefix. This is half of what is published
-          # and the build matrix below is the other - it pairs each repository with the
-          # stack that builds it - and the push job compares the two sets before copying
-          # anything, so a repository named in one half alone fails the release rather
-          # than going quietly unpublished.
-          images: |
-            tomborglum/expense-tracker-backend
-            tomborglum/expense-tracker-frontend
+          # Every image, so one derivation serves them all; the push job selects the lines
+          # belonging to each by its `<image>:` prefix. Composed above rather than written
+          # here, which is what lets a caller name the directories and nothing else.
+          images: ${{ steps.images.outputs.list }}
           # latest=false turns off the implicit "latest on any semver tag", so the moving
           # tag is declared below like every other one rather than appearing by default.
           flavor: latest=false
@@ -86,7 +120,7 @@ jobs:
 
       # metadata-action writes these bake files into THIS runner's temp directory, so
       # their paths mean nothing in the build job - the contents travel instead. One
-      # derivation for both images is what this job exists for: it gives them a single
+      # derivation for every image is what this job exists for: it gives them a single
       # `created` stamp.
       #
       # Each file goes onto ONE line, which is what keeps the output off the multi-line
@@ -117,14 +151,10 @@ jobs:
       # Every image gets scanned even when one fails, so one run lists every finding.
       fail-fast: false
       matrix:
-        # The only place a stack is paired with the repository it publishes to. The push
-        # job keeps no such table - it reads the pairing back out of each artifact - so
-        # adding a stack is this list and `meta`'s `images:` above, and nothing else.
-        include:
-          - stack: backend
-            image: tomborglum/expense-tracker-backend
-          - stack: frontend
-            image: tomborglum/expense-tracker-frontend
+        # One job per directory the caller named. `strategy` is the one key `env` cannot
+        # reach - it reads `github`, `needs`, `vars` and `inputs` only - which is why the
+        # input is JSON rather than the newline list metadata-action wants.
+        directory: ${{ fromJSON(inputs.directories) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -148,15 +178,15 @@ jobs:
       # type=oci exporter are BuildKit features the docker driver does not implement.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Build the ${{ matrix.stack }} image
+      - name: Build the ${{ matrix.directory }} image
         id: build
         uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         with:
-          # The stack's own directory, which is what its bake file's `context` and
+          # The directory the caller named, which is what its bake file's `context` and
           # `dockerfile` are written against - bake resolves `context` relative to the
           # working directory and `dockerfile` relative to the context, exactly as
           # `docker build` does. This is what `poe image` and `pnpm run image` pass too.
-          source: ${{ matrix.stack }}
+          source: ${{ matrix.directory }}
           # ORDER IS LOAD-BEARING, and nothing reports it. bake merges `labels` per key
           # and appends `annotations`, so the file loaded last wins the keys it names and
           # inherits the rest: the shared release metadata first, the stack's own
@@ -208,7 +238,7 @@ jobs:
           mkdir -p /tmp/oci
           tar -xf /tmp/image.oci.tar -C /tmp/oci
 
-      - name: Scan the ${{ matrix.stack }} image
+      - name: Scan the ${{ matrix.directory }} image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
@@ -230,7 +260,7 @@ jobs:
       # so a legitimately clean image passes whatever package database its base carries.
       - name: Gate on the scan
         env:
-          STACK: ${{ matrix.stack }}
+          DIRECTORY: ${{ matrix.directory }}
         run: |
           set -euo pipefail
 
@@ -247,17 +277,17 @@ jobs:
                              | if any(. == null) then "" else join("/") end' \
                          "$blob" 2>/dev/null || true)"
           if [ -z "$platform" ]; then
-            echo "::error::trivy reported $config for the $STACK image, which is no image config in the layout it scanned, so it scanned something else."
+            echo "::error::trivy reported $config for the $DIRECTORY image, which is no image config in the layout it scanned, so it scanned something else."
             jq '{Metadata: .Metadata, Targets: [.Results[]?.Target]}' /tmp/trivy.json
             exit 1
           fi
-          echo "scanned $STACK: $config ($platform)"
+          echo "scanned $DIRECTORY: $config ($platform)"
 
           findings="$(jq -r '.Results[]?.Vulnerabilities[]?
                              | "\(.Severity)\t\(.VulnerabilityID)\t\(.PkgName) \(.InstalledVersion) -> \(.FixedVersion // "no fix")"' /tmp/trivy.json)"
           if [ -n "$findings" ]; then
             printf '%s\n' "$findings"
-            echo "::error::$(printf '%s\n' "$findings" | wc -l) HIGH or CRITICAL finding(s) in the $STACK image."
+            echo "::error::$(printf '%s\n' "$findings" | wc -l) HIGH or CRITICAL finding(s) in the $DIRECTORY image."
             exit 1
           fi
           echo "no HIGH or CRITICAL findings"
@@ -270,7 +300,8 @@ jobs:
         env:
           # bake-action reports one entry per target rather than a bare digest.
           DIGEST: ${{ fromJSON(steps.build.outputs.metadata).image['containerimage.digest'] }}
-          IMAGE: ${{ matrix.image }}
+          # Read back out of `meta`, not recomposed: the formula lives in one step.
+          IMAGE: ${{ fromJSON(needs.meta.outputs.images)[matrix.directory] }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/out
@@ -281,7 +312,7 @@ jobs:
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: image-${{ matrix.stack }}
+          name: image-${{ matrix.directory }}
           path: /tmp/out/
           # Long enough to inspect a failed release, short enough not to accumulate.
           retention-days: 1
@@ -383,8 +414,8 @@ jobs:
 
       # Every image is staged and checked BEFORE any is copied, so a malformed or altered
       # archive fails the release with nothing published rather than half of it. No step
-      # in this job names a stack or a repository: the artifacts are what say which images
-      # exist, and each carries the repository its build job was given.
+      # in this job names a directory or a repository: the artifacts are what say which
+      # images exist, and each carries the repository its build job was given.
       - name: Stage every image and verify its digest
         env:
           TAGS: ${{ needs.meta.outputs.tags }}
@@ -401,21 +432,22 @@ jobs:
           echo "$# image artifact(s) downloaded"
 
           for dir in /tmp/images/image-*/; do
-            stack="${dir%/}"; stack="${stack##*/image-}"
+            directory="${dir%/}"; directory="${directory##*/image-}"
             expected="$(cat "$dir/digest")"
-            regctl image import "ocidir:///tmp/staged/$stack:staged" "$dir/image.oci.tar"
-            actual="$(regctl manifest digest "ocidir:///tmp/staged/$stack:staged")"
-            echo "$stack: $(cat "$dir/repository"), built $expected, staged $actual"
+            regctl image import "ocidir:///tmp/staged/$directory:staged" "$dir/image.oci.tar"
+            actual="$(regctl manifest digest "ocidir:///tmp/staged/$directory:staged")"
+            echo "$directory: $(cat "$dir/repository"), built $expected, staged $actual"
             if [ "$expected" != "$actual" ]; then
-              echo "::error::$stack digest changed between build and push."
+              echo "::error::$directory digest changed between build and push."
               exit 1
             fi
           done
 
-          # The two halves that have to agree: the repositories the artifacts carry, and
-          # the repositories the derived tags name. Equal sets mean every image has tags
-          # and every tag has an image, the comparison reading both sets whole, so an
-          # addition to one half alone is reported here.
+          # The repositories the artifacts carry against the repositories the derived
+          # tags name. Both now come from `meta`'s one composition step, so they cannot
+          # spell a repository differently; what this still catches is a count that does
+          # not match - a build that uploaded nothing, an artifact that reached this job
+          # twice - either of which would otherwise publish a partial release quietly.
           cat /tmp/images/image-*/repository | sort -u > /tmp/staged-repositories
           printf '%s\n' "$TAGS" | sed -n 's/:[^:/]*$//p' \
             | sort -u > /tmp/tagged-repositories
@@ -435,17 +467,17 @@ jobs:
           set -euo pipefail
           printf '%s\n' "$TAGS" > /tmp/tags
           for dir in /tmp/images/image-*/; do
-            stack="${dir%/}"; stack="${stack##*/image-}"
+            directory="${dir%/}"; directory="${directory##*/image-}"
             image="$(cat "$dir/repository")"
             matched=0
             while read -r ref; do
               [ -n "$ref" ] || continue
               case "$ref" in "$image:"*) ;; *) continue ;; esac
-              echo "copying $stack -> $ref"
-              regctl image copy "ocidir:///tmp/staged/$stack:staged" "$ref"
+              echo "copying $directory -> $ref"
+              regctl image copy "ocidir:///tmp/staged/$directory:staged" "$ref"
               matched=$((matched + 1))
             done < /tmp/tags
-            echo "$stack: $matched tag(s) published"
+            echo "$directory: $matched tag(s) published"
           done
 
       # Keyless, reusing this job's own OIDC token, so there is no signing key to hold.

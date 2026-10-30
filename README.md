@@ -1225,7 +1225,7 @@ weekly, and Dependabot rewrites the tag and the digest together.
 Its commits are prefixed **`deps`**, so a base bump lands in `CHANGELOG.md` under
 Dependencies and cuts a patch release. A base is part of what a user receives when they run
 the image, which is the line [`CONTRIBUTING.md`](CONTRIBUTING.md) draws between `deps:` and
-`ci:`, and that release is what republishes the image: `release.yml` publishes when a GitHub
+`ci:`, and that release is what republishes the image: `publish.yml` publishes when a GitHub
 Release is published.
 
 Three properties of the entry live outside the configuration:
@@ -1452,14 +1452,22 @@ bumps it, with the three-day cooldown applying because this image lives on Docke
 
 ## Releases
 
-`.github/workflows/release.yml` publishes both images to Docker Hub when release-please's
-GitHub Release is published. Four tags per image, derived once by `docker/metadata-action`
-so the two cannot disagree: `1.1.0`, `1.1`, `sha-<full commit>` and `latest`.
+`.github/workflows/publish.yml` publishes both images to Docker Hub when release-please's
+GitHub Release is published, calling `.github/workflows/release.yml` to do it. Four tags
+per image, derived once by `docker/metadata-action` so the two cannot disagree: `1.1.0`,
+`1.1`, `sha-<full commit>` and `latest`.
 
 ```
 tomborglum/expense-tracker-backend
 tomborglum/expense-tracker-frontend
 ```
+
+**Neither name is written down.** `publish.yml` names the directories, `backend` and
+`frontend`, and `release.yml`'s `meta` job composes
+`<namespace>/<repository>-<directory>` from them - the namespace a literal in that file,
+the repository read from `github.event.repository.name`. **So renaming this GitHub
+repository renames what a release publishes to**, which `CLAUDE.md` carries as a pair that
+nothing checks. The composition is logged on every pull request run.
 
 The same job derives the OCI metadata: eight `org.opencontainers.image.*` values, carried
 twice over, as labels in the image config and as annotations on its manifest, so a
@@ -1497,8 +1505,15 @@ workflow involves no GitHub Environment and files no deployment records.
 ### Why it is three jobs
 
 ```
-meta  ->  build (matrix: backend, frontend)  ->  push
+publish.yml  ->  meta  ->  build (matrix: backend, frontend)  ->  push
+                 \____________ release.yml ____________________________/
 ```
+
+`publish.yml` is the caller and holds the triggers, the concurrency group and the one
+input: the **directories** to build. `release.yml` is called, and holds everything about
+how an image is built, scanned and pushed. The filenames look inverted on purpose - the
+AWS trust policy below pins `job_workflow_ref`, which names the **called** workflow, so
+`release.yml` keeping its path is what leaves that policy alone.
 
 **The split exists for one reason, and it is the only interesting thing about the file.**
 `build` runs repository code: a Dockerfile, `pixi install`, `pnpm install`. A malicious
@@ -1516,12 +1531,12 @@ moved, so "what was scanned" and "what was published" are provably the same byte
 than two numbers compared by eye.
 
 Each artifact also carries **the repository its image publishes to**, which is why no step
-in `push` names a stack or a repository: it iterates the artifacts it was handed. That
-pairing is declared once, in the build matrix, and `meta`'s `images:` list is the other
-half of it. Before anything is copied, `push` compares the repositories the artifacts
-carry with the repositories the derived tags name, and a difference either way fails the
-release. Equal sets mean every image has tags and every tag has an image, so adding an
-image to one half alone is reported by the comparison, which reads both sets whole.
+in `push` names a directory or a repository: it iterates the artifacts it was handed. That
+name is composed in one place - `meta`'s `images` step - and both consumers read it back
+out of there, so the tags and the artifacts cannot spell a repository differently. Before
+anything is copied, `push` still compares the two sets, which is what catches a count that
+does not match: a build that uploaded nothing, or an artifact that arrived twice, would
+otherwise publish a partial release quietly.
 
 ### How the credential is reached
 
@@ -1673,9 +1688,11 @@ one parameter - so that scoping is where the separation lives.
    every other part of the exchange correct - which is what `workflow_ref` as a key name
    looks like. AWS describes `job_workflow_ref` as the *reusable* workflow's path; GitHub
    populates it on every job, equal to the `workflow_ref` claim wherever no reusable
-   workflow is involved, and the claim dump carries both. If `release.yml` ever calls a
-   reusable workflow, the job holding `id-token: write` moves into the called file and this
-   value becomes that file's path, so the condition moves with it.
+   workflow is involved, and the claim dump carries both. **`release.yml` is now a called
+   workflow**, invoked by `publish.yml`, so `job_workflow_ref` is its path rather than the
+   caller's - which is exactly the value pinned here, and why the split needed no change
+   to this policy. The `sub` claim is the caller's and is also unchanged. Moving or
+   renaming `release.yml` is what would move this condition.
 
    **IAM Access Analyzer warns** that the `*` in `sub` "can allow requests from more
    sources than you intended" and recommends naming a branch. The check fires on a

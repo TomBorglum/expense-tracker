@@ -1,0 +1,55 @@
+name: Publish
+
+# What this repository publishes, and the events that publish it. Everything about HOW an
+# image is built, scanned and pushed is in release.yml, which this file calls.
+#
+# THE FILENAMES LOOK BACKWARDS, and that is deliberate. The AWS release role's trust
+# policy conditions on `job_workflow_ref`, which names the CALLED workflow, and it pins
+# `TomBorglum/expense-tracker/.github/workflows/release.yml@refs/tags/v*`. Keeping
+# release.yml as the called file is what leaves that policy - whose other half is in the
+# AWS console - needing no change. README.md, under Releases, records it.
+#
+# A `./` reference resolves at this file's own ref, so a release run calls release.yml as
+# it exists on the tag and `job_workflow_ref` carries that tag.
+
+on:
+  release:
+    types: [published]
+  # The build half only - release.yml guards its push job with an `if` of its own. A
+  # release event calls release.yml as it exists on the tag, so this trigger is what runs
+  # the build, scan and artifact path on the pull request that touches them, where a fix
+  # is still a commit away.
+  #
+  # EVERY PATH, the same trigger ci.yml carries. What the two Dockerfiles read lives in
+  # the Dockerfiles alone - frontend/vite.config.ts, the three frontend/tsconfig*.json and
+  # frontend/pnpm-workspace.yaml beside the obvious ones, each copied by name - so a
+  # `paths` filter here would be a second copy of that list with nothing checking the two
+  # agree. Both builds on every pull request cost about four runner-minutes, free on a
+  # public repository, and land off the critical path because ci.yml's own job takes longer
+  # than this whole workflow.
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+# Declared here rather than in release.yml: GitHub cancels the caller when caller and
+# called share a group, and `github.ref` is this workflow's either way. The reasoning for
+# the values is in release.yml's header.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  images:
+    uses: ./.github/workflows/release.yml
+    # A caller's permissions are the CEILING for every job in the called workflow, which
+    # can only downgrade them. `build` downgrades to `contents: read` and so still cannot
+    # mint the token, which is the isolation property release.yml's header describes.
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      # One entry per image: the directory holding the Dockerfile and docker-bake.hcl.
+      # The image each publishes to is composed from it - see release.yml's `images` step.
+      directories: '["backend", "frontend"]'

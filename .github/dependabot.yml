@@ -82,7 +82,7 @@ updates:
       - dependency-name: "*prefix-dev/pixi"
     # A runtime base is part of what a user receives when they run the image, which is
     # the line CONTRIBUTING.md draws between deps and ci. The patch release this cuts is
-    # what republishes the image: release.yml publishes when a GitHub Release is
+    # what republishes the image: publish.yml publishes when a GitHub Release is
     # published.
     commit-message:
       prefix: "deps"
