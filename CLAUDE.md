@@ -12,20 +12,17 @@ touch; this file is what applies wherever you are working.
 
 ## Prerequisites
 
-**`direnv allow` is a precondition, not a convenience.** The single
-`dotenv_if_exists backend/.env` line in `.envrc` is what puts `PGHOST`, `PGPORT`,
-`PGUSER`, `PGDATABASE` and `UVICORN_PORT` in the environment, and `use pixi python` is
-what puts the environment's `pytest`, `ruff` and `vitest` on `PATH`. Nothing else
-supplies either - not `pixi run`, which reads no `.envrc` and declares no
-`[activation.env]`, and not poe, which declares no `envfile`. A shell that has not been
-blessed gets a `ValidationError` from the app and a `PGPORT` abort from the db tasks.
+**`direnv allow` is a precondition.** The single `dotenv_if_exists backend/.env` line in
+`.envrc` puts `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` and `UVICORN_PORT` in the
+environment, and `use pixi python` puts the environment's `pytest`, `ruff` and `vitest` on
+`PATH`. `.envrc` is the only source of either. A shell that has not been blessed gets a
+`ValidationError` from the app and a `PGPORT` abort from the db tasks.
 
 ## Working here
 
 - **The invariants in these three files are deliberate**, and every one names the test or
   linter that pins it, or says that nothing does.
-- **If an invariant blocks the task, say so rather than routing around it.** Working
-  around one silently is how a design property becomes a bug nobody chose.
+- **If an invariant blocks the task, say so.**
 - **Rationale lives in these files and in `README.md`, not in the source.** See the
   comment policy below.
 
@@ -33,27 +30,22 @@ blessed gets a `ValidationError` from the app and a `PGPORT` abort from the db t
 
 A bullet earns its place only if all three hold. Most candidates fail the first.
 
-1. **Breaking it is a mistake someone would plausibly make** - it looks like an
-   improvement, or like the obvious next step. A rule nobody would break unprompted is a
-   fact, and facts belong in the code.
-2. **The code cannot show the choice was deliberate.** An absence never can: no file says
-   why there is no `StaticFiles` mount. A value that is present usually can - ruff's
-   `select` list is in `pyproject.toml` and needs no second home.
-3. **It names what it prevents**, in one clause. If that clause cannot be written, the
-   rule is a description rather than an invariant.
+1. **It states a property this tree holds today**, in the present tense.
+2. **Reading the code does not make that property plain.** A value with a single source of
+   truth elsewhere is already shown by the code - ruff's `select` list is in
+   `pyproject.toml` and needs no second home.
+3. **It fits in one clause.** Anything longer is a description, and descriptions belong in
+   `README.md`.
 
 Then state it in one to three lines and end with the test or gate that pins it, or with
 "nothing checks this". **Never restate a value that has a single source of truth
-elsewhere** - name the file instead. That is the habit this file's backend counterpart
-went stale from: it transcribed the import-linter layer list, which then fell two modules
-behind the contract it was copied from. A bullet that wants room past 200 lines retires
-one.
+elsewhere** - name the file instead. A bullet that wants room past 200 lines retires one.
 
 ## Branch, merge and release rules
 
 The rationale is in [`CONTRIBUTING.md`](CONTRIBUTING.md), which maps each rule to the
 ruleset rule that pins it. The `main-protection` ruleset enforces every one of them and
-nobody can bypass it, so a non-compliant merge is refused rather than merely discouraged.
+nobody can bypass it.
 
 - **Never push directly to `main`.** Every change goes on a branch, through a PR.
 - **The PR title must be a valid Conventional Commit.** It becomes the squashed commit
@@ -69,34 +61,31 @@ nobody can bypass it, so a non-compliant merge is refused rather than merely dis
 - **A job that checks out the repository never gets `id-token: write`.** Checked-out code
   is code that runs - a Dockerfile, `pixi install`, `pnpm install` - and that token is
   what buys the Docker Hub credential out of AWS. `release.yml` is split into `build` and
-  `push` for this one reason, and collapsing them is the mistake that looks like a
-  simplification. Nothing checks this: `ci.yml` and `release.yml`'s `build` job are the
-  only jobs that check out, and neither asks for the token today.
+  `push` for this reason. Nothing checks this: `ci.yml` and `release.yml`'s `build` job are
+  the only jobs that check out, and neither asks for the token today.
 
 ## Source conventions
 
 - **This repository is public.** Nothing confidential is ever committed - real spending
   lives in the private repository `EXPENSE_DATA_DIR` points at, and the files under
-  `backend/tests/data/expenses/` are synthetic fixtures, not a copy of it. Secret scanning
-  with push protection is on, which catches credentials and nothing else.
+  `backend/tests/data/expenses/` are synthetic fixtures. Secret scanning with push
+  protection is on, and covers credentials.
 - **ASCII-only** committed source: no em-dashes, smart quotes, arrows, ellipses,
   including the sample data under `backend/tests/data/expenses/`. PyYAML decodes UTF-8 and
   strips a byte-order mark itself, so a developer's own uncommitted month files carry
-  Danish text fine. Nothing checks this - ruff's `RUF001`-`003` reach confusable characters
-  in Python source and nowhere else.
+  Danish text fine. Nothing checks this; ruff's `RUF001`-`003` cover confusable characters
+  in Python source.
 - **Comments say what the code does**, and only where that is not plain from reading it.
-  No rationale essays, no rejected alternatives, no explaining where a module sits in the
-  layer order - that reasoning lives in these files and in `README.md`, and repeating it
-  in the source gives one fact two places to drift apart. Module and function docstrings
-  are one line, and only where the name and signature do not already say it. This governs
-  code, SQL and config comments; `README.md` keeps its current density, and these files
-  answer to [Adding to these files](#adding-to-these-files).
+  Rationale lives in these files and in `README.md`. Module and function docstrings are one
+  line, and only where the name and signature do not already say it. This governs code, SQL
+  and config comments; these files answer to
+  [Adding to these files](#adding-to-these-files).
 - **Pin versions exactly** - `==` in `pixi.toml`, in both its conda tables and
   `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
   Actions by SHA with a version comment.
 - **Every suppression carries a reason** beside the pragma: a comment next to
   `# pyright: ignore[...]` (see `backend/tests/test_date_range.py`), or on/above
-  an `// eslint-disable-next-line <rule>`. A bare disable is not acceptable.
+  an `// eslint-disable-next-line <rule>`.
 
 ## Commands
 
@@ -108,26 +97,22 @@ nobody can bypass it, so a non-compliant merge is refused rather than merely dis
 2. **`pixi.toml` forwards to it**, one prefixed one-liner per command, so `pixi run`
    stays the single entry point spanning both stacks.
 
-**The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Never
-put a command body there; that is what would make the layer a place definitions hide.
-Both stacks also stay runnable on their own terms (`cd backend && poe test`,
+**The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Both
+stacks also stay runnable on their own terms (`cd backend && poe test`,
 `cd frontend && pnpm build`), which is what keeps each directory a standalone project.
 Every task declares its own `cwd` and addresses paths relative to its own manifest, so it
-behaves identically wherever you invoke it and nothing needs `$POE_ROOT`. Full table and
-reasoning in [`README.md`](README.md#development-tasks), under
+behaves identically wherever you invoke it. Full table and reasoning in
+[`README.md`](README.md#development-tasks), under
 [Where commands are defined](README.md#where-commands-are-defined).
 
 **`dev` depends on `db-init`**, so `pixi run backend-dev` is the single command that gets
 a backend developer a working API: the cluster chain behind it is idempotent, runs once
-before uvicorn, and leaves the cluster up afterwards. Neither `load-expenses` nor
-`load-currencies` is in that chain - an empty `expense` or `currency_rate` table is a
-legitimate `200`, and putting a loader there would work around that invariant rather than
-honour it. `test` stays out of it too, because "The HTTP suite never touches PostgreSQL"
-in [`backend/CLAUDE.md`](backend/CLAUDE.md) is a property chaining `db-init` onto it would
-hide.
+before uvicorn, and leaves the cluster up afterwards. The chain is `db-init` alone - an
+empty `expense` or `currency_rate` table is a legitimate `200`, and the HTTP suite runs
+without PostgreSQL, as [`backend/CLAUDE.md`](backend/CLAUDE.md) states.
 
-**Neither stack has a warn tier** - a warning fails the build like an error. The
-mechanism, and what would go advisory without it, is in each stack's file.
+**A warning fails the build like an error in both stacks.** The mechanism is in each
+stack's file.
 
 ## Fast inner loop
 
@@ -142,7 +127,7 @@ cd frontend && pnpm exec vitest run tests/ExpensesTable.test.tsx
 
 Backend `pytest` picks up `--strict-markers` and coverage from `[tool.pytest.ini_options]`
 either way. The `postgres`-marked modules need `pixi run backend-db-init` first; every
-other backend test and the whole frontend suite need no database.
+other backend test and the whole frontend suite run without a database.
 
 Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in order
 (cheapest first, so it fails fast):
@@ -159,24 +144,23 @@ The two halves are independent, so a change to one stack can only fail that stac
 
 ## Declared twice - change both halves together
 
-**Nothing checks the agreement**, which is what puts these here: change one half and no
-gate fails.
+**Nothing checks the agreement.**
 
 | What | The halves | What the pair holds |
 |---|---|---|
-| The collection envelope | `backend/src/expense_tracker/__init__.py` + `frontend/src/api/fetchList.ts` | `_collection` builds `{"items": [...]}`, plus a `summary` the totals route alone passes; `fetchList` unwraps `items` for the three list endpoints and `fetchCollection` validates both halves for totals. The frontend proves its half against its own mocks, so a key renamed on the client and in `tests/msw/handlers.ts` together is green on both sides and broken between them. |
-| The expenses payload and path | `backend/src/expense_tracker/__init__.py` + `frontend/src/api/expenses.ts` | Every expense field is a string on the wire, `amount` included, and the frontend's guard rejects a number. `key` is the bank's own text for the row, **mandatory and never empty**, so it is always a present string rather than an absent key. The **query** half is the same pair on the same terms - `currency`, `from_date`, `to_date` and the three category keys in the route signature and in `ExpensesQuery`, where a rename is a silent 422 rather than a type error. `category` and `not_category` are the repeated keys two `list[str]` read, appended once per value and absent when the list is empty, never `[]`; `category_default` is the root's own sign, sent only where an absent flag would read as the other one, and spelled `all` or `none` on both sides. Both lists carry **slugs, never paths** - a path matches nothing rather than 422ing, so a side that sent one would simply show an empty table. The frontend states a selection in `src/categorySelection.ts` and the backend in `category_filter.py`, and **neither derives the pair from the other**. |
-| The rates payload and path | the same backend file + `frontend/src/api/currencies.ts` | `CurrencyPayload` against the `CurrencyRate` interface, `exchange_rate` a string the guard rejects as a number. `BASE_CURRENCY` is **not** part of the pair - the backend has no notion of a base and needs none, which is what makes `DKK` selectable against an empty rate table. |
-| The totals payload and path | the same backend file + `frontend/src/api/totals.ts` | `PeriodTotalPayload` against `PeriodTotal`, every field a string - `category` now holding the path the summed rows carry, the same one `/api/expenses` shows, which `?group_by=` only switches on. `amount`, `currency` and `category` are **absent keys, never `null`** - the guard rejects both a number and a null, which is what keeps a period holding nothing apart from one that netted to `0.00`, and such a period carries the span alone. Beside the rows, `SummaryPayload` fills a `summary` - one entry per currency, `average` a string, **both keys always present** because an entry exists only for a currency that has expenses - and it is **identical grouped or not**, which is what lets one request serve both halves of the view. The **query** half adds `period`, always sent because the backend refuses an absent one, `group_by`, sent only when grouping because absent is what ungrouped means on both sides, and the three category keys on the expenses row's terms. |
-| The categories payload and path | the same backend file + `frontend/src/api/categories.ts` | `CategoryPayload` against the `Category` interface, five string fields: `category` is the whole `:`-separated path, `name` its last level, `slug` the path's URL spelling, and `parent`/`parent_slug` the pair above it, **both absent on a depth-1 row, never empty** - the mirror of the totals row's rule above. The slug rule is **not** part of this pair: the loader assigns it, `slug` carries it, and the frontend **derives none** - a numbered one could not be derived from a path anyway. The separator is not either: `category_filter.SEPARATOR` is its only declaration, which is what the four other fields exist to keep true, and what lets the picker build its tree from `parent_slug` without splitting anything. The **query** half is `to_level` alone against `CategoriesQuery`, always sent because the tree the picker shows is bounded; `from_level` is the backend's own and has no caller here. The list is what the picker offers and nothing more: a URL slug it does not name is still sent, so the filter is checked on neither side. |
-| The four tables | `backend/schema.sql` + the `LoadedExpenseFile`, `Expense` and `Category` models in `expense_repository.py` and `CurrencyRate` in `currency_repository.py` | The models never create the tables and only read them. `category.slug`'s CHECK is the shape `category_filter.SLUG_PATH` states in Python, so that pair moves together too. |
-| What is left of the local database connection | `backend/.env` + `db-create`'s `initdb` flags and `db-init`'s `createdb` | `PGUSER` and `PGHOST` against `--username=expense_tracker`, `--set=listen_addresses=127.0.0.1` and `createdb expense_tracker`. `PGPORT` is *not* in this pair - `db-create` takes it as `--set=port="$PGPORT"`, and the rest could follow the same way. |
-| The pixi version | `.envrc` + the builder image in **both** `backend/Dockerfile` and `frontend/Dockerfile` | `use pixi 0.81.0` against `ghcr.io/prefix-dev/pixi:0.81.0-noble`. Both resolve the same `pixi.lock`, so bumping one alone builds the image with a pixi that never read this lock. That fails loudly only if the lock format moved between the two versions; short of that it quietly stops the image matching what a developer and CI install. |
-| The release workflow's path | `.github/workflows/release.yml` + the `job_workflow_ref` condition on the AWS release role's trust policy | The trust policy pins `TomBorglum/expense-tracker/.github/workflows/release.yml@refs/tags/v*`, and **the other half is in the AWS console, not in this repository**, so nothing here can be grepped for it. Renaming or moving this file makes the next release fail at the credential step with an STS `AccessDenied` and nothing else wrong. `README.md`, under Releases, records the policy so the pair is written down somewhere.
-| The bake target name | `backend/docker-bake.hcl` and `frontend/docker-bake.hcl` + `release.yml`'s `bake-target`, `targets` and `set:` keys | `image`, which is what lets metadata-action's generated label and annotation files merge onto the target the stack declares. A `bake-target` naming a target nothing builds is **silent**: the overrides land nowhere and both images publish carrying no release metadata at all. The `files` list is ordered on the same terms - bake merges `labels` per key and the last file wins, so the stack's own file goes last. |
-| The API base URL placeholder | `frontend/Dockerfile` + `frontend/docker/40-api-base-url.sh` | `__EXPENSE_TRACKER_API_BASE_URL__`, written into `.env.production.local` before `vite build` and rewritten across the document root at container start. Rename it in one half and the other searches for a token that is not there - and finding none is the script's normal restart case, so the container comes up and serves a bundle that calls a literal placeholder. The builder's `grep -rq` over `dist/` catches the token vanishing from a build, not the two spellings drifting apart. |
-| The `@` alias (`frontend/src`) | `frontend/vite.config.ts` + `frontend/tsconfig.app.json` | vite does not read tsconfig `paths`. |
+| The collection envelope | `backend/src/expense_tracker/__init__.py` + `frontend/src/api/fetchList.ts` | `_collection` builds `{"items": [...]}`, plus a `summary` the totals route alone passes; `fetchList` unwraps `items` for the three list endpoints and `fetchCollection` validates both halves for totals. The frontend proves its half against its own mocks, in `tests/msw/handlers.ts`. |
+| The expenses payload and path | `backend/src/expense_tracker/__init__.py` + `frontend/src/api/expenses.ts` | Every expense field is a string on the wire, `amount` included, and the frontend's guard rejects a number. `key` is the bank's own text for the row, **mandatory and never empty**, so it is always a present string. The **query** half is the same pair on the same terms - `currency`, `from_date`, `to_date` and the three category keys in the route signature and in `ExpensesQuery`. `category` and `not_category` are the repeated keys two `list[str]` read, appended once per value and absent when the list is empty; `category_default` is the root's own sign, spelled `all` or `none` on both sides, and sent wherever that sign has to be explicit. Both lists carry **slugs**. The frontend states a selection in `src/categorySelection.ts` and the backend in `category_filter.py`, and **each states it independently of the other**. |
+| The rates payload and path | the same backend file + `frontend/src/api/currencies.ts` | `CurrencyPayload` against the `CurrencyRate` interface, `exchange_rate` a string the guard rejects as a number. `BASE_CURRENCY` is the frontend's alone, which is what makes `DKK` selectable against an empty rate table. |
+| The totals payload and path | the same backend file + `frontend/src/api/totals.ts` | `PeriodTotalPayload` against `PeriodTotal`, every field a string - `category` holding the path the summed rows carry, the same one `/api/expenses` shows, which `?group_by=` switches on. `amount`, `currency` and `category` are **absent keys when they have no value**, and the guard rejects both a number and a null, which is what keeps a period holding nothing apart from one that netted to `0.00`; such a period carries the span alone. Beside the rows, `SummaryPayload` fills a `summary` - one entry per currency, `average` a string, **both keys always present**, an entry existing only for a currency that has expenses - and it is **identical grouped or not**, which is what lets one request serve both halves of the view. The **query** half adds `period`, always sent, `group_by`, sent when grouping, and the three category keys on the expenses row's terms. |
+| The categories payload and path | the same backend file + `frontend/src/api/categories.ts` | `CategoryPayload` against the `Category` interface, five string fields: `category` is the whole `:`-separated path, `name` its last level, `slug` the path's URL spelling, and `parent`/`parent_slug` the pair above it, **absent on a depth-1 row**, the mirror of the totals row's rule above. The slug is the loader's: it assigns it and `slug` carries it. The separator is `category_filter.SEPARATOR`, its only declaration, which the four other fields exist to keep true and which lets the picker build its tree from `parent_slug` alone. The **query** half is `to_level` alone against `CategoriesQuery`, always sent, the tree the picker shows being bounded; `from_level` is the backend's own. The list is what the picker offers, and a URL slug outside it is still sent. |
+| The four tables | `backend/schema.sql` + the `LoadedExpenseFile`, `Expense` and `Category` models in `expense_repository.py` and `CurrencyRate` in `currency_repository.py` | The models read the tables. `category.slug`'s CHECK is the shape `category_filter.SLUG_PATH` states in Python, so that pair moves together too. |
+| What is left of the local database connection | `backend/.env` + `db-create`'s `initdb` flags and `db-init`'s `createdb` | `PGUSER` and `PGHOST` against `--username=expense_tracker`, `--set=listen_addresses=127.0.0.1` and `createdb expense_tracker`. `PGPORT` reaches `db-create` as `--set=port="$PGPORT"` instead. |
+| The pixi version | `.envrc` + the builder image in **both** `backend/Dockerfile` and `frontend/Dockerfile` | `use pixi 0.81.0` against `ghcr.io/prefix-dev/pixi:0.81.0-noble`. Both resolve the same `pixi.lock`, so the three agree on one version and the image installs what a developer and CI install. `.github/dependabot.yml`'s `docker` entry **ignores** that image, so all three move together by hand. |
+| The release workflow's path | `.github/workflows/release.yml` + the `job_workflow_ref` condition on the AWS release role's trust policy | The trust policy pins `TomBorglum/expense-tracker/.github/workflows/release.yml@refs/tags/v*`, and **the other half is in the AWS console**, so this path is a literal in two systems. A release whose credential step fails with an STS `AccessDenied` is this pair out of agreement. `README.md`, under Releases, records the policy so the pair is written down somewhere. |
+| The bake target name | `backend/docker-bake.hcl` and `frontend/docker-bake.hcl` + `release.yml`'s `bake-target`, `targets` and `set:` keys | `image`, which is what lets metadata-action's generated label and annotation files merge onto the target the stack declares. An image published carrying no release metadata is this pair out of agreement, and nothing else reports it. The `files` list is ordered on the same terms - bake merges `labels` per key and the last file wins, so the stack's own file goes last. |
+| The API base URL placeholder | `frontend/Dockerfile` + `frontend/docker/40-api-base-url.sh` | `__EXPENSE_TRACKER_API_BASE_URL__`, written into `.env.production.local` before `vite build` and rewritten across the document root at container start. The script treats a document root holding no placeholder as its normal restart case, so a bundle served with the literal token in it is this pair out of agreement. The builder's `grep -rq` over `dist/` covers the token's presence in a build. |
+| The `@` alias (`frontend/src`) | `frontend/vite.config.ts` + `frontend/tsconfig.app.json` | Each resolves it for its own tool; vite reads tsconfig `paths` for neither. |
 | The `frontend/src/main.tsx` coverage exclusion | `frontend/vite.config.ts` + `sonar-project.properties` | One exclusion, two tools that each have to name it. |
-| The `frontend/src/routeTree.gen.ts` exclusion | declared three times: `frontend/.prettierignore`, `coverage.exclude` in `frontend/vite.config.ts`, `sonar.exclusions` in `sonar-project.properties` | The file is generated and authored by nobody, so each tool has to name it or it reports on machine-written code. Dropping the prettier one is the loud failure - `frontend-format-check` goes red on the `printWidth` mismatch; the other two fail quietly. **eslint is deliberately not a fourth**; why, in [`frontend/CLAUDE.md`](frontend/CLAUDE.md). |
+| The `frontend/src/routeTree.gen.ts` exclusion | declared three times: `frontend/.prettierignore`, `coverage.exclude` in `frontend/vite.config.ts`, `sonar.exclusions` in `sonar-project.properties` | The file is generated, so each tool names it to keep its report to hand-written code. The prettier one is the half with a gate behind it: `frontend-format-check` goes red on the `printWidth` mismatch. **eslint covers it through `globalIgnores` instead**; why, in [`frontend/CLAUDE.md`](frontend/CLAUDE.md). |
 | `VITE_API_BASE_URL` | `frontend/.env` + `frontend/src/vite-env.d.ts` | Set in the first, typed in the second. |
-| daisyUI's `@plugin` descriptors | `frontend/src/styles/app.css` + the `plugin` override in `frontend/eslint.config.ts` | `tailwind-csstree` models core Tailwind's blockless `@plugin` and rejects any descriptor this repo does not name. |
+| daisyUI's `@plugin` descriptors | `frontend/src/styles/app.css` + the `plugin` override in `frontend/eslint.config.ts` | `tailwind-csstree` models core Tailwind's blockless `@plugin`, and the override names the descriptors this repo uses. |

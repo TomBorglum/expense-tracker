@@ -1,8 +1,9 @@
 name: Update pixi dependencies
 
-# Dependabot has no pixi ecosystem, so nothing bumps the versions pinned in pixi.toml.
-# This calls the reusable workflow that does: it takes pixi from .envrc's `use pixi` line,
-# runs `pixi upgrade`, and opens one PR holding exactly pixi.toml and pixi.lock.
+# This is what bumps the versions pinned in pixi.toml, Dependabot carrying no pixi
+# ecosystem. It calls the reusable workflow that does the work: that takes pixi from
+# .envrc's `use pixi` line, runs `pixi upgrade`, and opens one PR holding exactly
+# pixi.toml and pixi.lock.
 # Authenticates as the expense-tracker-bot GitHub App rather than GITHUB_TOKEN, so the PR
 # can trigger the required status checks - events made with GITHUB_TOKEN start no further
 # workflow runs.
@@ -15,10 +16,10 @@ on:
 permissions:
   contents: read
 
-# A dispatch must not race the schedule onto the same deps/pixi branch. cancel-in-progress
-# is false deliberately: cancelling a run that has already pushed the branch leaves a
-# half-made pull request, and GitHub warns against cancelling across a caller/called
-# workflow pair, which report the same name in github.workflow.
+# A dispatch must not race the schedule onto the same deps/pixi branch, so a second run
+# queues. cancel-in-progress is false on two counts: a run cancelled after it has pushed
+# the branch leaves a half-made pull request, and GitHub warns against cancelling across a
+# caller/called workflow pair, which report the same name in github.workflow.
 concurrency:
   group: update-pixi-dependencies
   cancel-in-progress: false

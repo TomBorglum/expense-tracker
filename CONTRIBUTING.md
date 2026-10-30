@@ -75,23 +75,24 @@ own. Only `feat`, `fix` and `deps` are visible.
 A hidden type neither triggers a release nor appears in the notes. A PR containing
 only hidden types will not open a release PR until a `feat`/`fix`/`deps` lands.
 
-> **Visibility = releasability.** Un-hiding a section in
-> `release-please-config.json` makes commits of that type start cutting releases.
-> That is deliberate for `deps`; be intentional before un-hiding anything else.
+> **Visibility = releasability.** A section's visibility in
+> `release-please-config.json` is what decides whether commits of that type cut a
+> release. `deps` is visible deliberately.
 
 ### `deps:` vs `ci:`
 
 **If the change alters what a user receives when they run the application, it is
 `deps:` (or `feat`/`fix`); if it only touches the build or CI, it is `ci:`/`chore:`.**
-That is why Dependabot's GitHub Actions bumps use `ci:`.
+That is why Dependabot's GitHub Actions bumps use `ci:`, and why its container base
+bumps use `deps:` - a base ships inside the published image, and the patch release that
+`deps:` cuts is what republishes it.
 
 `update-pixi-dependencies.yml` is the one standing exception, and a deliberate one. The
 reusable workflow it calls commits a single `deps: update pixi dependencies` whatever
 moved, so a run that bumped only `ruff` or `pnpm` lands as `deps:` and cuts a patch
-release exactly as a `python` or `sqlalchemy` bump does. That subject is not one of the
-workflow's inputs, and a single `pixi upgrade` can move runtime libraries and dev tooling
-in the same solve, so no correct split is available to it. Over-reporting a tooling bump
-is the cheaper error: the alternative hides a shipped dependency change from the
+release exactly as a `python` or `sqlalchemy` bump does. That subject is fixed rather than
+an input, and a single `pixi upgrade` moves runtime libraries and dev tooling in the same
+solve, so one type covers every run and a shipped dependency change always reaches the
 changelog.
 
 ## Breaking changes
@@ -113,22 +114,18 @@ BREAKING CHANGE: pre-1.0 CSV imports are no longer accepted.
 
 Pull requests are **squash-merged**: the branch collapses into one commit on `main`
 whose subject is the **PR title** and whose body is the branch's own commit
-messages. So the PR title must be a valid Conventional Commit - a PR titled
-`Update budget code` is invisible to release-please and will neither appear in the
-changelog nor bump the version. That holds however many commits the branch has,
-because `squash_merge_commit_title` is `PR_TITLE`; under GitHub's default a
-one-commit branch would be titled from that commit instead.
+messages. So the PR title must be a valid Conventional Commit - release-please parses
+that subject, and one like `Update budget code` parses as no type. That holds however
+many commits the branch has, because `squash_merge_commit_title` is `PR_TITLE`.
 
 The one thing release-please still reads from a squash commit's body is a
 `BREAKING CHANGE:` footer. The body comes from the branch's own commit messages
-(`squash_merge_commit_message` is `COMMIT_MESSAGES`), **not** from the PR
-description, so put the footer in a commit on the branch. A footer written only in
-the PR description never reaches `main` and is never parsed.
+(`squash_merge_commit_message` is `COMMIT_MESSAGES`), so put the footer in a commit on
+the branch, which is the text that reaches `main` to be parsed.
 
 A squash-merged PR yields exactly one changelog entry, so prefer **focused PRs**:
 one logical change, one type. A branch that would produce several entries is two
-PRs - `required_linear_history` blocks the merge commit that would have parsed each
-of its commits individually.
+PRs, `required_linear_history` holding each PR to its single parsed subject.
 
 ## Version selection
 

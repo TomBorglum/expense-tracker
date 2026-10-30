@@ -2,7 +2,8 @@ version: 2
 updates:
   # pixi.toml is not covered here: Dependabot has no pixi ecosystem, and its conda one
   # reads only environment.yml. update-pixi-dependencies.yml bumps every pin in it
-  # instead, python included.
+  # instead, python included. pixi itself is pinned by hand, in .envrc and both
+  # Dockerfiles; the docker entry below ignores that image.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -56,3 +57,32 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  # The runtime base of both images, pinned `tag@sha256:...` in backend/Dockerfile and
+  # frontend/Dockerfile. The docker ecosystem moves that pair as a unit. One entry covers
+  # both directories, and a pull request arrives per directory.
+  - package-ecosystem: "docker"
+    directories:
+      - "/backend"
+      - "/frontend"
+    schedule:
+      interval: "weekly"
+    # Applies to the nginx base. Dependabot takes publication dates from Docker Hub's
+    # tag_last_pushed; for gcr.io and ghcr.io it logs cooldown_date_unavailable and
+    # allows the update. default-days is the whole window, an update that moves a digest
+    # under an unchanged tag carrying no semver level.
+    cooldown:
+      default-days: 3
+    # The pixi builder image. That version is pinned by hand in three places - .envrc's
+    # `use pixi` line and both Dockerfiles - and CLAUDE.md records the trio;
+    # update-pixi-dependencies.yml bumps the pins inside pixi.toml. The dependency name
+    # is the image alone, ghcr.io belonging to its source, and the leading `*` matches
+    # either spelling. Security updates for this image are suppressed with it.
+    ignore:
+      - dependency-name: "*prefix-dev/pixi"
+    # A runtime base is part of what a user receives when they run the image, which is
+    # the line CONTRIBUTING.md draws between deps and ci. The patch release this cuts is
+    # what republishes the image: release.yml publishes when a GitHub Release is
+    # published.
+    commit-message:
+      prefix: "deps"
