@@ -10,8 +10,7 @@ can be built, tested and linted with the other's directory missing entirely. The
 holds only what spans both - pixi orchestrates the two toolchains, and one SonarCloud
 project covers both languages.
 
-Locally that means two processes. Packaging them into a single deployable artifact is
-out of scope for now.
+Locally that means two processes.
 
 ```
 expense-tracker/
@@ -26,7 +25,7 @@ expense-tracker/
     src/expense_tracker/        # __init__ (the API), deps, config, db,
                                 #   expense_repository, expense_loader
     tests/
-      data/expenses/            # sample-*.yaml, the suite's fixtures - not a data source
+      data/expenses/            # sample-*.yaml, the suite's fixtures
     .pgdata/                    # the local PostgreSQL cluster, gitignored
   frontend/
     package.json, pnpm-lock.yaml, pnpm-workspace.yaml
@@ -42,27 +41,24 @@ expense-tracker/
 [direnv](https://direnv.net) and [pixi](https://pixi.sh). The committed `.envrc` runs
 `use pixi python`, so entering the directory provisions Python, Node and every
 dependency from `pixi.toml`, and re-provisions whenever `pixi.toml` changes. Run
-`direnv allow` once after cloning; there is no separate `pixi install` step.
+`direnv allow` once after cloning, which covers installation.
 
-That includes PostgreSQL: the server is a conda-forge package like everything else, so
-there is nothing to install system-wide and no container to run. See
-[Database](#database).
+That includes PostgreSQL: the server is a conda-forge package like everything else, so it
+arrives with the rest of the environment. See [Database](#database).
 
-Docker is the one tool pixi does not supply, and it is needed for `pixi run
-backend-image` alone - a machine without it gets `docker: command not found` from that
-task and nothing else. The development loop never reaches for it. See
-[Container images](#container-images).
+Docker is the one tool pixi does not supply, and `pixi run backend-image` is the task that
+calls for it; the development loop runs without it. A machine without it gets
+`docker: command not found` from that task. See [Container images](#container-images).
 
-`use pixi` is not built into direnv. On a workstation it comes from the direnv library
+`use pixi` comes from a direnv library. On a workstation it is the one
 [`wsl-cloud-init`](https://github.com/TomBorglum/wsl-cloud-init) provisions; in CI, the
 `setup-direnv` action from [`TomBorglum/actions`](https://github.com/TomBorglum/actions)
-installs its own copy and activates this same `.envrc`. Without that library,
+installs its own copy and activates this same `.envrc`. Where that library is absent,
 `direnv allow` reports the directive as an unknown command.
 
 Its last line is `dotenv_if_exists`, which puts the database connection settings and the
-port the API serves on into the environment. That is stock direnv, and it is the **only**
-thing that puts them there - `pixi run` and poe both supply nothing - so `direnv allow` is
-what makes the database reachable at all, not just a convenience for bare shell commands.
+port the API serves on into the environment. That is stock direnv, and the **only** thing
+that puts them there, so `direnv allow` is what makes the database reachable.
 See [Configuration](#configuration).
 
 ## Quickstart
@@ -93,7 +89,7 @@ Visit http://localhost:5173 and you should see the **Expenses** table, fetched f
 `http://localhost:8000/api/expenses` - a genuine cross-origin request, which works only
 because the API allows it (see [CORS](#cors)) - and read in turn out of the `expense`
 table (see [Database](#database)). Until you run the loader it says
-`No expenses match the selected criteria.`, which is the empty state and not an error.
+`No expenses match the selected criteria.`, which is the empty state.
 
 The API alone is enough for backend work. The SPA alone runs too; it just renders its
 error state until something answers on 8000.
@@ -113,17 +109,14 @@ error state until something answers on 8000.
 
 **Every body is an object holding `items`**, so each shape above is what fills that
 array - `GET /api/currencies` answers
-`{"items": [{"from_currency", "to_currency", "exchange_rate"}, ...]}`. An object rather
-than a bare array is what lets a response gain a field later without breaking a client,
-which is the one guideline this API follows here that it did not before. Totals is the
-one endpoint that has taken that room, with [the range average](#the-range-average)
-beside its rows; the other three send `items` alone.
-**`items` rather than a domain plural** like `expenses`: Zalando, whose rule puts the
-object there, names it that on every collection, and one key across all four keeps
-`fetchList` free of per-endpoint knowledge. AIP-132 would name it for the resource.
-**Pagination is deliberately not among those fields**: a ledger already narrowed to a
-date range has no need of cursors, and `/api/expenses/totals` reads its whole answer at
-once. A refusal body stays the plain `{"detail": "..."}` object it already was.
+`{"items": [{"from_currency", "to_currency", "exchange_rate"}, ...]}`. An object is what
+lets a response gain a field later without breaking a client. Totals is the one endpoint
+that has taken that room, with [the range average](#the-range-average) beside its rows;
+the other three send `items` alone.
+**The key is `items`**: Zalando, whose rule puts the object there, names it that on every
+collection, and one key across all four keeps `fetchList` free of per-endpoint knowledge.
+A ledger narrowed to a date range is served whole, and `/api/expenses/totals` reads its
+whole answer at once. A refusal body is the plain `{"detail": "..."}` object.
 
 All four send `Cache-Control: no-store`.
 
@@ -131,11 +124,10 @@ Expenses come back **oldest first**, and `amount` is a **string**, not a number:
 column is `numeric(12, 2)`, JSON has no decimal type, and a decimal has no exact binary
 form, so a float round trip is how a total drifts by a cent. That shape is declared once,
 as the `ExpensePayload` pydantic model in `backend/src/expense_tracker/__init__.py`;
-the tests parse responses back into it rather than into untyped dicts. An unreachable
-database answers `503 {"detail": "expenses unavailable"}`, but an **empty table answers
-`200 {"items": []}`** - a database nobody has run the loader against yet is a
-legitimate state, not a fault, and a 503 would train a client to retry forever against a
-working server.
+the tests parse responses back into it. An unreachable database answers
+`503 {"detail": "expenses unavailable"}`, and an **empty table answers
+`200 {"items": []}`** - a database nobody has run the loader against yet is a legitimate
+state.
 
 Exchange rates come back **by pair**, `from_currency` then `to_currency`, and
 `exchange_rate` is a **string** for the same reason `amount` is: the column is
@@ -146,15 +138,13 @@ with `{"detail": "currencies unavailable"}` as the 503 body.
 ### Asking for one currency
 
 `?currency=` restates every expense in the code given, **replacing** `amount` and
-`currency` rather than adding fields, so the payload is the same shape either way and a
-client that does not ask sees exactly what it saw before. `1250.00 DKK` at `0.134048`
+`currency`, so the payload is the same shape either way. `1250.00 DKK` at `0.134048`
 comes back as `"167.56" EUR`: `Decimal` arithmetic throughout, quantized to two places
 with `ROUND_HALF_UP`, and still a string on the wire.
 
-Only what `data/currencies/rates.tsv` states in that direction is used. A rate is never
-inverted and never composed through a third currency, because either would publish a
-number the file does not. An expense already in the requested currency passes through
-untouched, so the file needs no `DKK DKK 1.000000` row and does not have one.
+Only what `data/currencies/rates.tsv` states in that direction is used, each rate as the
+file writes it. An expense already in the requested currency passes through untouched, so
+the file holds no `DKK DKK 1.000000` row.
 
 Anything else is a `422` carrying a plain-string `detail`, the same shape as the 503s
 above:
@@ -164,10 +154,10 @@ above:
 | `?currency=CHF` | `{"detail": "no exchange rate from DKK to CHF"}` |
 | `?currency=euro` | `{"detail": "currency must be an ISO 4217 code"}` |
 
-A lowercase code is refused rather than uppercased, matching the loaders, which refuse
-one in a file. One unconvertible expense refuses the **whole** request: a list mixing
-converted and unconverted amounts is a column nobody can add up. A pair loaded twice is
-refused the same way, and only when that pair is actually needed.
+A lowercase code is refused, matching the loaders, which refuse one in a file. One
+unconvertible expense refuses the **whole** request, so every amount in a list stands in
+one currency. A pair loaded twice is refused the same way, and only when that pair is
+actually needed.
 
 The arithmetic lives in `backend/src/expense_tracker/conversion.py`, which knows no HTTP
 and holds no session - it takes records and rates and gives records back, so it is
@@ -182,15 +172,14 @@ including both the 1st and the 31st, and **each is optional on its own**: give o
 runs from the oldest. Give neither and the request is the one that was there before the
 parameters existed.
 
-The filtering is a `WHERE` clause on `expense_date`, not a pass over the rows in Python,
-and the `expense_oldest_first_idx` index already serves it - so `schema.sql` gained
-nothing for this. **A range holding no expenses is `200 {"items": []}`**, for the reason
-an empty table is: it is an answer, not a fault. The two parameters compose with
+The filtering is a `WHERE` clause on `expense_date`, served by the
+`expense_oldest_first_idx` index that was already there. **A range holding no expenses is
+`200 {"items": []}`**, on the terms an empty table is. The two parameters compose with
 `?currency=`, and the range is applied first, so an expense outside it needs no exchange
 rate.
 
-Dates are read as `YYYY-MM-DD` and nothing else - the form the payload's own `date` field
-uses. Anything else is a `422` carrying the same plain-string `detail`:
+Dates are read as `YYYY-MM-DD`, the form the payload's own `date` field uses. Anything
+else is a `422` carrying the same plain-string `detail`:
 
 | Request | Body |
 | --- | --- |
@@ -198,11 +187,9 @@ uses. Anything else is a `422` carrying the same plain-string `detail`:
 | `?to_date=2026-02-30` | `{"detail": "to_date must be a date in YYYY-MM-DD form"}` |
 | `?from_date=2026-03-01&to_date=2026-01-01` | `{"detail": "from_date must not be after to_date"}` |
 
-A range that ends before it begins is refused rather than answered with an empty list: an
-empty list reads as "no expenses then", and nobody meant that range. That refusal belongs
-to the `DateRange` type rather than to the parsing, so it holds however the range is
-built, and the repository takes that type instead of two loose dates - it has no ordering
-to re-check and no caller to trust. Both live in
+A range that ends before it begins is refused. That refusal belongs to the `DateRange`
+type rather than to the parsing, so it holds however the range is built, and the
+repository takes that type with its ordering already checked. Both live in
 `backend/src/expense_tracker/date_range.py`, which knows no HTTP and no database at all,
 and are tested in `backend/tests/test_date_range.py`.
 
@@ -211,77 +198,67 @@ and are tested in `backend/tests/test_date_range.py`.
 **Every value is a slug, never a category path.** A slug is the URL spelling of a
 category - `going-out:jalsa-pool` for `Going Out:Jalsa+pool` - assigned once as the
 expenses are loaded and sent on every payload that names a category; see
-[Category slugs](#category-slugs). A path in `?category=` matches nothing, the way any
-other unknown value does.
+[Category slugs](#category-slugs).
 
 `?category=` narrows the list to the expenses in the category whose slug it names. **The
 key repeats once per value**, so `?category=food&category=housing` is every expense in
-either, and a value given twice counts once. Give none and the request is the one that was
-there before the parameter existed.
+either, and a value given twice counts once. Give none and every category is included.
 
 `?not_category=` is the same key read the other way: every expense **except** the ones in
-the category named. The two compose, because what a request states is not a list of
-categories but **where the selection changes**: the root has a sign, each value flips a
-subtree, and **the longest slug over a row decides**. So `?category=settlement` is the
-settlements alone, `?not_category=settlement` is everything else, and
+the category named. The two compose, because a request states **where the selection
+changes**: the root has a sign, each value flips a subtree, and **the longest slug over a
+row decides**. So `?category=settlement` is the settlements alone,
+`?not_category=settlement` is everything else, and
 `?category=settlement&not_category=settlement:alice` is the settlements except hers. A
-slug in both lists is refused rather than resolved - two flips of the same length over
-one node, so neither is the longer one.
+slug in both lists is refused: two flips of the same length over one node.
 
 `?category_default=` is the root's own sign, `all` or `none`. Absent, it is `all` unless
 `?category=` names a slug, in which case it is `none`: that is what keeps a request naming
-categories meaning those and no others, which is what it meant before anything could be
-deselected. So the flag is needed in exactly two places - `?category_default=none` alone,
-which selects **nothing** and is `200 {"items": []}` rather than every row, and
+categories meaning those and no others. The flag carries weight in two places -
+`?category_default=none` alone, which selects **nothing** and is `200 {"items": []}`, and
 `?category_default=all` beside both lists, which is everything but one subtree with a
 branch of that subtree kept. A client that sends none of the three asks for every
-category, as it always did.
+category.
 
 A value is matched the way the loader stored the slug: **stripped level by level, then
-verbatim**, so `?category=%20food` is `food` and `?category=Food` matches nothing, every
-slug being lower case. That is the loader's own strip rather than a second rule, so the
-filter meets a stored value on the terms it was stored under, and the API folds no case on
-a client's behalf, as it never uppercases a currency code.
+verbatim**, so `?category=%20food` is `food`, and every slug is lower case. That is the
+loader's own strip, so the filter meets a stored value on the terms it was stored under,
+and the case is the client's to send, as a currency code is.
 
 **A value matches the node it names together with every node below it.** So
 `?category=settlement` is every settlement and `?category=settlement:alice` is only
-hers. Over categories that carry no path the two are the same thing, which is why every
-request written before paths existed still means exactly what it meant.
+hers. Over categories that carry no path the two are the same thing.
 
 The filtering is one `WHERE` clause beside the two date clauses - a join from
 `expense.category` to the `category` table, then a `CASE` whose arms are the flips in
 longest-slug order, each `= slug OR LIKE slug || ':%'`, falling through to the root's
-sign - not a pass over the rows in Python, and it
-composes with `?currency=`, `?from_date=` and `?to_date=` the way
-those compose with each other: all three narrow the query, and the conversion runs over
-whatever they left. `expense` gained no index for it - the table is small and
-`expense_oldest_first_idx` already orders the scan - while `category` carries one for the
-slug it is joined on and one for the level the list is read by. **A category nobody has
-spent in is
-`200 {"items": []}`**, for the reason an empty table is: it is an answer, not a fault.
-The filter is not checked against the list below first - a category is whatever a file
-said, and the check would be a second query on every request.
+sign. It composes with `?currency=`, `?from_date=` and `?to_date=` the way those compose
+with each other: all three narrow the query, and the conversion runs over whatever they
+left. The index behind it is `expense_oldest_first_idx`, which orders the scan over a
+small table, while `category` carries one for the slug it is joined on and one for the
+level the list is read by. **A category nobody has spent in is `200 {"items": []}`**, on
+the terms an empty table is. A category is whatever a file said, and the filter is read
+against the stored slugs alone.
 
 `GET /api/expenses/categories` is that list: every category at the levels asked for,
 **once each and in path order**, as `{"items": [{"category": "Settlement:Alice", "name":
 "Alice", "slug": "settlement:alice", "parent": "Settlement", "parent_slug":
 "settlement"}]}`. `name` is the path's last level and `parent` the path above it, so **no
-client has to know what joins one level to the next**; a depth-1 category carries neither
-parent key at all rather than an empty one. `slug` is what the three filter parameters
-take and `parent_slug` is the slug above it, so a client keys its own tree on the pair it
-sends and shows `name` - it derives no slug of its own, there being nothing in a path to
-derive one of the numbered ones from. The ordering is the repository's, `list_categories`
-in `backend/src/expense_tracker/expense_repository.py`, not a pass over the rows in
-Python: the route reproduces the order it is handed, as the other three do.
+client has to know what joins one level to the next**; a depth-1 category carries both
+parent keys absent. `slug` is what the three filter parameters take and `parent_slug` is
+the slug above it, so a client keys its own tree on the pair it sends and shows `name`,
+the slugs arriving ready to use. The ordering is the repository's, `list_categories` in
+`backend/src/expense_tracker/expense_repository.py`: the route reproduces the order it is
+handed, as the other three do.
 
 `?from_level=` and `?to_level=` choose the depths, both inclusive. **Absent, they are the
-top level alone** - the response this endpoint gave before they existed - and an absent
-`to_level` is whatever `from_level` is, so `?from_level=2` is exactly depth 2 while
+top level alone**, and an absent `to_level` is whatever `from_level` is, so
+`?from_level=2` is exactly depth 2 while
 `?to_level=3` is depths 1 through 3. The `category` table holds one row per node with its
 own depth, so the range is a plain `WHERE level IN (...)`, and **an ancestor nobody filed
 anything directly under is still listed**: `Settlement` appears even when every settlement
-is `Settlement:<someone>`, because the loader wrote that row too, and without it the node
-could not be selected. `MAX_LEVEL` in
+is `Settlement:<someone>`, the loader having written that row, which is what makes the
+node selectable. `MAX_LEVEL` in
 `backend/src/expense_tracker/level_range.py` bounds how many levels a client can name.
 The cluster is `initdb --locale=C`, so name order is byte order - `Zoo` before `apple` -
 which is the order Python's `sorted()` gives too. **An empty table is
@@ -302,54 +279,53 @@ A blank value is a `422` carrying the same plain-string `detail`:
 | `?to_level=11` | `{"detail": "to_level must not be more than 10"}` |
 | `?from_level=3&to_level=2` | `{"detail": "from_level must not be after to_level"}` |
 
-An empty value is malformed rather than absent, as an empty `?from_date=` is, and blank
-means blank after the strip, as it does to the loader. The refusal belongs to the
-`CategoryFilter` type rather than to the parsing, so it holds however the filter is
-built, and the repository takes that type instead of a loose set of strings. Both live
+An empty value is malformed, as an empty `?from_date=` is, and blank means blank after
+the strip, as it does to the loader. The refusal belongs to the `CategoryFilter` type
+rather than to the parsing, so it holds however the filter is built, and the repository
+takes that type. Both live
 in `backend/src/expense_tracker/category_filter.py`, which knows no HTTP and no database
 at all, and are tested in `backend/tests/test_category_filter.py`.
 
 #### Category paths
 
 A category is one `text` column holding a `:`-separated path - `Groceries`, or
-`Settlement:Alice`. **Depth is unbounded and a third level needs no API change**, which
-is the whole reason the second level is not a column of its own.
+`Settlement:Alice`. **Depth is unbounded and a third level needs no API change**, the
+path being one column however deep it goes.
 
 The separator is declared twice and only twice: `SEPARATOR` in `category_filter.py`, and
 the `expense_category_is_a_path` CHECK in `schema.sql` that refuses an empty level. That
-CHECK is what makes **no level able to contain the separator**, so splitting a path or
-joining one back up is lossless and **nothing needs escaping between the levels** - not
-the SQL, not the URL, not the payload. Matching is by level rather than by characters,
-which is why the clause has two legs: `foodstuffs` is not under `food`.
+CHECK is what keeps **the separator out of every level**, so splitting a path or joining
+one back up is lossless and **the levels need no escaping** in the SQL, the URL or the
+payload. Matching is by level rather than by characters, which is why the clause has two
+legs: `food` covers `food:dining` and leaves `foodstuffs` alone.
 
-PostgreSQL's own `ltree` models exactly this and is deliberately not used. Its labels
-forbid a space in a name, it is a contrib extension this project would have to depend on,
-and with the CHECK above a prefix match on plain `text` is already exact. It stays the
-upgrade path if the table ever outgrows the scan.
+The storage is plain `text`, where the CHECK above makes a prefix match exact.
+PostgreSQL's own `ltree` models the same shape, with labels that hold no space, and stays
+the upgrade path if the table ever outgrows the scan.
 
 #### Category slugs
 
-A category path is what a file said, and **what a file said is not safe to put in a
-URL**. `Going Out:Jalsa+pool` carries a space and a plus; percent-encode them and the
-address bar reads `Going%20Out%3AJalsa%2Bpool`, and the plus cannot be freed the way the
-colon is, `+` being what `application/x-www-form-urlencoded` already spells a space as. So
-the value a user reads and the value a URL carries part company: every category also has a
-**slug**, and the slug is what the API takes and what the frontend puts in the URL.
+A category path is what a file said, and a URL carries a spelling of its own.
+`Going Out:Jalsa+pool` holds a space and a plus; percent-encoded, the address bar reads
+`Going%20Out%3AJalsa%2Bpool`, and `+` is what `application/x-www-form-urlencoded` already
+spells a space as. So the value a user reads and the value a URL carries part company:
+every category also has a **slug**, and the slug is what the API takes and what the
+frontend puts in the URL.
 
-A slug holds `a-z`, `0-9`, `-` within a level and `:` between levels, and nothing else -
-the one character in it a query escapes is the colon, which `frontend/src/router.ts` puts
-back, so a category URL carries no percent sign at all. One level becomes one slug level
+A slug holds `a-z`, `0-9`, `-` within a level and `:` between levels. The one character
+in it a query escapes is the colon, which `frontend/src/router.ts` puts back, so a
+category URL is free of percent signs. One level becomes one slug level
 by lower-casing it, transliterating the three Danish letters (`ae`, `oe`, `aa`) and
 stripping any other diacritic, then collapsing each run of anything left to a single `-`
 and trimming the ends: `Jalsa & pool` is `jalsa-pool`, `100%` is `100`. A level that comes
 out empty - punctuation alone, or letters no transliteration reaches - is refused while
-loading rather than given a fallback that would name this category and some other.
+loading, so every slug names one category.
 
 Two siblings can want one slug, and the **second is numbered rather than refused**:
 `Going Out` is `going-out` and `Going-Out` is `going-out-1`, with the next free number
 taken, so a real `Going Out 1` beside them keeps `going-out-1` for itself and pushes the
 collision to `going-out-2`. The numbering is **per sibling group**, a parent's own slug
-already separating the branches. Upstream data is never asked to change for it.
+already separating the branches, so upstream data stands as it is.
 
 Which sibling gets the bare slug is decided by **order of first appearance in file-name
 order, then by path within a file**, which makes the assignment a function of the loaded
@@ -360,19 +336,19 @@ files and nothing else. Two invariants follow, and both are checked rather than 
 - **Loading a new file never changes a slug already assigned.** A later month sorts last
   and can only append.
 
-The one case that would break the second is **backfilling** - loading `2024-01.yaml` after
-`2026-*.yaml`, where the earlier name sorts ahead of the slugs already assigned. The
-loader recomputes every slug on every file, compares them with the stored ones, and
-**refuses the file** if any would move, naming the category and both slugs, on the same
-terms as any other file problem. The fix is the rebuild that is the ordinary path here
-anyway.
+**Backfilling** is the case the second invariant is enforced against - loading
+`2024-01.yaml` after `2026-*.yaml`, where the earlier name sorts ahead of the slugs
+already assigned. The loader recomputes every slug on every file, compares them with the
+stored ones, and **refuses the file** if any would move, naming the category and both
+slugs, on the same terms as any other file problem. The fix is a rebuild, the ordinary
+path here anyway.
 
 The slugs live in the `category` table, one row per node with its path, its slug, its
 depth and the file it first appeared in - the ancestors included, since an ancestor's slug
-is a component of every slug below it, and since a node nothing is filed directly under
-still has to be selectable. `UNIQUE (slug)` sits behind the assignment as a backstop: with
-the numbering correct it cannot fire, so a violation is a bug in this project rather than
-anything the data did. `slug_level` is in `category_filter.py` and `assign_slugs` in
+is a component of every slug below it, and since a node nothing is filed directly under is
+still selectable. `UNIQUE (slug)` sits behind the assignment as a backstop, which the
+numbering keeps quiet; a violation is a bug in this project. `slug_level` is in
+`category_filter.py` and `assign_slugs` in
 `expense_loader.py`, both of which know no database; the tests are in
 `backend/tests/test_category_filter.py` and `backend/tests/test_expense_loader.py`.
 
@@ -382,16 +358,15 @@ anything the data did. `slug_level` is in `category_filter.py` and `assign_slugs
 `?period=` names. It takes the same `?currency=`, `?from_date=`, `?to_date=` and
 `?category=` as the list does and means the same thing by each.
 
-**`?period=` is required and defaults to nothing**, because a grain nobody chose is an
-assumption hidden inside a sum; `month` is the only one, so the payload field is the
-grain-neutral `period`. Rows are keyed by `(period, currency)`, and `?group_by=category`
-adds a third part to that key. **`currency` stays in the key whatever was asked for** -
-DKK added to EUR is a number that means nothing.
+**`?period=` is required**, a grain being the caller's to choose; `month` is the only one,
+so the payload field is the grain-neutral `period`. Rows are keyed by
+`(period, currency)`, and `?group_by=category` adds a third part to that key.
+**`currency` stays in the key whatever was asked for**, so every sum is in one currency.
 
 **`?group_by=` is only a toggle: a row sums under the path its expenses carry.** The
-difference between this endpoint and the list is the aggregation, not the resolution - a
-totals row names exactly what an expenses row names. `?category=` narrows which rows
-arrive and chooses no grain. Say Alice's settlement is 150 and Bob's is 25:
+difference between this endpoint and the list is the aggregation: a totals row names
+exactly what an expenses row names. `?category=` narrows which rows arrive and chooses no
+grain. Say Alice's settlement is 150 and Bob's is 25:
 
 | Selection | Rows |
 | --- | --- |
@@ -399,15 +374,15 @@ arrive and chooses no grain. Say Alice's settlement is 150 and Bob's is 25:
 | `Settlement` | `Settlement:Alice` 150, `Settlement:Bob` 25 |
 | `Settlement` and `Settlement:Alice` | the same two rows |
 
-The third one is worth reading twice: ticking an ancestor as well changes nothing, there
-being no rule left that resolves an overlap. The rows under a period still add to what
-the same request returns ungrouped. There is **no level parameter here** - depth belongs
-to the category list, and there is no way to ask for a sum rolled up to an ancestor.
+The third one is worth reading twice: ticking an ancestor as well changes nothing, the
+longest flip over a row deciding. The rows under a period still add to what the same
+request returns ungrouped. **Depth belongs to the category list**, so a sum is always at
+the grain its own rows carry.
 
 The response is a **dense calendar**: one row per period from the oldest matching expense
 to the newest, whether or not anything was spent in it. `period`, `from_date` and
 `to_date` are on every row; `amount`, `currency` and `category` are present with a value
-or **absent altogether**, never `null` and never `""`.
+or **absent altogether**.
 
 That absence carries meaning, and credits are why. A credit - a refund, a reimbursement,
 a share paid back - is a negative expense, so a period can hold rows that cancel each
@@ -419,23 +394,22 @@ other out:
 | `430.00` spent, `430.00` refunded | two | `"amount": "0.00"` |
 | `150.00` refunded, nothing bought | one | `"amount": "-150.00"` |
 
-An absent `amount` says "none recorded"; `"0.00"` says "these cancelled out". A client
-that read a missing key as zero would show a month of credits as a quiet month.
+An absent `amount` says "none recorded"; `"0.00"` says "these cancelled out", which is
+what keeps a month of credits legible as one.
 
 The conversion runs **before** the summing, and the order is the point: `?currency=`
-quantizes each amount to cents, so converting then adding differs by cents from adding
-then converting, and only the first makes a total equal what a reader adds up from
-`/api/expenses?currency=EUR`. That is why the summing lives in
-`backend/src/expense_tracker/aggregation.py` in Python rather than in a SQL `GROUP BY`,
-and why it needs no repository method of its own. A bad `period` or `group_by` is a `422`
-carrying the same plain-string `detail` as the refusals above.
+quantizes each amount to cents, and converting then adding is what makes a total equal
+what a reader adds up from `/api/expenses?currency=EUR`. That is why the summing lives in
+`backend/src/expense_tracker/aggregation.py` in Python, over the rows `list_expenses`
+returns. A bad `period` or `group_by` is a `422` carrying the same plain-string `detail`
+as the refusals above.
 
 ### The range average
 
 **The body carries a `summary` beside `items`**: one entry per currency, each naming that
 currency and `average`, the mean of its period totals over the whole calendar the rows
-span. It is what the totals view shows above the table, and the figure a reader wants from
-a range - "what does a month cost" - rather than one a row can answer.
+span. It is what the totals view shows above the table, and answers "what does a month
+cost" across the range.
 
 ```json
 {
@@ -444,15 +418,13 @@ a range - "what does a month cost" - rather than one a row can answer.
 }
 ```
 
-**Both keys are always present**, unlike a row's. An entry exists only for a currency that
-has expenses, so there is nothing for `exclude_none` to drop and no absence to read
-meaning into. A currency's entry is the only place a figure about the whole range lives:
-the rows say nothing about it.
+**Both keys are always present.** An entry exists only for a currency that has expenses,
+so `exclude_none` has nothing to drop here. A currency's entry is where a figure about the
+whole range lives.
 
 **The divisor is the same calendar the rows walk** - first matching expense to last, with
-interior gaps counted - so a month nobody spent in pulls the figure down rather than
-leaving it where the last spending put it. A range filtered wider than the data divides
-by the data, not by the dates asked for, which is why the number can differ from what the
+interior gaps counted - so a month nobody spent in pulls the figure down. A range filtered
+wider than the data divides by the data, which is why the number can differ from what the
 requested bounds suggest.
 
 **It is the same whether or not `?group_by=` was sent.** Grouping re-keys the rows without
@@ -461,32 +433,29 @@ can read it from either. `test_the_range_summary_is_the_same_grouped_or_not` pin
 both sides of the route. The quantization is a conversion's: `ROUND_HALF_UP` to cents, and
 a cumulative credit too small to show at that scale is normalised from `-0.00` to `0.00`.
 
-**No expenses means an empty summary**, the same `200` an empty `items` is. No extent is
-no calendar to divide by, so there is nothing to average and nothing dividing by zero.
+**No expenses means an empty summary**, the same `200` an empty `items` is: an empty
+extent is an empty calendar, so there is nothing to average.
 
 All four endpoints are read-only over HTTP. Rows arrive through
-`pixi run backend-load-expenses` and `pixi run backend-load-currencies` and nowhere else,
-so there is no POST, PUT or DELETE.
+`pixi run backend-load-expenses` and `pixi run backend-load-currencies`, which is the
+whole write path.
 
-That is the whole surface. There is no page route and no static mount - the frontend
-is a separate app - and no OpenAPI schema, `/docs` or `/redoc`: four hand-written routes
-do not earn a generated document, and the schema would be public surface advertising
-it. `backend/tests/test_app.py` asserts that `/`, `/static/*`, any other `/api` path
-and the three docs routes all return 404, so none of it can come back by accident.
+Those four routes are the whole surface: the frontend is a separate app, and the API
+publishes no OpenAPI schema, `/docs` or `/redoc`. `backend/tests/test_app.py` asserts that
+`/`, `/static/*`, any other `/api` path and the three docs routes all return 404, which is
+what holds the surface at four.
 
 ## CORS
 
 `create_app()` adds `CORSMiddleware` with `allow_origins=["*"]`, because the SPA is
 served from its own origin and every call it makes is cross-origin.
 
-`allow_credentials` is **`False`** and has to stay that way while the origin is a
-wildcard: the CORS spec forbids the combination and browsers reject it. This API sends
-no cookies and reads no `Authorization` header, so nothing is lost. When that changes,
-replace the wildcard with a real origin list - not the other way round.
+`allow_credentials` is **`False`**, which is the pairing the CORS spec allows beside a
+wildcard origin and the one browsers accept. This API sends no cookies and reads no
+`Authorization` header. A real origin list is what the wildcard becomes the day it does.
 
 The middleware is registered *after* the security-headers middleware, making it the
-outermost of the two. That is what lets it answer a preflight `OPTIONS` itself rather
-than passing it to a router with no such route.
+outermost of the two. That is what lets it answer a preflight `OPTIONS` itself.
 
 ## Database
 
@@ -495,11 +464,9 @@ together are a view of the files in `$EXPENSE_DATA_DIR`, and `currency_rate`, wh
 view of `backend/data/currencies/`. See [Loading expenses](#loading-expenses) and
 [Loading exchange rates](#loading-exchange-rates).
 
-The server is a **pixi dependency**, not a container. `postgresql` is pinned in
-`pixi.toml` beside python and node, so `direnv allow` provisions it and the `db-*`
-tasks drive it. There is no Dockerfile, no compose file, and no `services:` block in
-`.github/workflows/ci.yml` - CI runs `pixi run backend-db-init`, exactly what a
-developer runs.
+The server is a **pixi dependency**. `postgresql` is pinned in `pixi.toml` beside python
+and node, so `direnv allow` provisions it and the `db-*` tasks drive it. CI runs
+`pixi run backend-db-init`, exactly what a developer runs.
 
 ### The cluster
 
@@ -509,9 +476,9 @@ the only code that talks to it. Three settings are baked into the generated
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `port` | `$PGPORT`, `5433` by default | Cannot collide with a system PostgreSQL on 5432 |
-| `listen_addresses` | `127.0.0.1` | Off the network entirely |
-| `unix_socket_directories` | `/tmp` | Nothing connects over it; the DSN is TCP |
+| `port` | `$PGPORT`, `5433` by default | Clear of a system PostgreSQL on 5432 |
+| `listen_addresses` | `127.0.0.1` | Loopback only |
+| `unix_socket_directories` | `/tmp` | The DSN is TCP |
 
 The port comes from `backend/.env` (see [Configuration](#configuration)); the other two
 are literals in the `db-create` task. Because all three are baked into the cluster rather
@@ -520,31 +487,28 @@ than passed at launch, changing `PGPORT` takes a `pixi run backend-db-reset` and
 already exists.
 
 The superuser and the database are both named `expense_tracker`, so the DSN is
-identical on every machine and on CI. Authentication is `trust`, which is acceptable
-**only** because of `listen_addresses`: this is a throwaway cluster holding one row of
-public text, rebuildable at any moment from `backend/schema.sql`. Do not copy the
-`initdb` flags anywhere real.
+identical on every machine and on CI. Authentication is `trust`, which rests on
+`listen_addresses`: this is a throwaway cluster holding public text, rebuildable at any
+moment from `backend/schema.sql`. These `initdb` flags belong to this cluster alone.
 
 All five tasks are idempotent, and the chain is `dev` depends on `db-init` depends on
 `db-start` depends on `db-create` - so `pixi run backend-dev` brings the cluster up on
 its way to the API and none of the five is one you normally run by hand.
 `pixi run backend-db-init` is the one to reach for when you want the database up without
 a server: the `postgres`-marked tests need it, and the two loaders do too.
-`db-reset` throws the cluster away - the cure for a change to an existing table, which
-`schema.sql`'s `IF NOT EXISTS` statements cannot apply.
+`db-reset` throws the cluster away, which is how a change to an existing table lands,
+`schema.sql` holding `IF NOT EXISTS` statements alone.
 
 ### Schema and access
 
-`backend/schema.sql` is the entire schema and the only DDL. There is no Alembic - a
-handful of tables rebuildable from the expense files do not earn a migration
-tool - and the app issues no DDL of its own, so nothing but `db-init` ever runs it.
-Every statement in it is idempotent, because `db-init` re-runs against live clusters.
-Generated keys use `GENERATED ALWAYS AS IDENTITY` rather than `bigserial`, which
-PostgreSQL's own
-[Don't Do This](https://wiki.postgresql.org/wiki/Don%27t_Do_This) page advises against
-for new applications. The `LoadedExpenseFile`, `Expense` and `Category` models declare the same
-tables a second time, in Python, with nothing checking the agreement; change both
-together.
+`backend/schema.sql` is the entire schema and the only DDL, run by `db-init` and by
+nothing else - the app issues none of its own, and a rebuild from the expense files takes
+the place of a migration tool. Every statement in it is idempotent, because `db-init`
+re-runs against live clusters. Generated keys use `GENERATED ALWAYS AS IDENTITY`, which
+PostgreSQL's own [Don't Do This](https://wiki.postgresql.org/wiki/Don%27t_Do_This) page
+recommends for new applications. The `LoadedExpenseFile`, `Expense` and `Category` models
+declare the same tables a second time, in Python, with nothing checking the agreement;
+change both together.
 
 Access is SQLAlchemy 2 async over asyncpg, split across five modules:
 
@@ -559,11 +523,10 @@ Access is SQLAlchemy 2 async over asyncpg, split across five modules:
 
 A repository module holds its models, an **abstract base class**, its `Postgres*`
 implementation and the `...UnavailableError` it raises, and imports nothing from
-FastAPI - so it knows no status code. Callers depend on the base class and never name an
-implementation; implementations subclass it and carry `@override`, so the coupling is
-visible at the class declaration and drift fails `backend-typecheck`.
-`expense_loader.py` is a *sibling* of `deps.py`, not something below it, and may not
-import it - which is what keeps FastAPI out of `python -m`.
+FastAPI - so it knows no status code. Callers depend on the base class; implementations
+subclass it and carry `@override`, so the coupling is visible at the class declaration and
+drift fails `backend-typecheck`. `expense_loader.py` is a *sibling* of `deps.py`, which is
+what keeps FastAPI out of `python -m`.
 
 The dependency arrows run one way, and are checked rather than merely intended: `pixi
 run backend-lint` runs import-linter after ruff, against the contracts in
@@ -571,36 +534,34 @@ run backend-lint` runs import-linter after ruff, against the contracts in
 on anything but `deps.py` learning about FastAPI, and on a cycle anywhere in the
 package. `create_app()` holds the only handler that maps an exception to a 503.
 
-The engine is owned by the app's **lifespan** rather than built at import time, and
-handed to requests as lifespan state, from which a session is opened per request. That
-is not incidental: it means `create_app()` opens no socket, which is what lets most of
-the test suite construct a real app with no database anywhere.
+The engine is owned by the app's **lifespan** and handed to requests as lifespan state,
+from which a session is opened per request. That is what makes `create_app()` open no
+socket, and what lets most of the test suite construct a real app with no database
+anywhere.
 
 `backend/tests/test_app.py` overrides the repository dependency with a fake and never
 connects. Only `backend/tests/test_expense_postgres.py` talks to the real server, behind
 the `postgres` marker registered in `backend/pyproject.toml`; it skips when nothing
-answers, so a developer who has not run `db-init` does not face a red suite, and
-**fails** under `CI=true`, so a database that did not come up cannot go green.
+answers, so a developer who has not run `db-init` gets a green suite, and **fails** under
+`CI=true`, where a database is expected to be up.
 
 ### Loading expenses
 
-**The expense files are not in this repository.** Real spending is confidential and this
-repository is public, so the files live in a separate private one, and `EXPENSE_DATA_DIR`
-in `backend/.env` is the absolute path to the `data/` directory in your clone of it - that
-repository keeps one month file per bank there, with its category vocabulary and its
-decision maps in `meta/` rather than in it. Nothing here fetches, updates or tracks that
-clone - keeping it current is entirely your job.
+**The expense files live in a separate private repository.** Real spending is
+confidential and this repository is public, so `EXPENSE_DATA_DIR` in `backend/.env` is the
+absolute path to the `data/` directory in your clone of that one, which keeps one month
+file per bank there and its category vocabulary and decision maps in `meta/`. Keeping that
+clone current is your job.
 
 ```sh
 pixi run backend-load-expenses      # reads $EXPENSE_DATA_DIR/*.yaml into the database
 ```
 
 **A missing directory loads nothing and succeeds.** A machine without the data repository
-is an ordinary state, not a failure, so the task says so and stops. An *unset*
-`EXPENSE_DATA_DIR` is the other thing entirely - a shell that never ran `direnv allow` -
-and aborts on the same `${VAR:?}` guard the `db-*` tasks use. The loader itself is
-unchanged and still refuses a directory handed to it directly that does not exist, which
-is what keeps a typed path from failing silently:
+is an ordinary state, so the task says so and stops. An *unset* `EXPENSE_DATA_DIR` is the
+other case - a shell that never ran `direnv allow` - and aborts on the same `${VAR:?}`
+guard the `db-*` tasks use. A directory handed to the loader directly is still checked,
+which is what surfaces a typed path:
 
 ```sh
 cd backend && python -m expense_tracker.expense_loader ~/expnses   # error: not a directory
@@ -614,9 +575,8 @@ cd backend && EXPENSE_DATA_DIR=tests/data/expenses poe load-expenses
 ```
 
 They carry the `sample-` prefix for a reason. `loaded_expense_file.filename` is unique on
-the bare name, so a fixture called `nykredit-2026-01.yaml` and a real file of the same name
-would collide in the ledger and the second one loaded would be refused as an edit of the
-first. The prefix makes that impossible rather than merely unlikely.
+the bare name, and the prefix is what keeps a fixture's name clear of a real
+`nykredit-2026-01.yaml` in that ledger.
 
 Files are `*.yaml`: one month file per bank and calendar month, named
 `<bank>-YYYY-MM.yaml`, holding the bank's own export header, then every record that bank
@@ -661,50 +621,44 @@ here. An `import` states the rest.
 
 | Field | Format | Notes |
 | --- | --- | --- |
-| `datetime` | RFC 3339, with an offset | The day it names is `expense_date`; the offset is never applied |
-| `amount` | decimal | At most two decimal places; may be negative; never zero |
+| `datetime` | RFC 3339, with an offset | The day it names is `expense_date`; the offset stands unapplied |
+| `amount` | decimal | At most two decimal places; may be negative; non-zero |
 | `currency` | ISO 4217 alpha-3 | Uppercase |
-| `category` | a `:`-separated path | Each level stripped; no level may be empty, nor slug to nothing |
-| `key` | the bank's own text for the record | Stripped; never blank |
+| `category` | a `:`-separated path | Each level stripped, non-empty, and slugging to something |
+| `key` | the bank's own text for the record | Stripped and non-blank |
 
-A third decimal place is refused rather than rounded away by `numeric(12, 2)` in
-silence. A negative amount is accepted, because a credit is a negative expense; a zero
-one is refused, because an expense of nothing is not an entry, and
-`expense_amount_not_zero` backstops that in the database. A `category` that is not a path
-- `Food:`, `:Food`, `Food::Drink` - is refused here rather than only by
-`expense_category_is_a_path`, because the loader names the file and the constraint alone
-would surface as a bare `IntegrityError`; a blank `key` is refused on the same terms,
-`expense_key_not_blank` being its backstop. **Every field is read as text**,
-so an unquoted `2438.47` - which YAML 1.1 resolves to a float - is refused rather than
-rounded through one, and so is an unquoted date-time. The `datetime`'s offset is required
-and never applied: the date wanted is the one the file states, which is the date the bank's
-own statement shows, and the one the month file is named for. `header` is read only to
-refuse a YAML file that is not a month file at all. A byte-order mark is tolerated.
+A third decimal place is refused by the loader, ahead of `numeric(12, 2)`. A negative
+amount is accepted, a credit being a negative expense; a zero one is refused, with
+`expense_amount_not_zero` as the database's backstop. A `category` outside the path shape
+- `Food:`, `:Food`, `Food::Drink` - is refused by the loader, which names the file,
+with `expense_category_is_a_path` behind it; a blank `key` is refused on the same terms,
+`expense_key_not_blank` being its backstop. **Every field is read as text**, so `2438.47`
+and the date-time both arrive quoted, clear of YAML 1.1's float resolution. The
+`datetime`'s offset is required and stands unapplied: the date wanted is the one the file
+states, which is the date the bank's own statement shows and the one the month file is
+named for. `header` is read to confirm the YAML is a month file. A byte-order mark is
+tolerated.
 
 **Re-running the loader is a no-op**, and that is the ledger's doing, not the rows'.
 `loaded_expense_file` records each file's name and the SHA-256 of its bytes; a file
-already recorded with a matching digest is skipped whole. The expense rows carry no
-content hash and no `ON CONFLICT`, deliberately - two identical records are two real
-purchases, so the rows themselves cannot say whether they have been loaded, and hashing
-them would silently collapse a pair of same-day fill-ups into one and make the month
-come up short.
+already recorded with a matching digest is skipped whole. The expense rows carry neither a
+content hash nor an `ON CONFLICT`: two identical records are two real purchases, such as a
+pair of same-day fill-ups, and both belong in the month.
 
 Each file is its own transaction: its ledger row, its expenses and the category rows it
 introduces commit together or not at all, so a run that dies half way can simply be
 re-run.
 
-**The `category` table is derived rather than added to**, which is a third shape beside
-the two loaders' own: `expense` is append-only and `currency_rate` is replaced whole,
-while `category` is extended and verified. Each file's load recomputes every slug from the
-stored rows plus that file's own categories, refuses the file if a stored slug would
-move, and inserts the nodes that are new, ancestors included. What it refuses and why is
+**The `category` table is derived**, which is a third shape beside the two loaders' own:
+`expense` is append-only and `currency_rate` is replaced whole, while `category` is
+extended and verified. Each file's load recomputes every slug from the stored rows plus
+that file's own categories, refuses the file if a stored slug would move, and inserts the
+nodes that are new, ancestors included. What it refuses and why is
 [Category slugs](#category-slugs).
 
 **Editing a loaded file is refused.** A known filename arriving with a different digest
-stops the run, naming the file and when it was taken in. Skipping it would make a typo
-fix appear to work while doing nothing; re-reading it would either duplicate the
-unchanged rows or delete from a database meant to be a read-only view. Append a new
-file instead, or rebuild.
+stops the run, naming the file and when it was taken in, so the database stays the
+read-only view of the files it was loaded from. Append a new file, or rebuild.
 
 **With month files, that rebuild is the ordinary path rather than the exception.** The
 other repository adds a later export's records to the month file they fall in, rewriting
@@ -722,13 +676,12 @@ tables before and after every test in `test_expense_postgres.py`, and `currency_
 around every test in `test_currency_postgres.py` - running the suite empties whatever you
 had loaded.
 
-It is the cure for a **schema change**, too. Every statement in `schema.sql` is
-`CREATE ... IF NOT EXISTS`, so `db-init` adds what is missing but never renames or alters
-what is already there. Pulling a branch that changes a column or a table name means
-resetting the cluster, not re-running `db-init`. A branch that only *adds* a table - as
-`currency_rate` did - needs no reset, just `db-init`. A table the loader is what fills -
-as `category` is - needs the reset all the same once anything is loaded: the ledger would
-skip every file and so write no rows into it.
+It is the path for a **schema change**, too. Every statement in `schema.sql` is
+`CREATE ... IF NOT EXISTS`, so `db-init` adds what is missing and leaves what is there as
+it stands. Pulling a branch that changes a column or a table name means resetting the
+cluster. A branch that only *adds* a table - as `currency_rate` did - takes `db-init`
+alone. A table the loader fills - as `category` is - takes the reset all the same once
+anything is loaded, the ledger skipping every file it has already seen.
 
 ### Loading exchange rates
 
@@ -748,56 +701,48 @@ skipped - over three columns.
 A seventh decimal place is refused rather than rounded away by `numeric(18, 6)`, and a
 zero or negative rate converts nothing, so it is refused too.
 
-**This loader replaces rather than appends**, which is the opposite of the expense
-loader above and is the point rather than an inconsistency. A rate for a pair is a
-current fact, not an event: there is no ledger table, every run deletes the rates it
-finds and inserts the file's, and **editing a rate and re-running is the supported
-workflow**. Deleting and inserting share one transaction, so nothing ever observes the
+**This loader replaces rather than appends**, where the expense loader above appends. A
+rate for a pair is a current fact rather than an event: there is no ledger table, every
+run deletes the rates it finds and inserts the file's, and **editing a rate and re-running
+is the supported workflow**. Deleting and inserting share one transaction, so nothing ever observes the
 table empty, and every file is parsed *before* anything is deleted, so a typo leaves the
 loaded rates exactly as they were.
 
 ## Frontend
 
 A React 19 SPA built by vite and styled with Tailwind CSS v4, configured in CSS via
-`frontend/src/styles/app.css` - there is no `tailwind.config.js`.
+`frontend/src/styles/app.css`.
 
 The palette and the component classes come from [daisyUI](https://daisyui.com), enabled
-as a `@plugin` in that same stylesheet. One theme is named and nothing switches away from
-it: `dim --default`, which daisyUI binds at `:where(:root)` so it applies whatever the
-operating system asks for. There is no `data-theme` attribute, no `--prefersdark`, no
-theme provider, no toggle, and no `dark:` variant in `src/` - colours are written by role
-(`bg-base-100`, `text-base-content`, `alert-error`) and the theme points them at its own
-palette.
+as a `@plugin` in that same stylesheet. One theme is named: `dim --default`, which daisyUI
+binds at `:where(:root)` so it applies whatever the operating system asks for. Colours are
+written by role (`bg-base-100`, `text-base-content`, `alert-error`) and the theme points
+them at its own palette.
 
 The app is dark-only by choice, and `dim` is the soft end of what daisyUI ships - the
 lightest of its dark themes, a desaturated blue-grey rather than black. The theme
 declares `color-scheme: dark` itself, which is what keeps browser-painted UI - scrollbars,
 native `<select>` popups, form controls - in step. Because that only reaches the browser
 with the stylesheet, `index.html` repeats it as `<meta name="color-scheme" content="dark">`
-so the first paint is not a white canvas. There is no `theme-color` tag: it takes a literal
-hex, not a role token. Swapping the theme means checking all of that still holds.
+so the first paint carries it. Swapping the theme means checking all of that still holds.
 
-`pixi run frontend-build` writes to `frontend/dist/`, vite's default. It is **gitignored**
-and nothing in this repo consumes it. CI runs the build as a gate because tsc and
-vitest never exercise the bundler, but keeps nothing from it.
+`pixi run frontend-build` writes to `frontend/dist/`, vite's default. It is
+**gitignored**. CI runs the build as a gate over the bundler, which tsc and vitest leave
+untouched, and keeps nothing from it.
 
 `GET /api/expenses` is the app's main read, fetched at runtime with
 [TanStack Query](https://tanstack.com/query) in `frontend/src/api/expenses.ts` and
 rendered by `frontend/src/components/ExpensesTable.tsx` as one table of date, category,
 amount and currency - the category cell holding the path and then the row's `key`, the
-bank's own text for it, dimmed in parentheses. Nothing generates a client from a schema, so the payload
-*shape* is written out by hand on both sides and the two must be changed together; a
-mismatch shows up as a 404 or a failed shape guard at runtime. Every field is a string on
-the wire - `amount` included, because JSON has no decimal type - so the guard rejects a
-numeric amount rather than letting a float round trip through the page. Both
-values are rendered as they arrive, except that a negative amount - a credit, money
-coming in - is shown as `+` in green, the sign rewritten on the string alone: parsing
-the amount client-side would put back the round trip `str(Decimal)` exists to prevent,
-and `new Date()` on a bare
-`YYYY-MM-DD` reads it as UTC and prints a day early west of Greenwich. The rows keep the
-order the API sends them in (oldest first) and are never re-sorted, and an empty ledger
-arrives as a 200 with an empty `items` array, so the table says so in a row instead
-of raising an alert.
+bank's own text for it, dimmed in parentheses. The payload *shape* is written out by hand
+on both sides and the two must be changed together; a mismatch shows up as a 404 or a
+failed shape guard at runtime. Every field is a string on the wire - `amount` included,
+because JSON has no decimal type - so the guard rejects a numeric amount. Both values are
+rendered as they arrive, except that a negative amount - a credit, money coming in - is
+shown as `+` in green, the sign rewritten on the string alone, so the amount and the date
+reach the page as the API spelled them. The rows keep the order the API sends them in
+(oldest first), and an empty ledger arrives as a 200 with an empty `items` array, which
+the table shows as a row.
 
 ### Choosing a currency
 
@@ -810,19 +755,17 @@ The choice lives in the **URL**, so `/?currency=EUR` is a link worth sending and
 returns to it. `validateSearch` in `frontend/src/router.ts` supplies `DKK` when the
 parameter is absent and checks nothing else: a code the backend refuses is passed through
 and answered with a 422, which reaches the page as its ordinary "Could not load the
-expenses." The parameter is always sent - an **empty** `?currency=` is a malformed code
-to the backend, not a request for no conversion, so there is no "as recorded" mode and
-the ledger's own currency is simply `DKK`, the one code that needs no rate.
+expenses." The parameter is always sent, an **empty** `?currency=` being a malformed code
+to the backend, and the ledger's own currency is `DKK`, the one code that needs no rate.
 
 The options are read from `GET /api/currencies` by `frontend/src/api/currencies.ts` and
-are **not** a list of ISO codes. Because a rate is used only in the direction
-`rates.tsv` states it and is never composed, the only reachable targets are the
-`to_currency` of a pair whose `from_currency` is the base - `EUR`, `GBP`, `NOK`, `SEK`,
-`USD` today. The file's `EUR -> DKK` and `USD -> DKK` rows are ignored here: they convert
-*into* the base, which is where the expenses already are. A rate list that has not
-arrived, fails, or comes back empty leaves the select disabled on `DKK` and does not
-disturb the table below - they are two independent requests, and an empty rate table is a
-working server for the reason an empty ledger is.
+are **the targets the rate table can reach**: the `to_currency` of a pair whose
+`from_currency` is the base - `EUR`, `GBP`, `NOK`, `SEK`, `USD` today - each rate being
+used in the one direction `rates.tsv` states. The file's `EUR -> DKK` and `USD -> DKK`
+rows convert *into* the base, where the expenses already are. A rate list that has not
+arrived, fails, or comes back empty leaves the select disabled on `DKK` while the table
+below renders - two independent requests - and an empty rate table is a working server on
+the terms an empty ledger is.
 
 ### Choosing a date range
 
@@ -840,46 +783,37 @@ bound with the first or last day of the current year, from one reading of the cl
 same default on both views so that switching between them changes nothing. It checks
 nothing else - a date
 the backend refuses is passed through and answered with a 422, which reaches the page as
-its ordinary "Could not load the expenses." Both parameters are always sent, and there is
-no clear button: an **empty** `?from_date=` is a malformed date to the backend rather than
-a request for everything, so the way to see more is to pick earlier or later days. A range
-holding no expenses is a 200 with an empty `items` array, which the table shows as a
-row and not an alert.
+its ordinary "Could not load the expenses." Both parameters are always sent, an **empty**
+`?from_date=` being a malformed date to the backend, so the way to see more is to pick
+earlier or later days. A range holding no expenses is a 200 with an empty `items` array,
+which the table shows as a row.
 
 The currency, the range and the categories follow you between the two views: each route
 retains them through `retainSearchParams`, so a switch keeps what you were looking at. The
 **By category** toggle does not, being declared on `/totals` alone.
 
 The control is [DayPicker](https://daypicker.dev) in `mode="range"`, pinned as
-`@daypicker/react`. It was chosen over daisyUI's own calendar component because that one
-is the `cally` web component, which renders into a shadow root that the tests cannot see
-through - every query in `frontend/tests/` goes by role and accessible name. DayPicker
-renders an ordinary `<table role="grid">` of buttons instead. It brings `date-fns` along
-transitively; nothing in `src/` imports it, because `frontend/src/dates.ts` is the one
-place a `Date` becomes a `YYYY-MM-DD` and it is built from the local field getters -
-`toISOString()` would name the previous day east of Greenwich, the mirror of the trap
-`new Date()` sets on the way in.
+`@daypicker/react`, which renders an ordinary `<table role="grid">` of buttons - every
+query in `frontend/tests/` goes by role and accessible name. It brings `date-fns` along
+transitively, and `frontend/src/dates.ts` is the one place a `Date` becomes a
+`YYYY-MM-DD`, built from the local field getters so the day it names is the local one.
 
-It shows two calendars side by side, each with a month and a year dropdown for a caption
-and no arrows at all. They navigate **independently** - the left can sit on January 2025
-while the right shows December 2026 - and follow one another only far enough to stay in
-order, so any span is two clicks away rather than a run of chevron presses. A range can
-start in either panel and end in the other. Opening puts one panel on each end of the
-range currently selected.
+It shows two calendars side by side, each captioned by a month and a year dropdown. They
+navigate **independently** - the left can sit on January 2025 while the right shows
+December 2026 - and follow one another far enough to stay in order, so any span is two
+clicks away. A range can start in either panel and end in the other. Opening puts one
+panel on each end of the range currently selected.
 
 Those dropdowns need a finite list, so the calendar is bounded: 1 January of `FIRST_YEAR`
-in `frontend/src/dates.ts` through 31 December of the current year. Both bounds are
-invented - nothing publishes the range the data actually spans - and with no arrows that
-list is the whole of what navigation can reach, so an expense dated before `FIRST_YEAR`
-cannot be reached by clicking. A URL naming such a day still works, since the dates are
-passed through as typed.
+in `frontend/src/dates.ts` through 31 December of the current year. Both bounds are the
+frontend's own, and that list is the whole of what the dropdowns reach, so a day before
+`FIRST_YEAR` is reached by typing the URL, the dates being passed through as typed.
 
 The panel closes on a click outside it or on Escape, like the select beside it, and either
-way a half-picked range is discarded rather than left disagreeing with the URL.
+way a half-picked range is discarded, so the control and the URL agree.
 
-The calendar also cannot be made to select a range that ends before it begins: DayPicker
-orders the pair itself, so a click before the start becomes the new start. The backend
-still refuses an inverted range, because the URL can be typed by hand.
+DayPicker orders the pair itself, so a click before the start becomes the new start. The
+backend refuses an inverted range, for the URL typed by hand.
 
 ### Choosing categories
 
@@ -894,21 +828,19 @@ over the expenses it is split by.
 
 The nodes on offer come from `GET /api/expenses/categories`, read by
 `frontend/src/api/categories.ts` in the order the backend sends them - once each, by path.
-The control asks for `?to_level=3`, so **the whole bounded tree arrives in one request**
-and no node costs a round trip to read; `from_level` is the backend's own parameter and
-nothing here sends it.
+The control asks for `?to_level=3`, so **the whole bounded tree arrives in one request**;
+`from_level` is the backend's own parameter.
 
 **The panel is a tree, indented, and each box reads as its own level** - `Alice` under
-`Settlement`, not `Settlement:Alice` - which is what the payload's `name` and `parent_slug`
-are for: nothing on this side splits a path or a slug, so the separator stays the
-backend's alone, and **no slug is ever derived here** - the one the payload carries is the
-one that goes out. The tree is built from `parent_slug` rather than from the order the
-list arrived in, because path order is only nearly pre-order: a level name beginning with
-a character below `:` sorts between a node and its own children, and a walk that trusted
-the order would nest it in the wrong place.
+`Settlement`, not `Settlement:Alice` - which is what the payload's `name` and
+`parent_slug` are for: the separator stays the backend's, and **the slug the payload
+carries is the one that goes out**. The tree is built from `parent_slug`, which is what
+makes it independent of the order the list arrived in - path order is only nearly
+pre-order, a level name beginning with a character below `:` sorting between a node and
+its own children.
 
-**Every box starts ticked**, because the default is every category and the panel says so
-rather than leaving an empty list to mean the same thing. **Unticking a box unticks its
+**Every box starts ticked**, because the default is every category and the panel says so.
+**Unticking a box unticks its
 whole subtree**, and a node whose subtree disagrees with it carries a dash rather than a
 tick - `Car` is dashed while `Car:Fuel` alone is out. Ticking a box back puts its subtree
 in again, which is how one branch of something otherwise deselected is kept: untick
@@ -916,9 +848,8 @@ in again, which is how one branch of something otherwise deselected is kept: unt
 hers included.
 
 **A box reports the whole slug**, so `Alice` is `settlement:alice` on the wire. What the
-URL carries is not the list of ticked categories but **where the selection departs from
-the root's sign**: dropping one category out of forty is one `not_category` value rather
-than thirty-nine `category` ones. `frontend/src/categorySelection.ts` is where that is
+URL carries is **where the selection departs from the root's sign**: dropping one category
+out of forty is one `not_category` value rather than thirty-nine `category` ones. `frontend/src/categorySelection.ts` is where that is
 worked out, the mirror of `category_filter.py` reading the same three parameters back on
 the other side.
 
@@ -926,7 +857,7 @@ the other side.
 the next, and **Select all** and **Select none** reach the two extremes in one click -
 both present and each disabled at the end it leads to, so the panel is the same size
 whatever is selected. Select none is what makes a selection additive: empty it and tick
-the few categories you want, rather than untick the many you do not. The trigger reads
+the few categories you want. The trigger reads
 **All categories** or **No categories** at the extremes, names the single slug that is
 missing or the single one that is picked, and counts past that - a fixed width either way,
 so the filter row never moves as the selection changes.
@@ -935,28 +866,26 @@ The selection lives in the **URL** alongside the rest, and is spelled the way th
 reads it: `/?not_category=car` is a link worth sending and one you can type by hand. A
 slug keeps its separator there - `?not_category=settlement:alice` - because a colon is
 legal in a query string as it stands: `URLSearchParams` escapes it to `%3A` and the
-router puts it back, so the URL reads the way the categories do and **carries no percent
-sign at all**, which is the whole point of a slug. Typed either way it
-arrives as the single value it is. The empty selection is `?category_default=none` on
-its own, and the default selection is no category parameter at all - which is why all
-three are navigated together, `undefined` where empty: `retainSearchParams` keeps a key
-the next navigation leaves out, so a selection the default could not be reached from
-would be a trap.
+router puts it back, so the URL reads the way the categories do and **is free of percent
+signs**, which is the whole point of a slug. Typed either way it arrives as the single
+value it is. The empty selection is `?category_default=none` on its own, and the default
+selection is no category parameter at all - which is why all three are navigated together,
+`undefined` where empty: `retainSearchParams` keeps a key the next navigation leaves out,
+so `undefined` is what returns to the default.
 
 That is the router's own doing - `frontend/src/router.ts` replaces TanStack Router's
-default search serializer, which would write a JSON array and turn a hand-typed
-`?from_date=2026` into a number, with one that repeats a key per value and reads every
+default search serializer with one that repeats a key per value and reads every
 parameter as the string it was typed, leaving the separator in a slug alone (a value
-that itself reads `%3A` is escaped to `%253A`, which the put-back cannot reach).
+that itself reads `%3A` is escaped to `%253A`, which the put-back leaves as it stands).
 `validateSearch` folds one value or several into a list and checks nothing else: a slug
 the ledger does not hold is passed through and answered with an empty `items` array, an
 empty `?category=` with the 422 `category_filter.py` raises, and either is shown as it
 stands - a slug the list does not offer still appears, flipped and labelled with itself,
 at the top.
 
-A list that has not arrived, fails, or comes back empty leaves the control disabled and
-does not disturb the table below - they are two requests, like the rate table and the
-expenses. The panel closes on a click outside it, on Escape and on a second click of the
+A list that has not arrived, fails, or comes back empty leaves the control disabled while
+the table below renders - two requests, like the rate table and the expenses. The panel
+closes on a click outside it, on Escape and on a second click of the
 trigger, sharing `useDismiss` with the calendar; focus stays on the trigger when it opens,
 and Tab reaches the boxes.
 
@@ -979,16 +908,15 @@ fine and is caught instead by the `git diff --exit-code` step `.github/workflows
 runs after `frontend-build`, the one gate that runs vite and so the one that
 regenerates. The file is excluded from prettier, coverage and Sonar - three declarations
 that nothing checks agree - while eslint is covered by the file's own
-`/* eslint-disable */` header rather than by an ignore pattern, which would make eslint
-warn every time an editor opened it. Prettier's exclusion is not a preference: the
-generator formats with prettier's own defaults rather than `.prettierrc.json`, so the
-file lands at `printWidth` 80 and could never pass the check at 88.
+`/* eslint-disable */` header, which keeps an editor quiet about it too. Prettier's
+exclusion is load-bearing: the generator formats with prettier's own defaults rather than
+`.prettierrc.json`, so the file lands at `printWidth` 80 against a check at 88.
 
 `createAppRouter` in `frontend/src/router.ts` takes an optional history so the tests can
 pass `createMemoryHistory()`; `frontend/src/main.tsx` calls it with none and gets the
 browser's. The `declare module` block at its foot is what makes a `Link`'s `to` typed
 against the real route tree. `__root.tsx` is the only file that renders the router's own
-components; there is no nav, because one over a single route would be dead UI.
+components.
 
 The route owns its search schema, so its component is the one that reads it - and under
 file-based routing they are the same module, so `index.tsx` holds `validateSearch` and
@@ -997,116 +925,108 @@ is `frontend/src/components/`**: `ExpensesTable` and `ExpenseFilters` take props
 nothing of the URL, and mount in a bare `QueryClientProvider`. `autoCodeSplitting` is on,
 so the route's component is emitted as its own chunk. A deployed SPA needs its server to
 fall back to `index.html` so a non-root path resolves on a cold load; vite's dev server
-does that already, and nothing in this repo serves `frontend/dist/`.
+does that already, and the SPA image's nginx config does it in production.
 
 Tests use vitest, live in `frontend/tests/`, and reach into the app through the `@`
 alias (`@/api/expenses`). The alias is declared twice - `resolve.alias` in
 `frontend/vite.config.ts` for the bundler and `paths` in `frontend/tsconfig.app.json`
-for the type checker, because vite does not read tsconfig `paths` - so both must point
-at the same place. Imports *within* `src/` stay relative.
+for the type checker, each tool reading its own - so both must point at the same place.
+Imports *within* `src/` stay relative.
 
 The backend is stubbed with [MSW](https://mswjs.io). `frontend/tests/setup.ts` starts
-the server with `onUnhandledRequest: "error"`, so an unstubbed request fails the test
-instead of quietly reaching the network. Handlers bind to the absolute `EXPENSES_URL`
-exported by the module under `frontend/src/api/`, because a path-only pattern would
-resolve against jsdom's origin rather than the API's and never match.
+the server with `onUnhandledRequest: "error"`, so an unstubbed request fails the test.
+Handlers bind to the absolute `EXPENSES_URL` exported by the module under
+`frontend/src/api/`, which is what matches the API's origin rather than jsdom's.
 
 `frontend/src/main.tsx` is excluded from coverage in both `frontend/vite.config.ts` and
 `sonar-project.properties` - it only wires React to the DOM. `frontend/vite.config.ts`
 also pins vitest's root back up to the repo root (`new URL("../", import.meta.url)`),
 even though vite's own root is `frontend/`. That is what makes the lcov report record
-repo-relative paths like `frontend/src/App.tsx`; without it SonarCloud resolves them
-against the Python package and reports the frontend as uncovered - silently, with a
-green build.
+repo-relative paths like `frontend/src/App.tsx`, which is what SonarCloud resolves the
+coverage against.
 
 ### Where the API lives
 
 `frontend/.env` holds `VITE_API_BASE_URL`, and the modules under `frontend/src/api/`
 resolve every request path against it. That one variable is the frontend's only
-knowledge of the backend; there is deliberately no vite proxy, so the dev-time request
-is a real cross-origin call over the same CORS path a deployed one would take. Override
-it in `frontend/.env.local` (gitignored) to point at a backend elsewhere.
+knowledge of the backend, and the request it makes is a real cross-origin call over the
+same CORS path a deployed one takes. Override it in `frontend/.env.local` (gitignored) to
+point at a backend elsewhere.
 
 Two details worth knowing:
 
-- It lives in bare `.env`, not `.env.development`, because vite loads `.env` in *every*
-  mode - including the `test` mode vitest runs in, where MSW needs the same value.
-- `frontend/vite.config.ts` pins `envDir` to `frontend/`. Without it, the `test`
-  block's repo-root `root` would drag env-file lookup up there too and leave the suite
-  with no base URL.
+- It lives in bare `.env`, which vite loads in *every* mode - including the `test` mode
+  vitest runs in, where MSW needs the same value.
+- `frontend/vite.config.ts` pins `envDir` to `frontend/`, which keeps env-file lookup
+  there while the `test` block's `root` sits at the repo root.
 
 It is typed in `frontend/src/vite-env.d.ts`, which also sets
 `ViteTypeOptions.strictImportMetaEnv` - that drops vite's `any` index signature on
-`ImportMetaEnv`, so a mistyped `import.meta.env.VITE_*` is a type error rather than a
-silent `undefined`.
+`ImportMetaEnv`, so a mistyped `import.meta.env.VITE_*` is a type error.
 
-The flip side of `.env` loading in every mode is that `pixi run frontend-build` **bakes
-`http://localhost:8000` into the bundle**. That is fine today, since the build exists
-as a CI gate and nothing deploys it, but a real deployment needs the value supplied for
-the production mode via a `.env.production` or a `VITE_API_BASE_URL` in the build
-environment. vite inlines it at build time; there is no runtime lookup to override. Note
-that `.gitignore` ignores every `.env` variant but the two committed defaults, so a
-`.env.production` you add has to be named back in before it can be committed - deliberate,
-since that is the shape a real credential usually arrives in.
+Because `.env` loads in every mode, `pixi run frontend-build` **bakes
+`http://localhost:8000` into the bundle**, which is what the CI gate builds. A deployment
+supplies the value for the production mode instead, through a `.env.production` or a
+`VITE_API_BASE_URL` in the build environment - vite inlines it at build time, and the SPA
+image does exactly that with a placeholder it rewrites at container start. `.gitignore`
+covers every `.env` variant but the two committed defaults, so a `.env.production` is
+named back in there before it can be committed.
 
 ### Package manager
 
 Dependencies are installed with **pnpm**, whose version is pinned in `pixi.toml`
 alongside Node. Three deliberate choices:
 
-- **`frontend/package.json` has no `packageManager` field, and must not gain one.**
-  pnpm's `pmOnFail` defaults to `download`, so that field would make pnpm fetch and run
-  its own copy of the declared version, bypassing the pixi pin.
+- **`frontend/package.json` carries no `packageManager` field, and the pixi pin is what
+  decides the version.** pnpm's `pmOnFail` defaults to `download`, so that field is what
+  would send pnpm to fetch a copy of its own.
 - **Pins must be at least three days old.** `frontend/pnpm-workspace.yaml` sets
   `minimumReleaseAge: 4320`, so pnpm refuses to install versions published in the last
-  three days as a supply-chain guard. Because this project pins exact versions, pnpm
-  cannot fall back to an older release - it asks you to exempt the version instead.
-  **Pick a newer release that already clears the window rather than adding an
-  exemption**, which would disable the guard for precisely the least-vetted package.
+  three days as a supply-chain guard. With exact pins there is no older release to fall
+  back to, so pnpm asks for an exemption instead. **Pick a newer release that already
+  clears the window**, which keeps the guard over every package.
 
   The value is 4320 because it has to equal `cooldown.default-days` in
   `.github/dependabot.yml`, which is three days. Dependabot does not use that window
   only to choose versions: it passes `min(semver tier, default-days)` to pnpm as
   `--config.minimumReleaseAge`, enforced across its entire resolution, so anything
   already in the repo that is younger than the gate fails the weekly update job with
-  `ERR_PNPM_NO_MATURE_MATCHING_VERSION` instead of skipping an update. Equal values
-  leave no such gap. Tiers above the floor - `semver-minor-days`, `semver-major-days` -
-  delay selection only and never raise the gate, because Dependabot caps it at
-  `default-days`.
+  `ERR_PNPM_NO_MATURE_MATCHING_VERSION`. Equal values leave the two in step. Tiers above
+  the floor - `semver-minor-days`, `semver-major-days` - delay selection, Dependabot
+  capping the gate itself at `default-days`.
 
-  Writing the value down at all is for **Dependabot**, which is not running pnpm 11. It
-  picks its pnpm major from the lockfile, and the `lockfileVersion: 9.0` pin lands it on
-  pnpm 10, where the setting defaults to 0. Left implicit, the guard would hold where the
-  lockfile is *verified* (CI) and not where it is *resolved* (Dependabot), which is how a
-  transitive package five hours old reached `pnpm-lock.yaml` and failed CI in PR #48. One
-  case stays outside it: Dependabot deliberately disables the guard for **security**
-  updates, so such a PR can still carry a too-young entry. Re-run the job once that
-  version clears the window (`gh run rerun <run-id> --failed`) - the check recomputes the
-  cutoff at install time.
+  Writing the value down at all is for **Dependabot**, which runs pnpm 10: it picks its
+  pnpm major from the lockfile, and the `lockfileVersion: 9.0` pin lands it there, where
+  the setting defaults to 0. Stating it is what makes the guard hold where the lockfile is
+  *resolved* (Dependabot) as well as where it is *verified* (CI); implicit, it let a
+  transitive package five hours old reach `pnpm-lock.yaml` and fail CI in PR #48. One case
+  stays outside it: Dependabot disables the guard for **security** updates, so such a PR
+  can carry a too-young entry. Re-run the job once that version clears the window
+  (`gh run rerun <run-id> --failed`) - the check recomputes the cutoff at install time.
 - **Install scripts are answered explicitly.** pnpm 11 exits non-zero while a
-  dependency's install script is neither allowed nor denied, which would fail
-  `pixi run frontend-install` in CI. The decision lives in `frontend/pnpm-workspace.yaml`
-  under `allowBuilds`, the only place pnpm 11 still reads it. `msw` is denied there:
-  its script only copies the browser service worker, and the tests use `msw/node`.
+  dependency's install script is neither allowed nor denied, so
+  `pixi run frontend-install` depends on the answer being there. It lives in
+  `frontend/pnpm-workspace.yaml` under `allowBuilds`, the only place pnpm 11 still reads
+  it. `msw` is denied there: its script copies the browser service worker, and the tests
+  use `msw/node`.
 
 ## Editor setup (Zed)
 
 `.zed/settings.json` exists to make Zed **report** what CI enforces. Every entry does
-one job: pin a language server to the version this repo pins. None of them configures a
-linter or a type checker - each stack's own config file already does that, and
-duplicating it in the editor is how the two drift apart. Read the file itself for the
-per-server reasoning.
+one job: pin a language server to the version this repo pins. The linter and type-checker
+settings stay in each stack's own config file, which is the single source for both. Read
+the file itself for the per-server reasoning.
 
 Preconditions: run `direnv allow` (for the basedpyright path under `.pixi/`) and
-`pixi run frontend-install` (for the frontend servers under `frontend/node_modules/`),
-or those paths do not exist yet and the servers will not start. `direnv allow` is also
-what puts the database settings into the environment, so a test runner launched from
-inside the editor reaches the local cluster only if the editor inherits that environment
-- one started from a shell direnv has blessed does.
+`pixi run frontend-install` (for the frontend servers under `frontend/node_modules/`), so
+those paths exist for the servers to start from. `direnv allow` is also what puts the
+database settings into the environment, so a test runner launched from inside the editor
+reaches the local cluster when the editor inherits that environment - one started from a
+shell direnv has blessed does.
 
-Formatting is not configured here: `format_on_save` is left to your own Zed settings.
-Formatting is applied by `pixi run frontend-format` and gated in CI by
-`pixi run frontend-format-check`, the same way `ruff format` works on the Python side.
+`format_on_save` is left to your own Zed settings. Formatting is applied by
+`pixi run frontend-format` and gated in CI by `pixi run frontend-format-check`, the same
+way `ruff format` works on the Python side.
 
 To confirm the declared pins match what is installed:
 
@@ -1114,45 +1034,41 @@ To confirm the declared pins match what is installed:
 cd frontend && pnpm ls @tailwindcss/language-server @vtsls/language-server typescript tailwindcss prettier eslint
 ```
 
-Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`, `10.8.1`. One nested entry is
-expected and is not drift: `@vtsls/language-server` bundles its own `typescript@5.9.3`,
-which the `tsdk` setting in `.zed/settings.json` redirects to the pinned top-level copy.
+Expect `0.16.0`, `0.3.0`, `6.0.3`, `4.3.3`, `3.9.6`, `10.8.1`. One nested entry belongs
+there: `@vtsls/language-server` bundles its own `typescript@5.9.3`, which the `tsdk`
+setting in `.zed/settings.json` redirects to the pinned top-level copy.
 
 To confirm Zed is using them, open a `.tsx` file **and** `frontend/src/styles/app.css`
-first - Zed starts a language server only when a buffer of a language it serves is open,
-so a server you have given nothing to do is absent from the list below rather than
-broken - then run:
+first - Zed starts a language server when a buffer of a language it serves is open, so the
+list below holds the servers with something to do - then run:
 
 ```sh
 ps -eo pid,args | grep -E '[v]tsls|[c]ss-language-server|[e]slintServer'
 ```
 
 Expect four processes. `@tailwindcss/language-server` ships **two** binaries and this
-repo runs both, so that middle pattern is deliberately loose enough to match each:
+repo runs both, so that middle pattern is loose enough to match each:
 `tailwindcss-language-server` completes class names in TSX, and `css-language-server`
-is the Tailwind-aware CSS server that replaces `vscode-css-language-server` in the
-`CSS` block. The second one needs Zed **1.16.1 or newer**, which is where the
-`tailwindcss-intellisense-css` adapter was added; on an older Zed the name resolves to
-nothing and `.css` files get no language server at all.
+is the Tailwind-aware CSS server named in the `CSS` block. The second one needs Zed
+**1.16.1 or newer**, which is where the `tailwindcss-intellisense-css` adapter was added.
 
 Paths under `frontend/node_modules/` mean the pins took effect; paths under
 `~/.local/share/zed/` mean they did not - usually a missing `node_modules` or no `node`
 on PATH for Zed's remote server. `eslintServer.js` is the exception and always runs from
-`~/.local/share/zed/`, because that server is Zed's own and only the module it loads is
-pinned; check it by putting `const x: any = 1;` in a `.tsx` file and confirming
+`~/.local/share/zed/`, that server being Zed's own with only the module it loads pinned;
+check it by putting `const x: any = 1;` in a `.tsx` file and confirming
 `@typescript-eslint/no-explicit-any` fires.
 
-Three things that look like faults but are not. Over a remote/WSL backend, Server Info
+Three things read as faults and are ordinary. Over a remote/WSL backend, Server Info
 reports `Binary: Unknown` and `Version: Unknown` for `vtsls` however healthy it is, and
-the per-server Logs tab is usually empty because most servers never send
-`window/logMessage`. Use the `ps` command above instead. Zed also underlines
-`tailwindcss-intellisense-css` in `.zed/settings.json` as **"Property
-tailwindcss-intellisense-css is not allowed"** - the setting is applied regardless, and
-the same key in your own `settings.json` draws no warning at all. It is an upstream
-schema bug: Zed builds the *project* settings schema from its language-attached servers
-only, where the *user* settings schema also includes opt-in ones (zed#46766), and this
-server is opt-in. `ps` is the check that settles it. If your editor ever disagrees
-with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the authority.
+the per-server Logs tab is usually empty, most servers sending no `window/logMessage`.
+Use the `ps` command above instead. Zed also underlines `tailwindcss-intellisense-css` in
+`.zed/settings.json` as **"Property tailwindcss-intellisense-css is not allowed"** while
+applying the setting; the same key in your own `settings.json` draws no warning. It is an
+upstream schema bug: Zed builds the *project* settings schema from its language-attached
+servers, where the *user* schema also includes opt-in ones (zed#46766), and this server is
+opt-in. `ps` is the check that settles it. Where your editor disagrees with CI,
+`pixi run backend-typecheck` and `pixi run frontend-lint` are the authority.
 
 ## Development tasks
 
@@ -1187,43 +1103,39 @@ with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the autho
 | `pixi run frontend-image` | `pnpm run image` | Build the SPA container image from the `frontend` environment |
 
 Every task sets its own working directory in `pixi.toml` (`backend/` or `frontend/`), so
-`pixi run <task>` behaves the same wherever you invoke it from. No task crosses between
-the two directories, and every one of them - the five `backend-db-*` included - addresses
-its files by a plain relative path. Nothing reaches above its own stack.
+`pixi run <task>` behaves the same wherever you invoke it from. Each task stays inside its
+own stack, and every one of them - the five `backend-db-*` included - addresses its files
+by a plain relative path.
 
 That holds when you skip the forwarder too: poe runs a task from the directory of the
 `pyproject.toml` it loaded, so `poe -C backend db-start` resolves `backend/.pgdata/`
 exactly as `cd backend && poe db-start` does. The *path* travels; the environment does
-not. Run it from inside the worktree, where direnv has loaded - invoked from outside, a
-`db-*` task resolves its paths correctly and then aborts on its `${PGPORT:?}` guard rather
-than reaching for whatever cluster answers on 5432. `pixi task list` prints this table's
-first column.
+not. Run it from inside the worktree, where direnv has loaded, so the `${PGPORT:?}` guard
+in a `db-*` task finds the port `.env` names. `pixi task list` prints this table's first
+column.
 
-CI runs every gate above except the two `dev` tasks, the two `-fix` variants,
-`backend-format`, the two `*-image` tasks, the two loaders and the four `backend-db-*`
-tasks other than `backend-db-init` on each pull request, then the SonarCloud scan.
-`backend-image` and `frontend-image` are left out because they build rather than check,
-and because they are the only two tasks needing a tool the runner's pixi environment does
-not carry. The loaders are left
-out because they mutate data and CI has no need of them: `test_expense_postgres.py` and
-`test_currency_postgres.py` already put the committed sample files through the real
-database path inside `backend-test`.
+CI runs every gate above on each pull request, then the SonarCloud scan. It leaves out the
+two `dev` tasks, the two `-fix` variants, `backend-format`, the two `*-image` tasks, the
+two loaders and the four `backend-db-*` tasks other than `backend-db-init`. The two
+`*-image` tasks build rather than check, and are the only two tasks reaching for a tool
+outside the runner's pixi environment. The loaders mutate data, and
+`test_expense_postgres.py` and `test_currency_postgres.py` already put the committed
+sample files through the real database path inside `backend-test`.
 
 ### Where commands are defined
 
-The middle column is not decoration - **`pixi.toml` defines no commands, it only
-forwards.** Each stack owns its own, in the manifest that already owns how its tools
-behave:
+The middle column is the whole mechanism - **every task in `pixi.toml` forwards.** Each
+stack owns its own command bodies, in the manifest that already owns how its tools behave:
 
 - **Backend:** `[tool.poe.tasks]` in `backend/pyproject.toml`, beside the ruff, pytest
-  and basedpyright config they invoke. Python has no built-in task runner, so
-  [poethepoet](https://poethepoet.natn.io) supplies one.
+  and basedpyright config they invoke, with
+  [poethepoet](https://poethepoet.natn.io) as the task runner.
 - **Frontend:** the `scripts` block in `frontend/package.json`, where a Node developer
   expects it.
 
-Two layers rather than one buys both properties at once: `pixi run` is a single
-discoverable index across two ecosystems, and each directory stays a standalone project
-you can run natively.
+The two layers buy both properties at once: `pixi run` is a single discoverable index
+across two ecosystems, and each directory stays a standalone project you can run
+natively.
 
 ```sh
 cd backend  && poe test    # poe with no task lists the backend's
@@ -1247,11 +1159,10 @@ between `default` and `frontend`:
 | `frontend` | node and pnpm, and nothing else | what the SPA image is built from |
 
 The install mode is the difference that matters. An editable install is a redirect to
-`backend/src`: nothing is copied, so the source tree has to stay where it was at install
-time. That is exactly what a developer wants - edit, re-run, no reinstall - and exactly
-what a deployment must not have, because it would ship the source tree, `backend/data/`
-and `backend/tests/` inside the image and pin the container to a directory layout rather
-than to an artifact.
+`backend/src`: nothing is copied, so the source tree stays where it was at install time,
+which is what gives a developer edit, re-run, no reinstall. A deployment gets the wheel
+instead, so an image carries an artifact rather than the source tree, `backend/data/` and
+`backend/tests/` and a directory layout.
 
 So the app is declared per feature rather than in the default feature, which is why
 `[dependencies]` holds runtime *libraries* only:
@@ -1265,9 +1176,10 @@ expense-tracker = { path = "backend", editable = false }
 ```
 
 `backend` gets a real wheel, built by hatchling, containing `src/expense_tracker` and
-nothing else. **No correctness property rests on the split.** The app reads its settings
-from the environment and opens no file, so a misconfigured process refuses to start in
-either environment - which you can check directly, clearing what direnv exported first:
+nothing else. **The split is about what ships, and the settings behave the same either
+way.** The app reads its settings from the environment and opens no file, so a
+misconfigured process refuses to start in either environment - which you can check
+directly, clearing what direnv exported first:
 
 ```sh
 pixi install -e backend
@@ -1276,19 +1188,16 @@ env -u DATABASE_URL -u PGHOST -u PGPORT -u PGUSER -u PGDATABASE \
 # ValidationError: set DATABASE_URL, or all of PGUSER, PGHOST, PGPORT, PGDATABASE
 ```
 
-Swap `-e backend` for `-e default` and it fails identically. This is a change from an
-earlier design in which the wheel was what kept a container away from the developer's
-`backend/.env`; the app no longer reads that file at all, so the guarantee no longer
-depends on how it was installed.
+Swap `-e backend` for `-e default` and it fails identically: the app reads the
+environment, whichever way it was installed.
 
-`frontend` is the odd one out, because it is a *toolchain* rather than a payload. It holds
-node and pnpm, it runs `tsc -b && vite build`, and nothing in it reaches the image the SPA
-ships in - nginx serves `dist/`. It is also the only environment that declares
-`no-default-feature = true`: `[dependencies]` **is** the default feature and is folded into
-every environment that does not opt out, so without the flag this one would carry python,
-fastapi and asyncpg it never runs. That leanness is what lets the SPA image build from a
-context with no backend source in it, which in turn keeps a backend commit from
-invalidating its layer cache.
+`frontend` is a *toolchain* rather than a payload. It holds node and pnpm, it runs
+`tsc -b && vite build`, and the SPA image ships `dist/` behind nginx instead. It is also
+the only environment that declares `no-default-feature = true`: `[dependencies]` **is**
+the default feature and is folded into every environment that does not opt out, so the
+flag is what holds this one to node and pnpm. That leanness is what lets the SPA image
+build from a context with no backend source in it, which in turn keeps a backend commit
+from invalidating its layer cache.
 
 `pixi run frontend-build` from a blessed shell still resolves through `default`, which is
 what the editor and CI use; `pixi run -e frontend frontend-build` is the same build in the
@@ -1368,20 +1277,20 @@ head -1 .pixi/envs/backend/bin/uvicorn
 ```
 
 So the builder works in `/app` and the runtime stage copies `/app/.pixi/envs/backend` to
-that same path - the repetition in that `COPY` line is the point of it, not a typo. The
-entrypoint then names the interpreter outright rather than the `uvicorn` script, which
-keeps the image from depending on how pixi wrote that line at all.
+that same path, source and destination matching for that reason. The entrypoint then names
+the interpreter outright rather than the `uvicorn` script, which keeps the image from
+depending on how pixi wrote that line at all.
 
 **There is no shell, and nothing else either.** `/bin` and `/usr/bin` are empty in this
 base, so `docker run --entrypoint /bin/sh` fails with `no such file or directory`, and
 code execution inside the container finds no interpreter to pivot through. `PATH` names
-the prefix alone for the same reason. It also rules out a shell-form `HEALTHCHECK`, and
-the API publishes no health route, so the image declares none.
+the prefix alone for the same reason. The image declares no `HEALTHCHECK`: a shell-form one
+needs that shell, and the API's surface is the four `GET`s.
 
-**`pixi shell-hook`'s exports are written out by `ENV`.** There is no shell to run an
-activation script in, so `PATH` and `SSL_CERT_FILE` are set by hand. That substitution is
-complete rather than approximate only because none of the packages pinned in `pixi.toml`
-ships an activation script; one that did would need its exports added there.
+**`pixi shell-hook`'s exports are written out by `ENV`.** With no shell to run an
+activation script in, `PATH` and `SSL_CERT_FILE` are set by hand, and those two are the
+whole substitution because every package pinned in `pixi.toml` ships without an activation
+script. A package shipping one has its exports added there.
 
 `SSL_CERT_FILE` restates OpenSSL's own default rather than correcting one. conda-forge's
 openssl is built with its own `OPENSSLDIR`, so it reads `ssl/cert.pem` out of the prefix
@@ -1397,26 +1306,22 @@ otherwise, exactly as it does locally. `.dockerignore` excludes every `.env` var
 two committed ones included, so this checkout's loopback database cannot reach an image.
 
 It runs as UID 65532 - distroless's `nonroot` - owns nothing it can write to, and listens
-on 8000. That port is fixed rather than read from `UVICORN_PORT`, which only the `dev`
-task uses: `docker run -p` is what maps a container port, so a second name for it would be
-one more pair to keep in agreement.
+on 8000. The port is a literal, `docker run -p` being what maps a container port;
+`UVICORN_PORT` is the `dev` task's alone.
 
-**Why `base-nossl` rather than `base`.** The distroless family stacks up as `static` (no
-libc), `base-nossl` (glibc), `base` (plus libssl and libcrypto), `cc` (plus libstdc++).
-`static` is out because the prefix needs glibc, and `cc` is unnecessary because the prefix
-carries its own libstdc++, which leaves the two middle rungs. `base` differs from
-`base-nossl` by exactly fourteen entries: `libssl.so.3`, `libcrypto.so.3`, three OpenSSL
-engines, one module, their dpkg records and their changelogs. Nothing in the image links
-any of them - the prefix's `_ssl` resolves `libssl.so.3` through its own RPATH - so on
-`base` they would sit there as an unused library that a scanner still inventories out of
-`/var/lib/dpkg/status.d/` and reports CVEs against. That is worth more than the 8.5 MB it
-saves (24.6 MB against 33.1 MB): a release gated on a HIGH or CRITICAL finding should not
-be blocked by a library the application never loads.
+**What `base-nossl` supplies.** The distroless family stacks up as `static` (no libc),
+`base-nossl` (glibc), `base` (plus libssl and libcrypto), `cc` (plus libstdc++). glibc is
+what the prefix needs, and it carries its own libssl, libcrypto and libstdc++ - `_ssl`
+resolves `libssl.so.3` through the prefix's own RPATH - so `base-nossl` is the rung that
+holds everything the image links. It is 24.6 MB where `base` is 33.1 MB, and the fourteen
+entries between them (`libssl.so.3`, `libcrypto.so.3`, three OpenSSL engines, one module,
+their dpkg records and their changelogs) are what a scanner inventories out of
+`/var/lib/dpkg/status.d/` and reports CVEs against. Keeping them out keeps the release
+gate reading only on libraries the application loads.
 
-Alpine is not an option at any size. conda-forge publishes no musl builds, so every binary
-in the prefix is glibc-linked and would not start there, and the gcompat shim does not
-cover what a CPython prefix asks of libc. It would also bring back a shell and a package
-manager, which is most of what the base above was chosen to be without.
+glibc is also what fixes the family: conda-forge publishes glibc builds, so every binary
+in the prefix links it, and `gcompat` over musl does not cover what a CPython prefix asks
+of libc.
 
 Both bases carry a tag and a digest, the tag naming the version a reader sees and the
 digest deciding what is pulled. Dependabot bumps the runtime one, on the terms
@@ -1427,8 +1332,8 @@ The image is about 396 MB, nearly all of it the prefix: a complete CPython plus 
 libraries behind asyncpg, pydantic-core and SQLAlchemy. Two things in it are build-time
 leftovers rather than runtime needs - some 14 MB of C headers under `include/`, and the
 one linker binary that arrives because conda-forge's `python` hard-depends on
-`ld_impl_linux-64`. Neither is reachable without an interpreter, and neither can be
-dropped from `pixi.toml`, only deleted from the prefix.
+`ld_impl_linux-64`. Both sit behind the absent interpreter, and shedding either means
+deleting it from the prefix, `pixi.toml` holding the dependency that brings it.
 
 ### The SPA image
 
@@ -1443,36 +1348,31 @@ docker run --rm -p 8080:8080 -e API_BASE_URL=http://127.0.0.1:8000 \
   expense-tracker-frontend:dev
 ```
 
-Alpine here against distroless there is not an inconsistency. The backend image carries a
-conda prefix, which is glibc-linked and could not start on musl; this image carries static
-files and a web server that Alpine packages, so the argument that ruled musl out for the
-API never arises. It does keep a shell, which distroless was partly chosen to be without -
-and it has to, because the configuration below is applied by a shell script at startup.
+Alpine here against distroless there follows from what each image carries. This one
+carries static files and a web server Alpine packages, where the backend's conda prefix is
+glibc-linked. Alpine's shell is load-bearing as well: the configuration below is applied
+by a shell script at startup.
 
 **The configuration arrives at two different times, and that is the whole design.** The
-backend reads `DATABASE_URL` from the environment when it starts. vite has no equivalent:
-it **inlines** `import.meta.env.VITE_API_BASE_URL` into the bundle at build time, so by the
-time a container starts there is nothing left to read. Baking the origin in would mean one
-image per deployment, and a published image that is not portable is not much of a release
-artifact. So the build bakes a placeholder and the container rewrites it:
+backend reads `DATABASE_URL` from the environment when it starts. vite **inlines**
+`import.meta.env.VITE_API_BASE_URL` into the bundle at build time, so the origin is fixed
+by the time a container starts. One image serves every deployment, so the build bakes a
+placeholder and the container rewrites it:
 
 ```sh
 # in the builder, before vite build
 printf 'VITE_API_BASE_URL=__EXPENSE_TRACKER_API_BASE_URL__\n' > frontend/.env.production.local
 ```
 
-`.env.production.local` rather than a build argument or a plain `.env`, because it is
-vite's **highest-precedence** source in production mode. That beats the committed
-`frontend/.env` by a documented rule instead of by how an environment variable happens to
-rank against a dotenv file. `.gitignore`'s `.env*` rule already makes the file
-uncommittable and `.dockerignore`'s keeps a developer's own copy out of the context, so it
-can only ever be the one that line writes.
+`.env.production.local` is vite's **highest-precedence** source in production mode, so it
+beats the committed `frontend/.env` by a documented rule. `.gitignore`'s `.env*` rule makes
+the file uncommittable and `.dockerignore`'s keeps a developer's own copy out of the
+context, so it can only ever be the one that line writes.
 
 `frontend/docker/40-api-base-url.sh` does the rewrite, from
 `/docker-entrypoint.d/`, which the base image's entrypoint runs before starting nginx. It
-is copied with `--chmod=0755` deliberately: that entrypoint **skips** a file there that is
-not executable, logging one line and carrying on, so a missing exec bit would serve the
-bundle with its placeholder intact rather than fail.
+is copied with `--chmod=0755`, the exec bit being what has that entrypoint run it: a file
+there without one is logged and skipped.
 
 The script refuses to start the container unless `API_BASE_URL` is an absolute `http(s)`
 URL with no path - the backend's no-defaults rule, applied to the other stack:
@@ -1486,34 +1386,32 @@ docker run --rm -e API_BASE_URL=http://host/gateway expense-tracker-frontend:dev
 
 That last refusal is the one worth having. All four `api/` modules resolve their requests
 as `new URL("/api/expenses", API_BASE_URL)`, and an absolute path **discards** whatever
-path the base carried - so a value with one would be accepted and then silently ignored at
-every call site. The value is the origin the **browser** calls, not one the container
-resolves, so it is whatever a user's browser can reach.
+path the base carried, so the check is what reports a path at startup instead of at every
+call site. The value is the origin the **browser** calls, so it is whatever a user's
+browser can reach.
 
 Three properties here are also unchecked by anything.
 
 **The placeholder's survival is asserted at build time, not at run time.** esbuild does not
 constant-fold `new URL(path, "__TOKEN__")`, so the token reaches the chunk as a string
 literal - but that is a property of the minifier rather than a promise, so the Dockerfile
-ends the builder stage with a `grep -rq` over `dist/` that fails the build if it ever stops
-being true. The startup script deliberately tolerates finding nothing, because a container
-restarted on a filesystem it already rewrote is a normal thing to do, and that tolerance is
-exactly what would otherwise hide a bad build.
+ends the builder stage with a `grep -rq` over `dist/` that fails the build while that holds
+no longer. The startup script tolerates finding nothing, a container restarted on a
+filesystem it already rewrote being the ordinary case, and the build-time check is what
+keeps that tolerance from covering a bad build.
 
-**The document root is not the base's.** `dist/` is copied to `/srv/expense-tracker` rather
-than `/usr/share/nginx/html`, because that directory arrives carrying a stock `50x.html`
-that no `error_page` in this config points at and that would be served as an ordinary
-`200` - a page naming nginx, immediately after `server_tokens off` went to the trouble of
-not naming it. The `--chown=101:101` on that `COPY` is load-bearing: the startup script
-rewrites those files as that user.
+**The document root is `/srv/expense-tracker`**, a directory the `COPY` creates, so it
+holds `dist/` and nothing the base shipped - the base's `/usr/share/nginx/html` arrives
+carrying a stock `50x.html` that names nginx, where `server_tokens off` does not. The
+`--chown=101:101` on that `COPY` is load-bearing: the startup script rewrites those files
+as that user.
 
-**`Cache-Control` is computed by two `map`s, not set per location.** `add_header` in a
-nested block **replaces** the inherited set rather than adding to it, so an `/assets/`
-block carrying a `Cache-Control` of its own would silently drop every security header with
-it. One `map` pair and a single server-level `add_header` is what makes that impossible
-instead of merely avoided. The response status is half the key: only a response that
-actually carries an asset may be cached for a year, or a `404` during a deployment would be
-cached as `immutable` too and the client would have no way to retry.
+**`Cache-Control` is computed by two `map`s read by a single server-level `add_header`.**
+`add_header` in a nested block **replaces** the inherited set rather than adding to it, so
+keeping every header on one directive is what keeps the security headers on every
+response. The response status is half the key, so the year-long `immutable` lifetime
+belongs to a response that carries an asset and a `404` during a deployment stays
+retryable.
 
 ```sh
 curl -sI localhost:8080/                         # Cache-Control: no-store
@@ -1524,28 +1422,26 @@ curl -sI localhost:8080/assets/missing.js        # 404, and no-store
 
 `/totals` is a client-side route with no file behind it, so `try_files $uri $uri/
 /index.html` answers anything that is not a real file with the shell. `/assets/` is the one
-exception, resolving or `404`ing: a missing chunk answered with `index.html` reaches the
-module loader as HTML and fails as a syntax error rather than as the 404 it is.
+exception, resolving or `404`ing, so a missing chunk reaches the module loader as the 404
+it is.
 
 **The CSP is derived from what the bundle actually loads**, and is reported as
 `default-src 'none'` plus four allowances. Three are unremarkable - one same-origin module
 script, one same-origin stylesheet, `data:` images because daisyUI inlines its checkbox and
 select glyphs into the CSS, and `connect-src` naming the one API origin. The fourth is
-`style-src 'unsafe-inline'`, which is not avoidable here: React renders inline `style`
+`style-src 'unsafe-inline'`, which the bundle asks for: React renders inline `style`
 **attributes** for the date picker and the table column widths, and a style attribute is
 governed by `style-src-attr`, which falls back to `style-src`. `style-src-elem 'self'`
 sits beside it so the stylesheet itself keeps the tighter rule wherever a browser
-implements that directive; Firefox does not, and ignores it rather than failing. There is
-no `font-src`: the type scale is system fonts and the bundle declares no `@font-face`.
+implements that directive; Firefox ignores it. There is no `font-src`: the type scale is
+system fonts and the bundle declares no `@font-face`.
 
-The build context is the repository root here too, and it contains no backend source. One
-file is the exception and it is worth knowing why: `backend/pyproject.toml` is copied into
-the builder purely so `pixi install --locked` can succeed. pixi validates the lock against
-the **whole** workspace, and the lock records the backend's pypi path dependency, so
-without that file the install fails with `lock file not up-to-date with the workspace` even
-though this environment holds no python at all. Only its metadata is read - `backend/src`
-never enters the build - which is what keeps a backend source change from invalidating any
-layer here.
+The build context is the repository root here too, and `backend/pyproject.toml` is the one
+backend file the build reads: `pixi install --locked` resolves the lock against it. pixi
+validates the lock against the **whole** workspace, and the lock records the backend's pypi
+path dependency, so that file has to be there even though this environment holds no python
+at all. Only its metadata is read - `backend/src` stays out of the build - which is what
+keeps a backend source change from invalidating any layer here.
 
 The image is about 92 MB, and roughly 91 MB of that is the base: `dist/` is some 550 kB.
 Compression is switched on in the server config because `nginx.conf` ships `#gzip  on;`,
@@ -1581,24 +1477,22 @@ for rather than a plain build. metadata-action writes its labels and annotations
 bake files of their own, and bake merges a list of files onto one target: `labels` is a map
 and merges per key, so a key the stack names wins and every shared one survives, and
 `annotations` is a list and is appended, a repeated key resolving last-wins in the built
-image. **The stack's own file is therefore loaded last** - reverse the order and the
-repository's description is republished on both images with nothing failing.
+image. **The stack's own file is therefore loaded last**, which is what puts its `title`
+and `description` on the published image.
 
 The target is spelled `image` in four places: both bake files, metadata-action's
-`bake-target`, and the build step's `targets` and `set:` keys. A `bake-target` naming a
-target nothing builds fails silently - the overrides land nowhere and both images publish
-with no release metadata at all - which is why `CLAUDE.md` carries that pair.
+`bake-target`, and the build step's `targets` and `set:` keys. Those four agreeing is what
+lands the overrides on the target the stack declares, and nothing reports a mismatch, which
+is why `CLAUDE.md` carries that pair.
 
-Both values are set as a label *and* as an annotation, because the two land in different
-places - the image config and the manifest - and setting one alone would make them
-disagree. A Dockerfile `LABEL` cannot serve either purpose here: it writes no annotation at
-all, and a `--label` on the build command overrides it.
+Both values are set as a label *and* as an annotation, so each lands in its own place - the
+image config and the manifest - and the pair reads the same from either. Both come from the
+build command: a Dockerfile `LABEL` writes the config alone, and a `--label` on the command
+takes precedence over it.
 
-It is a release workflow and not a deployment workflow. Its whole output is a tag on
-Docker Hub; when such a tag becomes live somewhere is a separate concern, which is also
-why no GitHub Environment is involved - an environment would file deployment records for
-something that is not a deployment, and its one unique feature, required reviewers, is
-ruled out by the workflow being fully automated.
+It is a release workflow rather than a deployment workflow. Its whole output is a tag on
+Docker Hub, and when such a tag becomes live somewhere is a separate concern, so the
+workflow involves no GitHub Environment and files no deployment records.
 
 ### Why it is three jobs
 
@@ -1610,11 +1504,10 @@ meta  ->  build (matrix: backend, frontend)  ->  push
 `build` runs repository code: a Dockerfile, `pixi install`, `pnpm install`. A malicious
 dependency in any of those is one layer away from push access to published images, so
 `build` is the only job that checks the repository out, and it is granted `contents: read`
-and **no `id-token: write`** - it cannot mint a token AWS would accept, whatever it tries.
-`push` is the mirror image: it holds the credentials and **checks nothing out**, so
-everything that executes in it is either a SHA-pinned action or a `run` block written in
-the workflow file itself. `CLAUDE.md` carries this as an invariant, because collapsing the
-two jobs would read as a simplification.
+and **no `id-token: write`**, so the token AWS accepts is out of its reach. `push` is the
+mirror image: it holds the credentials and **checks nothing out**, so everything that
+executes in it is either a SHA-pinned action or a `run` block written in the workflow file
+itself. `CLAUDE.md` carries the split as an invariant.
 
 `build` hands `push` an OCI archive through an artifact, along with the digest it built.
 Untrusted bytes are safe to hand over precisely because `push` never executes them - it
@@ -1628,8 +1521,7 @@ pairing is declared once, in the build matrix, and `meta`'s `images:` list is th
 half of it. Before anything is copied, `push` compares the repositories the artifacts
 carry with the repositories the derived tags name, and a difference either way fails the
 release. Equal sets mean every image has tags and every tag has an image, so adding an
-image to one half alone cannot leave it silently unpublished - which a check made per
-image cannot say, because it only looks at the images it was told about.
+image to one half alone is reported by the comparison, which reads both sets whole.
 
 ### How the credential is reached
 
@@ -1651,56 +1543,49 @@ Three details carry the weight:
   `docker login` wrote.
 - `cosign-installer` runs **before** `regctl-installer`, which is load-bearing rather than
   tidy. The regctl installer verifies the binary it downloads against regclient's cosign
-  signature only `if [ -x "$(command -v cosign)" ]`; with cosign absent it fetches the
-  binary and skips verification silently.
+  signature `if [ -x "$(command -v cosign)" ]`, so cosign being on `PATH` already is what
+  gets that verification run.
 
-**`regctl` rather than buildx** for the push itself. `docker buildx imagetools create`
-requires its sources to already exist in a registry, so it cannot push a local OCI layout;
-`docker load` plus `docker push` needs a `type=docker` export, which is single-platform and
-carries no attestations. regclient copies the index byte for byte, which is what keeps one
-digest across the scan, the push, the attestations and the signature.
+**`regctl` does the push itself.** It copies the local OCI layout's index byte for byte,
+which is what keeps one digest across the scan, the push, the attestations and the
+signature, and carries the multi-platform index and its attestations as they are.
 
-**The workflow declares no platform**, and the published images are nonetheless x86-64
-only. What holds them there is `pixi.toml`'s `platforms = ["linux-64"]`: both images
-install from `pixi.lock`, which carries that solve and no other, so a builder of any
-other architecture fails at `pixi install --locked` rather than publishing an image for
-it. A `platform` in the bake file or in the workflow's `set:` would restate that, and
-adding `linux/arm64` needs the lock to gain the solve first - which is why multi-arch is
-a revisit item rather than a flag.
+**The published images are x86-64, and the platform comes from the lock.** `pixi.toml`'s
+`platforms = ["linux-64"]` is the declaration: both images install from `pixi.lock`, which
+carries that solve and no other, so `pixi install --locked` is where the architecture is
+decided, and the bake file and the workflow name no platform. Adding `linux/arm64` starts
+with the lock gaining that solve.
 
 Each image carries an SBOM and a SLSA provenance attestation, the provenance at
 `mode=max`. That is a deliberate choice with one consequence worth knowing, because it is
 published rather than merely logged: `mode=max` records the **whole GitHub event payload**
 under `buildDefinition.internalParameters.github_event_payload`, which on a pull request
-is around 6 kB of a 52 kB predicate and includes the pull request body. That is acceptable
-here only because this repository is public and the payload therefore holds nothing that
-is not already public. `mode=min` drops it, at the cost of the build detail that makes
-provenance worth having.
+is around 6 kB of a 52 kB predicate and includes the pull request body. It holds here
+because this repository is public, so the payload carries nothing that is not already
+public, and `mode=max` is what keeps the build detail in the provenance.
 
 ### The vulnerability gate
 
 Each image is scanned by Trivy before anything is published, and a HIGH or CRITICAL
-finding fails the release. The scan runs over the **unpacked** OCI layout, and that detail
-is not interchangeable: Trivy rejects an OCI archive outright, and a layout written by
+finding fails the release. The scan runs over the **unpacked** OCI layout, which is the
+form Trivy walks: it rejects an OCI archive outright, and a layout written by
 `regctl image import` leads with a referrers index, which Trivy reads first, resolves
 nothing from, and then reports zero vulnerabilities and success.
 
-So the gate makes **two** assertions, not one, and the first is about identity: the
-`ImageID` Trivy reports - the digest of the image config it read - has to name a config
-that is present in the layout just scanned **and** declares a platform. A passing scan
-and a scan that examined nothing are otherwise the same result, and a gate that cannot
-tell those apart is not a gate.
+So the gate makes **two** assertions, and the first is about identity: the `ImageID` Trivy
+reports - the digest of the image config it read - has to name a config that is present in
+the layout just scanned **and** declares a platform. That is what tells a clean scan from
+a scan that examined nothing.
 
 The direction matters. Pointed at a layout it cannot walk, Trivy resolves the empty config
 `{}` - `sha256:44136fa3...` - reports no findings and exits 0, and that blob **is** in the
-layout, beside the image, as the attestation manifest's own config. So walking the layout
-to work out what Trivy should have reported can land on the same empty value from both
-sides and agree with itself; checking Trivy's claim against the layout cannot, because
-`{}` declares no platform. Requiring that Trivy resolved an operating system would also
-catch the case, but it would fail a legitimately clean image the day either base carries no
-package database, and deleting the check would then look like the correction. This
-assertion does not care what is inside the image, and it extends the chain the push job
-ends: bake's digest, the archive, the scanned config, the imported digest, the signature.
+layout, beside the image, as the attestation manifest's own config. So the check reads
+Trivy's claim against the layout, where `{}` declares no platform, rather than walking the
+layout to derive what Trivy should have reported, which can land on that same empty value
+from both sides and agree with itself. It is a check on the platform rather than on
+Trivy having resolved an operating system, so a legitimately clean image passes whatever
+package database either base carries. It extends the chain the push job ends: bake's
+digest, the archive, the scanned config, the imported digest, the signature.
 
 Suppressions live in **`.trivyignore.yaml`**, and every entry carries an `expired_at`
 date. On that date Trivy stops honouring the entry and the finding fails the release
@@ -1710,7 +1595,7 @@ image is still built on 3.24.2 - the pinned digest is already the newest that ta
 resolves to, so only an upstream rebuild clears them, and neither is reachable in an image
 that loads no brotli module and never invokes curl.
 
-### Residual risk, stated rather than hidden
+### Residual risk
 
 Trust is pinned to `release.yml` at a version tag, but that file is still repository
 content, so anyone able to create a matching tag carrying an altered `release.yml` could
@@ -1724,26 +1609,23 @@ account id, which is why the role ARN is a repository **variable** and never a l
 the workflow: it keeps the account id out of a world-readable file and out of the diff,
 while `mask-aws-account-id` is what keeps it out of the log.
 
-Everything here sits inside AWS's **always-free** tier, which is a constraint rather than a
-happy accident. IAM, STS, the OIDC provider, a standard-tier SSM parameter and the
+Everything here sits inside AWS's **always-free** tier, which is a standing constraint on
+what gets created. IAM, STS, the OIDC provider, a standard-tier SSM parameter and the
 AWS-managed `aws/ssm` key carry no monthly charge, and one `kms:Decrypt` per release sits
-far inside the free 20,000 requests a month. A customer-managed key would be $1/month with
-no free allowance, and buys nothing here: KMS access needs an IAM grant on top of the key
-policy, and this account holds exactly two principals - an administrator who could read any
-parameter under any key, and a release role scoped to one parameter - so the effective
-access set is identical either way. It starts buying something the moment a third principal
-gains broad SSM or KMS permissions.
+far inside the free 20,000 requests a month. The shared `aws/ssm` key is also what makes
+the parameter ARN below the whole isolation boundary; this account holds two principals -
+an administrator with access to every parameter under any key, and a release role scoped to
+one parameter - so that scoping is where the separation lives.
 
-1. **Docker Hub.** Both repositories created explicitly, so the first push does not decide
-   their visibility, and both **public**: Docker Personal allows unlimited public
-   repositories and exactly one private, so two private ones would need a paid plan. Then
-   a personal access token with **Read & Write** and no Delete; personal-account tokens
-   cannot be scoped per repository.
+1. **Docker Hub.** Both repositories created explicitly, so their visibility is set before
+   the first push, and both **public**, which Docker Personal allows without limit. Then
+   a personal access token with **Read & Write** and no Delete; a personal-account token's
+   scope is the account.
 
 2. **SSM parameter** `/expense-tracker/release/dockerhub-pat`, SecureString, **standard
    tier**, encrypted with the default `alias/aws/ssm`. Standard tier is load-bearing
-   twice: an advanced parameter costs $0.05/month, and it would encrypt with
-   `kms:GenerateDataKey` rather than the `kms:Decrypt` the policy below grants.
+   twice: it is the free one, and it encrypts with the `kms:Decrypt` the policy below
+   grants, where an advanced parameter uses `kms:GenerateDataKey`.
 
 3. **IAM role** `gha-expense-tracker-release`, created as a Web identity role against the
    existing `token.actions.githubusercontent.com` provider with audience
@@ -1778,36 +1660,33 @@ gains broad SSM or KMS permissions.
 
    `Principal.Federated` is the OIDC provider, which represents **GitHub Actions as a
    whole** - every repository on github.com - so the `Condition` block is the entire
-   security boundary. The two `StringLike` conditions are deliberately redundant: `sub`
-   alone would admit any workflow in this repository, `job_workflow_ref` alone would
-   admit this file at any ref.
+   security boundary. The two `StringLike` conditions each pin one half: `sub` holds the
+   ref to a version tag in this repository, and `job_workflow_ref` holds the workflow to
+   this file.
 
-   **The key is `job_workflow_ref`, and `workflow_ref` is no condition key at all.** AWS
-   maps only the claims its condition-key reference lists: `actor`, `actor_id`,
-   `job_workflow_ref`, `repository`, `repository_id`, `repository_owner_id`, `workflow`,
-   `ref`, `environment` and `enterprise_id`, beside `sub` and `aud`. A `StringLike` on a
-   key AWS never populates cannot be satisfied, so the one `Allow` statement does not
-   match and STS answers `Not authorized to perform sts:AssumeRoleWithWebIdentity`,
-   naming no condition and with every other part of the exchange correct. AWS describes
-   `job_workflow_ref` as the *reusable* workflow's path; GitHub populates it on every
-   job, equal to the `workflow_ref` claim wherever no reusable workflow is involved, and
-   the claim dump carries both. If `release.yml` ever calls a reusable workflow, the job
-   holding `id-token: write` moves into the called file and this value becomes that
-   file's path, so the condition moves with it.
+   **The key is `job_workflow_ref`.** AWS maps the claims its condition-key reference
+   lists: `actor`, `actor_id`, `job_workflow_ref`, `repository`, `repository_id`,
+   `repository_owner_id`, `workflow`, `ref`, `environment` and `enterprise_id`, beside
+   `sub` and `aud`, so those are the keys a condition here can read. A `StringLike` on a
+   name outside that list leaves the one `Allow` statement unmatched, and STS answers
+   `Not authorized to perform sts:AssumeRoleWithWebIdentity`, naming no condition, with
+   every other part of the exchange correct - which is what `workflow_ref` as a key name
+   looks like. AWS describes `job_workflow_ref` as the *reusable* workflow's path; GitHub
+   populates it on every job, equal to the `workflow_ref` claim wherever no reusable
+   workflow is involved, and the claim dump carries both. If `release.yml` ever calls a
+   reusable workflow, the job holding `id-token: write` moves into the called file and this
+   value becomes that file's path, so the condition moves with it.
 
    **IAM Access Analyzer warns** that the `*` in `sub` "can allow requests from more
-   sources than you intended" and recommends naming a branch. It is a false positive: the
-   check fires on the presence of a wildcard without reasoning about its position, and
-   this one sits after the owner, the repository, the `ref:` claim type, `refs/tags/` and
-   the `v`. All it admits is which version number. The advice is also inapplicable, a
-   release having no branch, and its `ref` fallback would carry the same wildcard.
-   `StringLike` offers only `*` and `?`, and `?` matches any character rather than a
-   digit, so narrowing this to digits is not expressible at all; `v*.*.*` is the narrowest
-   shape available and would filter accidents rather than adversaries. Save through it.
+   sources than you intended" and recommends naming a branch. The check fires on a
+   wildcard's presence; this one sits after the owner, the repository, the `ref:` claim
+   type, `refs/tags/` and the `v`, so all it admits is which version number, and a release
+   has a tag where the advice reads a branch. `StringLike` offers `*` and `?`, and `?`
+   matches any character, so `v*.*.*` is the narrowest shape it can express. Save through
+   it.
 
-   Then one inline policy, and nothing else - in particular no `ssm:DescribeParameters`
-   and no `ssm:GetParametersByPath`, so the role cannot enumerate what else lives under
-   `/expense-tracker/`:
+   Then one inline policy: `ssm:GetParameter` on the one ARN and `kms:Decrypt` via SSM, so
+   the role reads that parameter and lists nothing under `/expense-tracker/`:
 
    ```json
    {
@@ -1832,11 +1711,11 @@ gains broad SSM or KMS permissions.
    }
    ```
 
-   **With a shared key the isolation boundary is that parameter ARN alone.** An
-   AWS-managed key's policy cannot be edited, and `aws/ssm` grants `kms:Decrypt` to
-   `"Principal": {"AWS": "*"}` for any caller in the account authorised for SSM, so the
-   exact parameter path above - not a prefix, not a wildcard - is the only thing keeping
-   this role out of the smoke test's own parameter under the same key.
+   **With a shared key the isolation boundary is that parameter ARN alone.** `aws/ssm`
+   carries a fixed policy granting `kms:Decrypt` to `"Principal": {"AWS": "*"}` for any
+   caller in the account authorised for SSM, so the exact parameter path above - a literal
+   rather than a prefix - is what holds this role to its own parameter and away from the
+   smoke test's under the same key.
 
 4. **GitHub repository variable** `AWS_RELEASE_ROLE_ARN`, set to
    `arn:aws:iam::<account-id>:role/gha-expense-tracker-release`. `AWS_REGION` already
@@ -1865,15 +1744,14 @@ tag-shaped claims can be observed, the smoke test running on `workflow_dispatch`
 branch and so seeing branch-shaped ones.
 
 **If the exchange is refused**, read the claim dump, correct the trust policy in the
-console and re-run the failed job: the AWS side is not baked into the tag, so that loop is
-free. **If the workflow file itself is wrong**, re-running cannot help - a `release` event
-runs the file as it exists on the tag - and it needs a `fix:` PR and the patch release it
-cuts. That is what the `pull_request` trigger on this workflow exists to avoid: every pull
-request builds, scans and gates both images, with the `push` job held back by
-`if: github.event_name == 'release'`, so the file is exercised by the change that breaks it
-rather than first running on a tag. It carries no `paths` filter on purpose - that would be
-a second, unchecked copy of what the Dockerfiles read - and a superseded pull request run
-is cancelled, while a release run never is.
+console and re-run the failed job: the AWS side lives outside the tag, so that loop is
+free. **If the workflow file itself is wrong**, a `release` event runs the file as it
+exists on the tag, so the fix is a `fix:` PR and the patch release it cuts. The
+`pull_request` trigger is what exercises the file ahead of that: every pull request builds,
+scans and gates both images, with the `push` job held back by
+`if: github.event_name == 'release'`, so the change that touches the file runs it. The
+trigger covers every path, keeping what it watches in one place with what the Dockerfiles
+read, and a superseded pull request run is cancelled where a release run runs to the end.
 
 ## Configuration
 
@@ -1894,11 +1772,12 @@ EXPENSE_DATA_DIR=$HOME/projects/expense-data/data
 a fact about a *machine* rather than about the project, because it points outside the
 checkout at the `data/` directory inside a clone of the private data repository. direnv
 expands `$HOME` as it loads the file, so the committed default is a real path wherever the
-clone sits beside this one; anywhere else, set it in **`backend/.env.local`** - `.envrc` loads that after
-`backend/.env`, and it is gitignored, so no tracked file carries one machine's layout.
-Unset and set-but-absent are deliberately different - unset aborts on the guard, set-but-absent
-loads nothing and succeeds - so a machine without the data repository is never mistaken
-for one whose shell was never blessed. See [Loading expenses](#loading-expenses).
+clone sits beside this one; anywhere else, set it in **`backend/.env.local`**, which
+`.envrc` loads after `backend/.env` and which is gitignored, so no tracked file carries one
+machine's layout. Unset and set-but-absent differ: unset aborts on the guard, and
+set-but-absent loads nothing and succeeds, which is what tells a machine without the data
+repository from one whose shell was never blessed. See
+[Loading expenses](#loading-expenses).
 
 Every one of them is a name the tool itself looks for, which is why no task passes
 `--host`, `--port` or `--username`. `UVICORN_PORT` is the API's half of that: uvicorn's
@@ -1908,21 +1787,21 @@ what lets a second checkout run its API beside the first the same way it runs it
 beside the first - by editing this one file.
 
 **The application never opens that file.** `config.py` reads the environment and nothing
-else - no path is resolved in the package, and none needs to be. Loading a dotenv file is
-the job of whatever *launches* the process, and exactly one thing does it here:
+else, resolving no path in the package. Loading a dotenv file is the job of whatever
+*launches* the process, and `.envrc` is the one launcher that does it here:
 
 ```sh
 # .envrc
 dotenv_if_exists backend/.env
+dotenv_if_exists backend/.env.local
 ```
 
-**So `direnv allow` is a prerequisite, not a convenience.** Nothing else supplies these
-names. `pixi run` reads no `.envrc` and `pixi.toml` declares no `[activation.env]`; poe
-declares no `envfile`. In a shell direnv has not blessed, the app raises a
-`ValidationError` naming the missing settings and every task that reaches a server aborts
-on a `${PGPORT:?}` guard first - `backend-db-init` on its own, and `backend-dev` on the
-one in the `db-create` behind it, before uvicorn ever binds. Nothing falls back to a
-default.
+**So `direnv allow` is a prerequisite.** `.envrc` is the single source of these names:
+`pixi run` reads no `.envrc` and `pixi.toml` declares no `[activation.env]`; poe declares
+no `envfile`. In a shell direnv has not blessed, the app raises a `ValidationError` naming
+the missing settings and every task that reaches a server aborts on a `${PGPORT:?}` guard
+first - `backend-db-init` on its own, and `backend-dev` on the one in the `db-create`
+behind it, before uvicorn ever binds.
 
 CI gets the same names the same way: `setup-direnv` activates this `.envrc` and forwards
 the resulting environment to `$GITHUB_ENV` for the steps after it.
@@ -1941,49 +1820,41 @@ python -m expense_tracker.expense_loader ~/exports # a directory other than the 
 
 `PGHOST`, `PGPORT`, `PGUSER` and `PGDATABASE` are the variables libpq itself reads, so
 `psql`, `pg_dump` and friends need no arguments, and a test run started from your editor
-reaches the same cluster as `pixi run backend-test`. `pixi.toml` deliberately declares
-none of this - a second copy is exactly what `backend/.env` replaces.
+reaches the same cluster as `pixi run backend-test`. `backend/.env` is the one place these
+names are written, and `pixi.toml` declares none of them.
 
-That split is the point rather than an implementation detail. A dotenv file is a
-developer convenience, and an application that parses one has to know where it lives -
-which for a wheel-installed package means deriving a path from `__file__` and getting a
-directory that does not exist. Reading the environment is the 12-factor rule a container
-needs, and it makes the deployed path (`DATABASE_URL` from an orchestrator) and the local
-path (`backend/.env` via a launcher) the same code.
+That split is what makes the deployed path and the local path one code path: the app reads
+the environment, as 12-factor has it and as a container supplies it, and a launcher is what
+turns a dotenv file into that environment. A wheel-installed package then needs no project
+directory to find, deriving no path from `__file__`.
 
-Precedence barely exists, which is the point of one loader reading one file: `backend/.env`
-*overwrites* what is already in the environment, so `export PGPORT=...` in your shell does
-not change the port. Only `DATABASE_URL`, which the app prefers over the four parts, sits
-above it.
+Precedence is short: `backend/.env` *overwrites* what is already in the environment, so
+`export PGPORT=...` in your shell leaves the port as the file states it, and
+`backend/.env.local` overwrites that in turn. Above both sits `DATABASE_URL`, which the app
+prefers over the four parts.
 
-The DSN itself is stored nowhere. `config.py` builds it with `sqlalchemy.URL`, which
-keeps the port from being written into a URL string a second time and escapes any part
-containing `@`, `:` or `/` instead of emitting a URL that parses as something else.
+The DSN itself is built per call. `config.py` assembles it with `sqlalchemy.URL`, which
+takes the port as a number of its own and escapes any part containing `@`, `:` or `/`.
 `database_url()` returns a `URL` rather than a `str`, so `str()` and `repr()` render any
-password as `***` - a DSN that reaches a log or a traceback cannot leak one.
+password as `***`, keeping a DSN that reaches a log or a traceback free of one.
 **`DATABASE_URL` overrides the four parts wholesale**, and that is the deployment path.
 **A deployment supplies its own.**
 
-None of it has a **default**. With no `DATABASE_URL` and none of the four names in the
-environment, the process refuses to start - naming every missing one - rather than
-quietly dialling its own loopback. Nothing on disk can answer for them, in any
-environment, because nothing on disk is consulted.
+Every one of them is **required**. With no `DATABASE_URL` and none of the four names in the
+environment, the process refuses to start and names every missing one. The environment is
+the whole input, in every environment.
 
-To move either port off something else has taken, edit **`backend/.env`** itself. There
-is no `.env.local` layer on the backend side - one file, loaded once - and a dotenv
-overwrites the ambient environment, so `export PGPORT=...` in your shell is not an
-override. `PGPORT` is baked into the cluster at `initdb` time, so follow that edit with
-`pixi run backend-db-reset && pixi run backend-db-init`; `UVICORN_PORT` is baked into
-nothing and takes effect on the next `pixi run backend-dev`.
+To move either port off something else has taken, edit **`backend/.env`** itself, a dotenv
+overwriting the ambient environment. `PGPORT` is baked into the cluster at `initdb` time,
+so follow that edit with `pixi run backend-db-reset && pixi run backend-db-init`;
+`UVICORN_PORT` takes effect on the next `pixi run backend-dev`.
 
 That leaves the file as a committed default you edit in place, which shows up as a dirty
-working tree. Deliberate: a port is one of the facts this file exists to state once, and
-a machine that needs a different one has genuinely changed a shared default rather than
-set a private preference.
+working tree. A port is one of the facts this file exists to state once, so moving it
+changes a shared default; `backend/.env.local` is where a value that names a machine goes.
 
 Worth knowing: `.gitignore` ignores **every** `.env` variant and names back only the two
-committed defaults, so a `backend/.env.production` you create is untracked by default
-rather than by memory.
+committed defaults, so a `backend/.env.production` you create is untracked as a rule.
 
 The frontend has exactly one variable of its own, `VITE_API_BASE_URL` - see
 [Where the API lives](#where-the-api-lives).
