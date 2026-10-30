@@ -1621,6 +1621,14 @@ requires its sources to already exist in a registry, so it cannot push a local O
 carries no attestations. regclient copies the index byte for byte, which is what keeps one
 digest across the scan, the push, the attestations and the signature.
 
+**The workflow declares no platform**, and the published images are nonetheless x86-64
+only. What holds them there is `pixi.toml`'s `platforms = ["linux-64"]`: both images
+install from `pixi.lock`, which carries that solve and no other, so a builder of any
+other architecture fails at `pixi install --locked` rather than publishing an image for
+it. A `platform` in the bake file or in the workflow's `set:` would restate that, and
+adding `linux/arm64` needs the lock to gain the solve first - which is why multi-arch is
+a revisit item rather than a flag.
+
 Each image carries an SBOM and a SLSA provenance attestation, the provenance at
 `mode=max`. That is a deliberate choice with one consequence worth knowing, because it is
 published rather than merely logged: `mode=max` records the **whole GitHub event payload**
@@ -1640,9 +1648,9 @@ nothing from, and then reports zero vulnerabilities and success.
 
 So the gate makes **two** assertions, not one, and the first is about identity: the
 `ImageID` Trivy reports - the digest of the image config it read - has to name a config
-that is present in the layout just scanned **and** declares the platform the image was
-built for. A passing scan and a scan that examined nothing are otherwise the same result,
-and a gate that cannot tell those apart is not a gate.
+that is present in the layout just scanned **and** declares a platform. A passing scan
+and a scan that examined nothing are otherwise the same result, and a gate that cannot
+tell those apart is not a gate.
 
 The direction matters. Pointed at a layout it cannot walk, Trivy resolves the empty config
 `{}` - `sha256:44136fa3...` - reports no findings and exits 0, and that blob **is** in the

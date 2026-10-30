@@ -111,10 +111,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      # Read by the build step's `set:` and by the gate below, which asserts trivy scanned
-      # an image for this platform.
-      PLATFORM: linux/amd64
     strategy:
       # Both images get scanned even when one fails, so one run lists every finding.
       fail-fast: false
@@ -163,9 +159,12 @@ jobs:
             docker-bake.hcl
           targets: image
           # Exported, not pushed. This job must not hold registry credentials, and the
-          # archive is what crosses into the job that does. Both are `set` rather than
-          # declared in the bake file: where the artifact lands and what it is built for
-          # are this workflow's decisions, not the stack's.
+          # archive is what crosses into the job that does. It is `set` rather than
+          # declared in the bake file: where the artifact lands is this workflow's
+          # decision, not the stack's.
+          #
+          # No platform is declared here, and README.md, under Releases, says what holds
+          # the published architecture to x86-64 instead.
           #
           # No `allow` input is needed even though the context leaves the stack directory:
           # bake-action passes `--allow fs=*` itself for buildx >= 0.18. A local
@@ -173,7 +172,6 @@ jobs:
           # `image` tasks carry it.
           set: |
             image.output=type=oci,dest=/tmp/image.oci.tar
-            image.platform=${{ env.PLATFORM }}
           # `mode=max` rather than `true`, and the difference is not cosmetic: given
           # `provenance: true` the action emits `--attest type=provenance,builder-id=...`
           # and leaves BuildKit's own `mode=min` in force, which records LESS than this
@@ -221,8 +219,8 @@ jobs:
       # TWO assertions, because a passing trivy run does not mean THIS image was scanned.
       # Pointed at a layout whose index.json does not lead to the image, trivy resolves the
       # empty config `{}`, reports no findings and exits 0 - so the first assertion is
-      # identity: what trivy says it scanned has to be a config in this layout declaring
-      # the platform built above. Asserting that it resolved an OS family would catch the
+      # identity: what trivy says it scanned has to be a config present in this layout
+      # that declares a platform. Asserting that it resolved an OS family would catch the
       # same case, but it would fail a legitimately clean image the day a base carries no
       # package database, and deleting it would then look like the fix.
       - name: Gate on the scan
@@ -234,16 +232,21 @@ jobs:
           # trivy's own claim, checked against the layout rather than the layout walked to
           # work out what it should have claimed: the empty config sits in the layout too,
           # beside the image, as the attestation manifest's, so a walk that could reach it
-          # compares one empty value with another. A config declaring a platform cannot be
-          # that one.
+          # compares one empty value with another. What tells them apart is the platform:
+          # `{}` declares none, and an image config always declares both halves of one.
+          # The read is empty for a blob that is absent, is not an image config, or
+          # declares neither.
           config="$(jq -r '.Metadata.ImageID // ""' /tmp/trivy.json)"
           blob="/tmp/oci/blobs/sha256/${config#sha256:}"
-          if ! [ -f "$blob" ] || [ "$(jq -r '"\(.os)/\(.architecture)"' "$blob")" != "$PLATFORM" ]; then
-            echo "::error::trivy reported $config for the $STACK image, which is no $PLATFORM config in the layout it scanned, so it scanned something else."
+          platform="$(jq -r '[.os, .architecture]
+                             | if any(. == null) then "" else join("/") end' \
+                         "$blob" 2>/dev/null || true)"
+          if [ -z "$platform" ]; then
+            echo "::error::trivy reported $config for the $STACK image, which is no image config in the layout it scanned, so it scanned something else."
             jq '{Metadata: .Metadata, Targets: [.Results[]?.Target]}' /tmp/trivy.json
             exit 1
           fi
-          echo "scanned $STACK: $config ($PLATFORM)"
+          echo "scanned $STACK: $config ($platform)"
 
           findings="$(jq -r '.Results[]?.Vulnerabilities[]?
                              | "\(.Severity)\t\(.VulnerabilityID)\t\(.PkgName) \(.InstalledVersion) -> \(.FixedVersion // "no fix")"' /tmp/trivy.json)"
