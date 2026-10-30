@@ -58,19 +58,20 @@ updates:
           - "minor"
           - "patch"
 
-  # The runtime base of both images, pinned `tag@sha256:...` in backend/Dockerfile and
-  # frontend/Dockerfile. The docker ecosystem moves that pair as a unit. One entry covers
-  # both directories, and a pull request arrives per directory.
+  # The runtime base of all three images, pinned `tag@sha256:...` in backend/Dockerfile,
+  # database/Dockerfile and frontend/Dockerfile. The docker ecosystem moves that pair as a
+  # unit. One entry covers every directory, and a pull request arrives per directory.
   - package-ecosystem: "docker"
     directories:
       - "/backend"
+      - "/database"
       - "/frontend"
     schedule:
       interval: "weekly"
-    # Applies to the nginx base. Dependabot takes publication dates from Docker Hub's
-    # tag_last_pushed; for gcr.io and ghcr.io it logs cooldown_date_unavailable and
-    # allows the update. default-days is the whole window, an update that moves a digest
-    # under an unchanged tag carrying no semver level.
+    # Applies to the nginx and postgres bases. Dependabot takes publication dates from
+    # Docker Hub's tag_last_pushed, which covers both; for gcr.io and ghcr.io it logs
+    # cooldown_date_unavailable and allows the update. default-days is the whole window,
+    # an update that moves a digest under an unchanged tag carrying no semver level.
     cooldown:
       default-days: 3
     # The pixi builder image. That version is pinned by hand in three places - .envrc's

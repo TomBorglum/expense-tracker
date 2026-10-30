@@ -1,36 +1,44 @@
 # Suppressions for the HIGH/CRITICAL gate in .github/workflows/release.yml. Applied to
-# both image scans; an entry that does not match an image is simply inert, and every
-# entry here is in the frontend's nginx base.
+# every image scan; an entry that does not match an image is simply inert. Both entries
+# below match TWO of the three: the frontend's nginx base and the database's postgres
+# base, which are both alpine and both carry the same two packages. The API's distroless
+# base matches neither.
 #
 # EVERY ENTRY CARRIES expired_at, AND THAT IS THE POINT. On the date below trivy stops
 # honouring the entry and the finding fails the release again, so a suppression cannot
 # outlive the reason for it by being forgotten. Removing the date instead of extending it
 # turns this file into a permanent blind spot.
 #
-# Both entries are the same situation: fixed in alpine 3.24.3, and
-# nginxinc/nginx-unprivileged:1.31-alpine is still built on 3.24.2. The digest pinned in
-# frontend/Dockerfile is already the newest that tag resolves to, so there is nothing to
-# re-pin to - only an upstream rebuild clears them. Switching to the debian variant of
-# the same image is not the answer and was measured: 60 HIGH/CRITICAL, most with no fix
-# available at all, against these 2.
+# Both entries are the same situation: the fixed package versions are in neither base yet.
+# nginxinc/nginx-unprivileged:1.31-alpine is built on alpine 3.24.2 and postgres:18-alpine
+# on 3.24.3, and both still ship brotli-libs 1.2.0-r1 and libcurl 8.22.0-r0. The digest
+# pinned in each Dockerfile is already the newest its tag resolves to, so there is nothing
+# to re-pin to - only an upstream rebuild clears them. Switching either to the debian
+# variant of the same image is not the answer and was measured both times: 60 HIGH/CRITICAL
+# for nginx, and 62 for postgres with a fix available for none of them, against these 2.
 #
-# Neither is reachable in this image. nginx-unprivileged:alpine ships no brotli module
-# and frontend/docker/default.conf.template enables gzip, not brotli, so nothing decodes
-# brotli; curl is a base package that no layer of ours invokes - the image runs nginx and
-# one entrypoint script, and the only curl in the repository is in CI.
+# Neither is reachable in either image, and the two differ in how little they reach:
+# nothing decodes brotli on either side - nginx-unprivileged:alpine ships no brotli module
+# and frontend/docker/default.conf.template enables gzip, and the database image only holds
+# brotli-libs as a dependency of libcurl - while curl is a base package the frontend never
+# invokes and the database image has no curl binary at all, only the library. The frontend
+# runs nginx and one entrypoint script; the database image runs postgres. The only curl in
+# the repository is in CI.
 #
-# Dependabot's docker ecosystem covers both bases (README.md, under Container images), so
-# the base bump that clears both arrives on its own; this file then goes back to holding
-# nothing.
+# Dependabot's docker ecosystem covers all three bases (README.md, under Container
+# images), so the base bump that clears both arrives on its own; this file then goes back
+# to holding nothing.
 vulnerabilities:
   - id: CVE-2026-111497
     statement: >-
-      brotli out-of-bounds write in the decoder. brotli-libs 1.2.0-r1 is present as a curl
-      dependency; fixed in 1.2.1-r0. No brotli module is loaded by nginx and no layer
-      decodes brotli, so there is no path to the decoder in this image.
+      brotli out-of-bounds write in the decoder. brotli-libs 1.2.0-r1 is present in both
+      alpine bases as a curl dependency; fixed in 1.2.1-r0. No brotli module is loaded by
+      nginx, postgres decodes no brotli, and no layer of ours decodes it either, so there
+      is no path to the decoder in either image.
     expired_at: 2026-11-30
   - id: CVE-2026-92392
     statement: >-
       curl HTTP/2 upload use-after-free, in curl and libcurl 8.22.0-r0; fixed in 8.23.0-r0.
-      Reachable only by running curl, which this image never does.
+      Reachable only by running curl, which the frontend image never does and which the
+      database image cannot: it carries libcurl without the curl binary.
     expired_at: 2026-11-30

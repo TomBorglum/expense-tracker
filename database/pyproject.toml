@@ -1,0 +1,21 @@
+# Not a Python package, and there is no [project] table: this file exists so that the one
+# command this directory runs is DEFINED in this directory. CLAUDE.md puts a command body
+# in the manifest of the stack that runs it and lets pixi.toml only forward, and a
+# directory with no manifest has nowhere to put one.
+
+[tool.poe]
+# The environment is already active - direnv's use_pixi puts .pixi/envs/default/bin on
+# PATH locally, CI's setup-direnv puts it on $GITHUB_PATH. "simple" stops poe hunting for
+# a poetry/uv project or a .venv that does not exist here.
+executor = "simple"
+
+[tool.poe.tasks]
+# Build the database image, from the `dev` target in docker-bake.hcl - which is also where
+# the context and the Dockerfile are declared, so release.yml builds the same target. The
+# flag is bake refusing a context above its own directory until a caller allows it; CI
+# passes none, docker/bake-action allowing `fs=*` itself.
+#
+# The tool is not one pixi provides, so a machine without docker gets
+# `docker: command not found` rather than a pixi error. The :dev tag is local and names
+# nothing published; what a release publishes is decided outside this manifest.
+image = "docker buildx bake --allow=fs.read=.. dev"

@@ -93,15 +93,16 @@ nobody can bypass it.
 
 **Commands live in two layers, and adding one means editing both.**
 
-1. **The stack that runs it defines it**, in the manifest that already owns how its tools
-   behave: poe tasks in `backend/pyproject.toml`, the `scripts` block in
-   `frontend/package.json`. This is where the command body goes.
+1. **The directory that runs it defines it**, in the manifest that already owns how its
+   tools behave: poe tasks in `backend/pyproject.toml`, the `scripts` block in
+   `frontend/package.json`, and `database/pyproject.toml`, which is a poe manifest and
+   nothing else. This is where the command body goes.
 2. **`pixi.toml` forwards to it**, one prefixed one-liner per command, so `pixi run`
-   stays the single entry point spanning both stacks.
+   stays the single entry point spanning every directory.
 
-**The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Both
-stacks also stay runnable on their own terms (`cd backend && poe test`,
-`cd frontend && pnpm build`), which is what keeps each directory a standalone project.
+**The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Each
+directory also stays runnable on its own terms (`cd backend && poe test`,
+`cd frontend && pnpm build`), which is what keeps it a standalone project.
 Every task declares its own `cwd` and addresses paths relative to its own manifest, so it
 behaves identically wherever you invoke it. Full table and reasoning in
 [`README.md`](README.md#development-tasks), under

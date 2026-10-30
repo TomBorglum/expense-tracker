@@ -52,7 +52,7 @@ jobs:
     with:
       # One entry per image: the directory holding the Dockerfile and docker-bake.hcl.
       # The image each publishes to is composed from it - see release.yml's `images` step.
-      directories: '["backend", "frontend"]'
+      directories: '["backend", "database", "frontend"]'
       # A repository variable, not a secret: a namespace is public, and it is the account
       # the PAT in SSM belongs to. Unset, it arrives as an empty string and release.yml's
       # `images` step fails the run before anything is built.

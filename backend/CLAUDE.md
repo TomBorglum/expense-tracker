@@ -159,7 +159,9 @@ or with what nothing checks.
   [`README.md`](../README.md#schema-and-access) states, and they TRUNCATE what they read.
 - **`schema.sql` is the only DDL, and `IF NOT EXISTS` never alters.** Changing a table -
   a constraint included - means `backend-db-reset` and a reload, a live cluster skipping the
-  whole statement. The rest of the rule is in
+  whole statement. It has **two** readers on those same terms: `db-init`, and
+  `database/Dockerfile`, which copies it into the image's `initdb.d`, where an empty data
+  directory is what re-runs it. The rest of the rule is in
   [`README.md`](../README.md#schema-and-access). Nothing checks this.
 - **The app reads the environment; loading `.env` is a launcher's job.** `config.py` opens
   no file and resolves no path, and `[tool.poe]` declares no `envfile`, so a
