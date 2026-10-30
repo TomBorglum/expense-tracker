@@ -2,7 +2,8 @@
 # the bundle, nginx gets dist/ and nothing that produced it.
 #
 # No `# syntax=` directive, and both bases carry a tag as well as a digest, for the
-# reasons backend/Dockerfile sets out at length.
+# reasons backend/Dockerfile sets out at length - which also covers why the two cache
+# mounts below are warm locally and empty in CI.
 #
 # The build context is the REPOSITORY ROOT, not this directory - the toolchain is declared
 # across pixi.toml and pixi.lock, which live there. `pixi run frontend-image` passes it.
