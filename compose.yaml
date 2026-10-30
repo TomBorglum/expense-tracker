@@ -70,7 +70,8 @@ services:
   # straight out of the environment - it opens no file, so there is no .env in this image
   # and no DATABASE_URL to set. PGHOST is the service name, which is the compose network's
   # own DNS, and PGPORT is 5432 because inside the network there is nothing to collide
-  # with; 5433 is a fact about a developer's host, not about this stack.
+  # with. Whichever port the local cluster listens on is a fact about a developer's host,
+  # not about this stack.
   backend:
     image: ${EXPENSE_TRACKER_IMAGE_PREFIX:-expense-tracker}-backend:${EXPENSE_TRACKER_VERSION:-dev}
     environment:
