@@ -1306,6 +1306,45 @@ values only the stack itself knows - and both the local task below and `release.
 a target out of that file rather than passing those settings on a command line. Both are
 published to Docker Hub by `release.yml`; see [Releases](#releases).
 
+### Keeping the bases current
+
+Both Dockerfiles pin their runtime base as `tag@sha256:...`, the tag naming the version a
+reader sees and the digest deciding what is pulled, and the `docker` entry in
+`.github/dependabot.yml` is what moves that pair. One entry covers `/backend` and
+`/frontend`, weekly, and Dependabot rewrites the tag and the digest together - so neither
+Dockerfile declares anything for this, and the pinning style already in place is the one it
+supports.
+
+Its commits are prefixed **`deps`**, which is the decision in that entry worth stating
+twice. A base is part of what a user receives when they run the image, which is the line
+[`CONTRIBUTING.md`](CONTRIBUTING.md) draws between `deps:` and `ci:` - and here the
+distinction is load-bearing rather than cosmetic, because a base bump has to cut a release
+to do any good at all: `release.yml` publishes when a GitHub Release is published and at no
+other time. Under a hidden type the fixed base would sit in `main` unpublished until some
+unrelated change cut the next release.
+
+Three behaviours of that entry are invisible in the configuration, and nothing in this
+repository checks any of them:
+
+- **The three-day `cooldown` reaches the SPA's base alone.** Dependabot takes publication
+  dates from Docker Hub's `tag_last_pushed` and has no verified source for `gcr.io` or
+  `ghcr.io`, where it allows the update and records a `cooldown_date_unavailable` warning
+  instead of waiting. The same fact rules out the `semver-*-days` tiers the npm entry
+  carries: an update that moves a digest under an unchanged tag is classified as no semver
+  level at all, so no tier and no `update-types` filter would ever match one.
+- **`nonroot` is not a version.** The API's base is therefore only ever a digest-only
+  refresh with the tag left where it is, which is still the whole point - that is how a
+  rebuilt distroless base arrives. The SPA's `1.31-alpine` is a comparable tag and can only
+  move to another one carrying the same `-alpine` suffix.
+- **The pixi builder image is ignored**, not bumped. It is one of three places the pixi
+  version is written, with `use pixi` in `.envrc`, and a pull request that bumped the two
+  Dockerfiles and left `.envrc` behind would fail nothing at all; the root
+  [`CLAUDE.md`](CLAUDE.md) records that pair for exactly that reason. So pixi stays a
+  deliberate three-file edit - `update-pixi-dependencies.yml` does not make it either, that
+  workflow bumping the pins *inside* `pixi.toml` rather than pixi itself. The ignore
+  suppresses security updates for that image too, which is acceptable for one no published
+  artifact contains.
+
 ### The API image
 
 `backend/Dockerfile` builds it out of the `backend` environment above, in two
@@ -1391,8 +1430,9 @@ cover what a CPython prefix asks of libc. It would also bring back a shell and a
 manager, which is most of what the base above was chosen to be without.
 
 Both bases carry a tag and a digest, the tag naming the version a reader sees and the
-digest deciding what is pulled. Nothing bumps them automatically - `docker` is not among
-the ecosystems in `.github/dependabot.yml` - so a base update is a deliberate edit.
+digest deciding what is pulled. Dependabot bumps the runtime one and deliberately leaves
+the pixi builder alone, on the terms [Keeping the bases current](#keeping-the-bases-current)
+sets out.
 
 The image is about 396 MB, nearly all of it the prefix: a complete CPython plus the shared
 libraries behind asyncpg, pydantic-core and SQLAlchemy. Two things in it are build-time
@@ -1521,8 +1561,10 @@ layer here.
 The image is about 92 MB, and roughly 91 MB of that is the base: `dist/` is some 550 kB.
 Compression is switched on in the server config because `nginx.conf` ships `#gzip  on;`,
 and it earns its line - the one application chunk is 330 kB raw against 105 kB gzipped.
-The base carries a tag and a digest on the same terms as the backend's two, and nothing
-bumps it automatically.
+The base carries a tag and a digest on the same terms as the backend's two, and Dependabot
+bumps it - the one pin whose three-day cooldown actually binds, this being the only image of
+the three that lives on Docker Hub. See
+[Keeping the bases current](#keeping-the-bases-current).
 
 ## Releases
 

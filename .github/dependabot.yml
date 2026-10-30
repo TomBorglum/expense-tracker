@@ -2,7 +2,8 @@ version: 2
 updates:
   # pixi.toml is not covered here: Dependabot has no pixi ecosystem, and its conda one
   # reads only environment.yml. update-pixi-dependencies.yml bumps every pin in it
-  # instead, python included.
+  # instead, python included. Nothing bumps pixi itself - the docker entry below
+  # deliberately ignores the one image that would.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -56,3 +57,42 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  # The runtime base of both images, pinned `tag@sha256:...` in backend/Dockerfile and
+  # frontend/Dockerfile. The docker ecosystem moves that pair as a unit, so neither
+  # Dockerfile needs anything added for this. One entry rather than two: nothing about the
+  # two images differs in update policy, and a pull request still arrives per directory.
+  # No groups: the two bases are unrelated, and a group filtered by update-types would
+  # drop these updates outright - a digest-only bump is classified as no semver level at
+  # all, so it belongs to no update type.
+  - package-ecosystem: "docker"
+    directories:
+      - "/backend"
+      - "/frontend"
+    schedule:
+      interval: "weekly"
+    # This binds the nginx base alone. Dependabot takes publication dates from Docker
+    # Hub's tag_last_pushed and has no verified source for gcr.io or ghcr.io, where it
+    # allows the update and logs cooldown_date_unavailable rather than waiting. Only
+    # default-days, for the reason above: the tiers the npm entry carries would never
+    # match a digest-only update.
+    cooldown:
+      default-days: 3
+    # The pixi builder image, which is not a base: it is one of three places the pixi
+    # version is written, with `use pixi` in .envrc, and nothing checks that the three
+    # agree. Dependabot would bump the two Dockerfiles and leave .envrc behind with
+    # nothing failing, so that version stays a deliberate edit;
+    # update-pixi-dependencies.yml does not make it either - it bumps the pins inside
+    # pixi.toml, not pixi itself. The name carries no registry: ghcr.io goes in the
+    # dependency's source and the image is named alone. The leading `*` covers both
+    # spellings, because an ignore that matches nothing is silently inert. This
+    # suppresses security updates for that image too, acceptable for one that no
+    # published artifact contains.
+    ignore:
+      - dependency-name: "*prefix-dev/pixi"
+    # A runtime base is part of what a user receives when they run the image, which is
+    # the line CONTRIBUTING.md draws between deps and ci. It also has to cut a release to
+    # do anything: release.yml publishes when a GitHub Release is published and at no
+    # other time, so under a hidden type a fixed base would sit in main unpublished.
+    commit-message:
+      prefix: "deps"

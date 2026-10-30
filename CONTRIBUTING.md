@@ -83,7 +83,10 @@ only hidden types will not open a release PR until a `feat`/`fix`/`deps` lands.
 
 **If the change alters what a user receives when they run the application, it is
 `deps:` (or `feat`/`fix`); if it only touches the build or CI, it is `ci:`/`chore:`.**
-That is why Dependabot's GitHub Actions bumps use `ci:`.
+That is why Dependabot's GitHub Actions bumps use `ci:`, and why its container base
+bumps use `deps:` - a base ships inside the published image. That one also has to be
+visible to work at all: `release.yml` publishes on a published GitHub Release and nothing
+else, so a base bump that cut no release would never reach Docker Hub.
 
 `update-pixi-dependencies.yml` is the one standing exception, and a deliberate one. The
 reusable workflow it calls commits a single `deps: update pixi dependencies` whatever
