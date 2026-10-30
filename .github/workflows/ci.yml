@@ -88,12 +88,14 @@ jobs:
       - run: git diff --exit-code -- frontend/src/routeTree.gen.ts
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with
-      # sonar.scanner.skipJreProvisioning below.
+      # sonar.scanner.skipJreProvisioning below, which is what makes this JDK the one
+      # the scan runs on - so the version here tracks the scanner CLI's floor, and the
+      # CLI refuses to start on anything below 21.
       - name: Set up JDK
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - name: SonarQube Cloud Scan
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         with:
