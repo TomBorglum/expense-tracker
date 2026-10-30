@@ -67,7 +67,11 @@ jobs:
           # nothing.
           bake-target: image
           # Both images, so one derivation serves both; the push job selects the lines
-          # belonging to each by its `<image>:` prefix.
+          # belonging to each by its `<image>:` prefix. This is half of what is published
+          # and the build matrix below is the other - it pairs each repository with the
+          # stack that builds it - and the push job compares the two sets before copying
+          # anything, so a repository named in one half alone fails the release rather
+          # than going quietly unpublished.
           images: |
             tomborglum/expense-tracker-backend
             tomborglum/expense-tracker-frontend
@@ -112,10 +116,17 @@ jobs:
     permissions:
       contents: read
     strategy:
-      # Both images get scanned even when one fails, so one run lists every finding.
+      # Every image gets scanned even when one fails, so one run lists every finding.
       fail-fast: false
       matrix:
-        stack: [backend, frontend]
+        # The only place a stack is paired with the repository it publishes to. The push
+        # job keeps no such table - it reads the pairing back out of each artifact - so
+        # adding a stack is this list and `meta`'s `images:` above, and nothing else.
+        include:
+          - stack: backend
+            image: tomborglum/expense-tracker-backend
+          - stack: frontend
+            image: tomborglum/expense-tracker-frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -258,17 +269,21 @@ jobs:
           echo "no HIGH or CRITICAL findings"
 
       # The digest travels with the archive so the push job can prove nothing changed in
-      # transit, rather than that being read off two logs by eye.
-      - name: Stage the archive and its digest
+      # transit, rather than that being read off two logs by eye. The repository travels
+      # with it for the same reason: so the job that publishes needs no list of its own to
+      # join the archives against.
+      - name: Stage the archive, its digest and its repository
         env:
           # bake-action reports one entry per target rather than a bare digest.
           DIGEST: ${{ fromJSON(steps.build.outputs.metadata).image['containerimage.digest'] }}
+          IMAGE: ${{ matrix.image }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/out
           mv /tmp/image.oci.tar /tmp/out/image.oci.tar
           printf '%s\n' "$DIGEST" > /tmp/out/digest
-          cat /tmp/out/digest
+          printf '%s\n' "$IMAGE" > /tmp/out/repository
+          cat /tmp/out/digest /tmp/out/repository
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -373,38 +388,64 @@ jobs:
             --output text \
             | docker login docker.io --username tomborglum --password-stdin
 
-      # Both images are staged and checked BEFORE either is copied, so a malformed or
-      # altered archive fails the release with nothing published rather than half of it.
-      - name: Stage both images and verify their digests
+      # Every image is staged and checked BEFORE any is copied, so a malformed or altered
+      # archive fails the release with nothing published rather than half of it. No step
+      # in this job names a stack or a repository: the artifacts are what say which images
+      # exist, and each carries the repository its build job was given.
+      - name: Stage every image and verify its digest
+        env:
+          TAGS: ${{ needs.meta.outputs.tags }}
         run: |
           set -euo pipefail
-          for stack in backend frontend; do
-            dir="/tmp/images/image-$stack"
+
+          # The glob below iterates its own literal text when nothing matches, so the
+          # count is checked rather than assumed.
+          set -- /tmp/images/image-*/
+          if [ ! -d "$1" ]; then
+            echo "::error::no image artifacts were downloaded, so there is nothing to publish."
+            exit 1
+          fi
+          echo "$# image artifact(s) downloaded"
+
+          for dir in /tmp/images/image-*/; do
+            stack="${dir%/}"; stack="${stack##*/image-}"
             expected="$(cat "$dir/digest")"
             regctl image import "ocidir:///tmp/staged/$stack:staged" "$dir/image.oci.tar"
             actual="$(regctl manifest digest "ocidir:///tmp/staged/$stack:staged")"
-            echo "$stack: built $expected, staged $actual"
+            echo "$stack: $(cat "$dir/repository"), built $expected, staged $actual"
             if [ "$expected" != "$actual" ]; then
               echo "::error::$stack digest changed between build and push."
               exit 1
             fi
           done
 
+          # The two halves that have to agree: the repositories the artifacts carry, and
+          # the repositories the derived tags name. Equal sets mean every image has tags
+          # and every tag has an image, so neither can be dropped silently - which is what
+          # a per-image check alone cannot say, since it only ever looks at the images it
+          # was told about.
+          cat /tmp/images/image-*/repository | sort -u > /tmp/staged-repositories
+          printf '%s\n' "$TAGS" | sed -n 's/:[^:/]*$//p' \
+            | sort -u > /tmp/tagged-repositories
+          if ! diff -u /tmp/staged-repositories /tmp/tagged-repositories; then
+            echo "::error::the images staged and the images the tags name are not the same set."
+            exit 1
+          fi
+
       # regctl copies the index byte for byte, which is what keeps ONE digest across the
       # scan, the push, the attestations and the signature. `docker load` plus
       # `docker push` cannot: that needs a type=docker export, which is single-platform
       # and carries no attestations. `docker buildx imagetools create` cannot either - it
       # requires its sources to already exist in a registry.
-      - name: Copy both images to Docker Hub
+      - name: Copy every image to Docker Hub
         env:
           TAGS: ${{ needs.meta.outputs.tags }}
         run: |
           set -euo pipefail
           printf '%s\n' "$TAGS" > /tmp/tags
-          for pair in backend:tomborglum/expense-tracker-backend \
-                      frontend:tomborglum/expense-tracker-frontend; do
-            stack="${pair%%:*}"
-            image="${pair#*:}"
+          for dir in /tmp/images/image-*/; do
+            stack="${dir%/}"; stack="${stack##*/image-}"
+            image="$(cat "$dir/repository")"
             matched=0
             while read -r ref; do
               [ -n "$ref" ] || continue
@@ -413,26 +454,16 @@ jobs:
               regctl image copy "ocidir:///tmp/staged/$stack:staged" "$ref"
               matched=$((matched + 1))
             done < /tmp/tags
-            # Without this a derivation that produced no tags for an image would be a
-            # silent no-op, and the release would report success having published nothing.
-            if [ "$matched" -eq 0 ]; then
-              echo "::error::no tag in the derived list belongs to $image."
-              exit 1
-            fi
             echo "$stack: $matched tag(s) published"
           done
 
       # Keyless, reusing this job's own OIDC token, so there is no signing key to hold.
       # The digest is the index's, so one signature covers the image and its attestations.
-      - name: Sign both published digests
+      - name: Sign every published digest
         run: |
           set -euo pipefail
-          for pair in backend:tomborglum/expense-tracker-backend \
-                      frontend:tomborglum/expense-tracker-frontend; do
-            stack="${pair%%:*}"
-            image="${pair#*:}"
-            digest="$(cat "/tmp/images/image-$stack/digest")"
-            cosign sign --yes "$image@$digest"
+          for dir in /tmp/images/image-*/; do
+            cosign sign --yes "$(cat "$dir/repository")@$(cat "$dir/digest")"
           done
 
       - name: Log out of Docker Hub

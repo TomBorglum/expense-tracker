@@ -1592,6 +1592,15 @@ copies them to a registry. `push` re-derives the digest after staging and fails 
 moved, so "what was scanned" and "what was published" are provably the same bytes rather
 than two numbers compared by eye.
 
+Each artifact also carries **the repository its image publishes to**, which is why no step
+in `push` names a stack or a repository: it iterates the artifacts it was handed. That
+pairing is declared once, in the build matrix, and `meta`'s `images:` list is the other
+half of it. Before anything is copied, `push` compares the repositories the artifacts
+carry with the repositories the derived tags name, and a difference either way fails the
+release. Equal sets mean every image has tags and every tag has an image, so adding an
+image to one half alone cannot leave it silently unpublished - which a check made per
+image cannot say, because it only looks at the images it was told about.
+
 ### How the credential is reached
 
 Docker Hub supports no OIDC for personal accounts, so AWS stands in as the intermediary:
