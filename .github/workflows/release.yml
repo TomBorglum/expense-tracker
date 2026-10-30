@@ -309,7 +309,7 @@ jobs:
       # The claims AWS conditions on, dumped before any AWS call, so a trust-policy
       # mismatch is diagnosable from this run rather than from a bare "Not authorized to
       # perform sts:AssumeRoleWithWebIdentity". This is also the only place the
-      # tag-shaped `sub` and `workflow_ref` can be observed: the smoke test runs on
+      # tag-shaped `sub` and `job_workflow_ref` can be observed: the smoke test runs on
       # workflow_dispatch from a branch, so its claims are branch-shaped.
       #
       # Only the payload is decoded. The token itself is a live credential for its few

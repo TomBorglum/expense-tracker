@@ -30,9 +30,11 @@ jobs:
       # The claims AWS conditions on, dumped before any AWS call is made, so a trust
       # policy mismatch is diagnosable from this run instead of from a bare "Not
       # authorized to perform sts:AssumeRoleWithWebIdentity" further down. Confirms
-      # job_workflow_ref in particular: AWS's condition-key reference describes it as
-      # the path to the *reusable* workflow, this repo has none, and both trust
-      # policies assume it is populated on an ordinary job.
+      # job_workflow_ref in particular, which both trust policies condition on: AWS's
+      # condition-key reference describes it as the path to the *reusable* workflow and
+      # this repo has none, but GitHub populates it on every job, equal to the
+      # workflow_ref claim - which is itself no AWS condition key. The v2.0.0 release
+      # proved both halves, the second of them the hard way.
       #
       # Only the payload is decoded. The token itself is a live credential for its few
       # minutes of life and never reaches the log.

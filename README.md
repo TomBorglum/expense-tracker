@@ -1738,7 +1738,7 @@ gains broad SSM or KMS permissions.
            },
            "StringLike": {
              "token.actions.githubusercontent.com:sub": "repo:TomBorglum/expense-tracker:ref:refs/tags/v*",
-             "token.actions.githubusercontent.com:workflow_ref": "TomBorglum/expense-tracker/.github/workflows/release.yml@refs/tags/v*"
+             "token.actions.githubusercontent.com:job_workflow_ref": "TomBorglum/expense-tracker/.github/workflows/release.yml@refs/tags/v*"
            }
          }
        }
@@ -1749,9 +1749,22 @@ gains broad SSM or KMS permissions.
    `Principal.Federated` is the OIDC provider, which represents **GitHub Actions as a
    whole** - every repository on github.com - so the `Condition` block is the entire
    security boundary. The two `StringLike` conditions are deliberately redundant: `sub`
-   alone would admit any workflow in this repository, `workflow_ref` alone would admit
-   this file at any ref. `job_workflow_ref` is deliberately unused, AWS documenting it as
-   the *reusable* workflow's path and this repository having none.
+   alone would admit any workflow in this repository, `job_workflow_ref` alone would
+   admit this file at any ref.
+
+   **The key is `job_workflow_ref`, and `workflow_ref` is no condition key at all** -
+   a distinction that cost the first release a failed run. AWS maps only the claims its
+   condition-key reference lists: `actor`, `actor_id`, `job_workflow_ref`, `repository`,
+   `repository_id`, `repository_owner_id`, `workflow`, `ref`, `environment` and
+   `enterprise_id`, beside `sub` and `aud`. A `StringLike` on a key AWS never populates
+   cannot be satisfied, so the one `Allow` statement does not match and STS answers `Not
+   authorized to perform sts:AssumeRoleWithWebIdentity` - naming no condition, with every
+   other part of the exchange correct. AWS describes `job_workflow_ref` as the *reusable*
+   workflow's path, which is why this policy reached for the other name first; GitHub
+   populates it on every job, equal to `workflow_ref` wherever no reusable workflow is
+   involved, and the claim dump shows both. If `release.yml` ever calls a reusable
+   workflow, the job holding `id-token: write` moves into the called file and this value
+   becomes that file's path, so the condition moves with it.
 
    **IAM Access Analyzer warns** that the `*` in `sub` "can allow requests from more
    sources than you intended" and recommends naming a branch. It is a false positive: the
@@ -1803,16 +1816,24 @@ gains broad SSM or KMS permissions.
 ### Verifying a release
 
 ```sh
-docker buildx imagetools inspect tomborglum/expense-tracker-backend:1.1.0
+docker buildx imagetools inspect tomborglum/expense-tracker-backend:2.0.0
 cosign verify tomborglum/expense-tracker-backend@sha256:<digest> \
   --certificate-identity-regexp '.*expense-tracker.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-The `push` job's log is the other half: the claim dump shows the `sub` and `workflow_ref`
-the trust policy was written against, and it is the only place the tag-shaped claims can
-be observed, the smoke test running on `workflow_dispatch` from a branch and so seeing
-branch-shaped ones.
+`cosign verify` is the only view of the signature from outside. `cosign-installer`'s
+default is cosign 3 - v3.0.6 at `v2.0.0` - which attaches the signature as an **OCI 1.1
+referrer** instead of writing a `sha256-<digest>.sig` tag, so a tag listing shows the four
+published tags and nothing more. The sign step's log is terse for the same reason: the v3
+bundle carries the Rekor entry, so no tlog index is printed. That version is the
+installer's, not this repository's - the step pins the action by SHA and takes whatever
+cosign it ships, unlike `regctl-installer` beside it.
+
+The `push` job's log is the other half: the claim dump shows the `sub` and
+`job_workflow_ref` the trust policy was written against, and it is the only place the
+tag-shaped claims can be observed, the smoke test running on `workflow_dispatch` from a
+branch and so seeing branch-shaped ones.
 
 **If the exchange is refused**, read the claim dump, correct the trust policy in the
 console and re-run the failed job: the AWS side is not baked into the tag, so that loop is
