@@ -4,11 +4,11 @@ name: Release
 # and exercises the build half on any pull request that changes what goes into an image.
 #
 # THE ISOLATION PROPERTY THIS FILE EXISTS TO HOLD. `build` runs repository code - a
-# Dockerfile, `pixi install`, `pnpm install` - so it must not be able to reach the Docker
-# Hub credential. It is therefore the only job that checks the repository out, and it has
-# no `id-token: write`; `push` holds the credential and checks nothing out. A malicious
-# dependency pulled into either install step lands in a job that cannot mint a token AWS
-# would accept, whatever it tries. CLAUDE.md states this as an invariant.
+# Dockerfile, `pixi install`, `pnpm install` - and holds the Docker Hub credential at
+# arm's length: it is the only job that checks the repository out, and it has no
+# `id-token: write`, which is what the AWS exchange needs. `push` holds the credential and
+# checks nothing out. So a malicious dependency pulled into either install step lands in
+# the job without that token. CLAUDE.md states this as an invariant.
 #
 # Docker Hub supports no OIDC for personal accounts, so the push credential is a PAT read
 # from AWS SSM Parameter Store through a role assumed with the GitHub OIDC token.
@@ -22,17 +22,16 @@ on:
   release:
     types: [published]
   # The build half only - `push` is guarded by an `if` below. A release event runs this
-  # file as it exists on the tag, so a bug in it cannot be fixed by re-running the
-  # release; this trigger is what gives the build, scan and artifact path a chance to
-  # fail on the pull request that breaks it instead.
+  # file as it exists on the tag, so this trigger is what runs the build, scan and artifact
+  # path on the pull request that touches them, where a fix is still a commit away.
   #
-  # NO `paths` FILTER, deliberately, and the same trigger ci.yml carries. Such a filter is
-  # a hand-written second copy of what the two Dockerfiles read, with nothing checking that
-  # the two agree. It would have to name frontend/vite.config.ts, the three
-  # frontend/tsconfig*.json and frontend/pnpm-workspace.yaml beside the obvious ones, each
-  # of them a file frontend/Dockerfile copies by name. Both builds on every pull request
-  # cost about four runner-minutes, free on a public repository, and land off the critical
-  # path because ci.yml's own job takes longer than this whole workflow.
+  # EVERY PATH, the same trigger ci.yml carries. What the two Dockerfiles read lives in
+  # the Dockerfiles alone - frontend/vite.config.ts, the three frontend/tsconfig*.json and
+  # frontend/pnpm-workspace.yaml beside the obvious ones, each copied by name - so a
+  # `paths` filter here would be a second copy of that list with nothing checking the two
+  # agree. Both builds on every pull request cost about four runner-minutes, free on a
+  # public repository, and land off the critical path because ci.yml's own job takes longer
+  # than this whole workflow.
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -42,8 +41,8 @@ permissions:
 # A RELEASE is never cancelled: a run stopped partway through the push job can leave one
 # image published and the other not, which is worse than a slow queue. A pull request has
 # nothing to leave half-done - it never reaches `push` - so a superseded run there is
-# cancelled rather than queued behind the commit that replaced it. Without the event test
-# a burst of pushes to one branch would serialise whole image builds behind each other.
+# cancelled, which is what keeps a burst of pushes to one branch from serialising whole
+# image builds behind each other.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -62,8 +61,8 @@ jobs:
         id: meta
         with:
           # The target both stacks' bake files declare, so the generated overrides land on
-          # it. Without this they would land on `docker-metadata-action` and apply to
-          # nothing.
+          # it. The action's own default target is `docker-metadata-action`, which neither
+          # bake file declares.
           bake-target: image
           # Both images, so one derivation serves both; the push job selects the lines
           # belonging to each by its `<image>:` prefix. This is half of what is published
@@ -86,9 +85,9 @@ jobs:
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
       # metadata-action writes these bake files into THIS runner's temp directory, so
-      # their paths mean nothing in the build job - the contents travel instead. Deriving
-      # them there instead would give the two images different `created` stamps, which is
-      # the whole reason this job exists.
+      # their paths mean nothing in the build job - the contents travel instead. One
+      # derivation for both images is what this job exists for: it gives them a single
+      # `created` stamp.
       #
       # Each file goes onto ONE line, which is what keeps the output off the multi-line
       # form: that form needs a `<<` delimiter, and GitHub's web UI reads the `<<` as a
@@ -158,11 +157,10 @@ jobs:
           # working directory and `dockerfile` relative to the context, exactly as
           # `docker build` does. This is what `poe image` and `pnpm run image` pass too.
           source: ${{ matrix.stack }}
-          # ORDER IS LOAD-BEARING. bake merges `labels` per key and appends `annotations`,
-          # so the file loaded last wins the keys it names and inherits the rest: the
-          # shared release metadata first, the stack's own description and title last.
-          # Swapping these lines republishes the repository's description on both images
-          # and nothing fails.
+          # ORDER IS LOAD-BEARING, and nothing reports it. bake merges `labels` per key
+          # and appends `annotations`, so the file loaded last wins the keys it names and
+          # inherits the rest: the shared release metadata first, the stack's own
+          # description and title last, which is what puts the stack's pair on the image.
           files: |
             /tmp/bake/labels.json
             /tmp/bake/annotations.json
@@ -182,11 +180,10 @@ jobs:
           # `image` tasks carry it.
           set: |
             image.output=type=oci,dest=/tmp/image.oci.tar
-          # `mode=max` rather than `true`, and the difference is not cosmetic: given
-          # `provenance: true` the action emits `--attest type=provenance,builder-id=...`
-          # and leaves BuildKit's own `mode=min` in force, which records LESS than this
-          # action's default for a public repository when the input is omitted entirely.
-          # Writing `true` would therefore quietly weaken the attestation.
+          # `mode=max` spelled out, which is what this records: given `provenance: true`
+          # the action emits `--attest type=provenance,builder-id=...` and leaves
+          # BuildKit's own `mode=min` in force, below what the action defaults to for a
+          # public repository with the input omitted entirely.
           #
           # What mode=max ALSO does, found by reading the first run's output rather than
           # assumed: it records the entire GitHub event payload under
@@ -202,10 +199,9 @@ jobs:
       # image.oci.tar/index.json: not a directory". An OCI archive is a tarred layout, so
       # unpacking is the whole conversion.
       #
-      # It must be unpacked rather than staged with `regctl image import`: that writes a
-      # layout whose index.json leads with a referrers index, trivy reads the first entry
-      # only, and the scan then finds nothing and reports SUCCESS. The gate below exists
-      # because that failure is silent.
+      # `tar -xf` rather than `regctl image import`: import writes a layout whose
+      # index.json leads with a referrers index, trivy reads the first entry only, and the
+      # scan then finds nothing and reports SUCCESS. The gate below is what reports that.
       - name: Unpack the OCI layout
         run: |
           set -euo pipefail
@@ -222,17 +218,16 @@ jobs:
           trivyignores: .trivyignore.yaml
           format: json
           output: /tmp/trivy.json
-          # The gate is the next step, not this one. Failing here would abort with no list
-          # of what was found, and would not notice a scan that examined nothing.
+          # The gate is the next step, which reads the report: it lists every finding and
+          # checks that this image is what was scanned.
           exit-code: 0
 
       # TWO assertions, because a passing trivy run does not mean THIS image was scanned.
       # Pointed at a layout whose index.json does not lead to the image, trivy resolves the
       # empty config `{}`, reports no findings and exits 0 - so the first assertion is
       # identity: what trivy says it scanned has to be a config present in this layout
-      # that declares a platform. Asserting that it resolved an OS family would catch the
-      # same case, but it would fail a legitimately clean image the day a base carries no
-      # package database, and deleting it would then look like the fix.
+      # that declares a platform. The platform is what it reads rather than an OS family,
+      # so a legitimately clean image passes whatever package database its base carries.
       - name: Gate on the scan
         env:
           STACK: ${{ matrix.stack }}
@@ -336,9 +331,8 @@ jobs:
 
       # BEFORE regctl-installer, and that order is load-bearing rather than tidy: the
       # regctl installer verifies the binary it downloads against regclient's cosign
-      # signature only `if [ -x "$(command -v cosign)" ]`. With cosign absent it fetches
-      # the binary and skips verification silently. cosign is needed to sign the images
-      # anyway, so installing it first costs nothing and buys the check.
+      # signature `if [ -x "$(command -v cosign)" ]`, so cosign already being on PATH is
+      # what runs that check. The signing step below needs cosign anyway.
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - uses: regclient/actions/regctl-installer@dd58ad94f76adb73d8ac1bf75ed25f01545d5b32 # v0.2.0
@@ -351,10 +345,10 @@ jobs:
         id: creds
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          # A repository variable, not a secret: a role ARN is an address, not a
-          # credential - assuming it needs an OIDC token this trust policy accepts - and
-          # masking it would redact the one field that makes a refused exchange
-          # diagnosable. The account id inside it is masked below instead.
+          # A repository variable, not a secret: a role ARN is an address, assuming it
+          # needs an OIDC token this trust policy accepts, and keeping it in the log is
+          # what makes a refused exchange diagnosable. The account id inside it is masked
+          # below instead.
           role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-session-name: expense-tracker-release
@@ -420,9 +414,8 @@ jobs:
 
           # The two halves that have to agree: the repositories the artifacts carry, and
           # the repositories the derived tags name. Equal sets mean every image has tags
-          # and every tag has an image, so neither can be dropped silently - which is what
-          # a per-image check alone cannot say, since it only ever looks at the images it
-          # was told about.
+          # and every tag has an image, the comparison reading both sets whole, so an
+          # addition to one half alone is reported here.
           cat /tmp/images/image-*/repository | sort -u > /tmp/staged-repositories
           printf '%s\n' "$TAGS" | sed -n 's/:[^:/]*$//p' \
             | sort -u > /tmp/tagged-repositories
@@ -432,10 +425,9 @@ jobs:
           fi
 
       # regctl copies the index byte for byte, which is what keeps ONE digest across the
-      # scan, the push, the attestations and the signature. `docker load` plus
-      # `docker push` cannot: that needs a type=docker export, which is single-platform
-      # and carries no attestations. `docker buildx imagetools create` cannot either - it
-      # requires its sources to already exist in a registry.
+      # scan, the push, the attestations and the signature, and carries the index's
+      # attestations with it. It reads the local OCI layout staged above, where
+      # `docker buildx imagetools create` reads sources already in a registry.
       - name: Copy every image to Docker Hub
         env:
           TAGS: ${{ needs.meta.outputs.tags }}

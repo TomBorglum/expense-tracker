@@ -8,9 +8,9 @@
 -- Every statement is idempotent, because db-init re-runs against live clusters.
 
 -- One row per expense file the loader has taken in, and the only thing that makes a
--- re-run idempotent. The expense rows below carry no content hash and no ON CONFLICT:
--- two identical lines are two real purchases, so the rows cannot say whether they have
--- been loaded before. A file can.
+-- re-run idempotent. A file has an identity the rows below do not: two identical lines
+-- are two real purchases, so the ledger is where a repeat load is recognised, and the
+-- expense rows carry no content hash and no ON CONFLICT.
 CREATE TABLE IF NOT EXISTS loaded_expense_file (
     -- GENERATED ALWAYS rather than bigserial, which PostgreSQL's own "Don't Do This"
     -- page advises against for new tables. ALWAYS rather than BY DEFAULT because only
@@ -36,9 +36,9 @@ CREATE TABLE IF NOT EXISTS expense (
     -- Surrogate, because nothing in the data identifies a row: the same amount, day,
     -- currency and category can legitimately repeat.
     id                     bigint         GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    -- No CASCADE: the ledger is append-only, and a DELETE that would orphan expenses
-    -- must fail rather than take them along. That is also why this column carries no
-    -- index - the only scan one would spare is the one a parent DELETE causes.
+    -- No CASCADE: the ledger is append-only, so a DELETE that leaves expenses behind
+    -- fails on this reference. The column carries no index for the same reason - a
+    -- parent DELETE is the one scan an index here would spare.
     loaded_expense_file_id bigint         NOT NULL
                                           REFERENCES loaded_expense_file (id),
     -- numeric, never float: this is money. (12,2) is ten integer digits and two
@@ -87,9 +87,8 @@ CREATE TABLE IF NOT EXISTS category (
     -- The real path, as the expense rows spell it and as the user is shown it.
     category       text    NOT NULL UNIQUE,
     -- The URL path: each level lower kebab case over a-z0-9, levels joined by the same
-    -- separator. Needs no percent-encoding anywhere in a URL, which is the whole point
-    -- of it. UNIQUE is a backstop for a bug in the assignment, not a data-quality gate:
-    -- two categories that would share a slug are given numbered suffixes instead.
+    -- separator, so it needs no percent-encoding anywhere in a URL. UNIQUE is a backstop
+    -- on the assignment, which numbers colliding siblings per parent.
     slug           text    NOT NULL UNIQUE,
     -- How many levels deep the path is, so listing one level is a plain WHERE.
     level          integer NOT NULL,
@@ -114,11 +113,10 @@ CREATE INDEX IF NOT EXISTS category_by_slug_idx
 
 -- One row per data line of data/currencies/*.tsv: what one currency is worth in another.
 --
--- No ledger table beside this one, unlike the expenses above, and the difference is the
--- kind of thing being stored rather than a preference. A rate for a pair is a current
--- fact, so `backend-load-currencies` deletes every row and inserts the file's again;
--- there is nothing here a second load could double up, and editing a rate then reloading
--- is the supported workflow rather than the refused one.
+-- No ledger table beside this one, where the expenses above have one, because a rate for
+-- a pair is a current fact rather than an event. `backend-load-currencies` deletes every
+-- row and inserts the file's again, so a second load lands the same table and editing a
+-- rate then reloading is the supported workflow.
 CREATE TABLE IF NOT EXISTS currency_rate (
     -- Surrogate: a pair may legitimately appear twice, so nothing in the data
     -- identifies a row.

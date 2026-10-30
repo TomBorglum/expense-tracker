@@ -22,8 +22,8 @@ concurrency:
 jobs:
   checks:
     # Named explicitly because the main-protection ruleset requires this check by
-    # name. Without it the context would be the job id, and renaming that key would
-    # silently stop the gate matching instead of failing loudly.
+    # name. The name is what the gate matches, so it lives here rather than following
+    # the job id below it.
     name: Checks
     runs-on: ubuntu-latest
     steps:
@@ -62,9 +62,8 @@ jobs:
       - run: pixi run backend-typecheck
       # The database the postgres-marked tests need. initdb's a cluster into backend/.pgdata/,
       # starts it on the host and port backend/.env names and applies backend/schema.sql -
-      # the same one task a developer runs, which is why there is no `services:` block and
-      # no container here: the server is a conda-forge package in the same lock as
-      # everything else.
+      # the same one task a developer runs. The server is a conda-forge package in the same
+      # lock as everything else, so this needs no `services:` block and no container.
       # After the static gates, so a lint or type error still surfaces before anything
       # gets provisioned - the one place the cheapest-first rule above yields, because
       # this provisions rather than checks. GitHub sets CI=true, which is what turns a
@@ -78,15 +77,14 @@ jobs:
       - run: pixi run frontend-typecheck
       - run: pixi run frontend-lint
       - run: pixi run frontend-test # writes coverage/frontend/lcov.info for the scan below
-      # Last of the frontend gates, and the only one that runs vite itself: tsc and
-      # vitest between them never exercise the bundler, so without this a build-time
-      # failure would only surface on someone's machine. Nothing is kept from the
-      # output - frontend/dist/ is gitignored.
+      # Last of the frontend gates, and the only one that runs vite itself, so this is
+      # where a build-time failure surfaces - tsc and vitest between them exercise no
+      # bundler. Nothing is kept from the output - frontend/dist/ is gitignored.
       - run: pixi run frontend-build
       # vite is what regenerates routeTree.gen.ts, so a non-empty diff here means a
       # route file was added, renamed or removed without committing the tree it
-      # produces. Every frontend gate above reads the committed file and would pass on
-      # a stale one, which is why this sits after the build rather than beside them.
+      # produces. It sits after the build for that reason: the build is what rewrites the
+      # file, where every frontend gate above reads the committed one.
       - run: git diff --exit-code -- frontend/src/routeTree.gen.ts
       # Provide the JRE ourselves so the scanner doesn't query SonarCloud's API to
       # download one at runtime (a transient point of failure). Paired with

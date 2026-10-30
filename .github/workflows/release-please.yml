@@ -5,10 +5,10 @@ name: Release Please
 # manifest from the Conventional Commit messages since the last tag. Merging that
 # PR creates the git tag and the GitHub Release with the generated notes.
 #
-# Authenticates as the expense-tracker-bot GitHub App rather than with GITHUB_TOKEN,
-# because events created by GITHUB_TOKEN do not trigger further workflow runs: the
-# release PR would never run the SonarCloud check, and the tag/release could not
-# trigger downstream workflows. App installation tokens have no such restriction.
+# Authenticates as the expense-tracker-bot GitHub App rather than with GITHUB_TOKEN:
+# events created by GITHUB_TOKEN trigger no further workflow runs, where an App
+# installation token's do, which is what runs the SonarCloud check on the release PR and
+# lets the tag and release reach the workflows downstream of them.
 # The App needs Contents: read/write (branch, tag, release), Pull requests:
 # read/write (the release PR) and Issues: read/write (the autorelease:* labels).
 
