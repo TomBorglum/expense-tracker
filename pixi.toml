@@ -108,6 +108,11 @@ backend-load-expenses = { cmd = "poe load-expenses", cwd = "backend" }
 # Writes backend/coverage.xml for the SonarCloud scan (see sonar-project.properties).
 backend-test = { cmd = "poe test", cwd = "backend" }
 backend-typecheck = { cmd = "poe typecheck", cwd = "backend" }
+# Database -> [tool.poe.tasks] in database/pyproject.toml. It sits in the test feature
+# because that is where poe lives, not because it needs anything else from it: the image is
+# the official PostgreSQL base plus backend/schema.sql and installs no pixi environment.
+# docker has to be on PATH already, as for the other two image tasks.
+database-image = { cmd = "poe image", cwd = "database" }
 
 # Frontend -> the "scripts" block in frontend/package.json. `install` is a pnpm built-in
 # rather than a script, which is why it alone takes no `run`. Declared in the frontend

@@ -1091,6 +1091,7 @@ opt-in. `ps` is the check that settles it. Where your editor disagrees with CI,
 | `pixi run backend-format-check` | `poe format-check` | Check formatting without writing changes |
 | `pixi run backend-typecheck` | `poe typecheck` | Type-check with basedpyright (recommended) |
 | `pixi run backend-image` | `poe image` | Build the API container image from the `backend` environment |
+| `pixi run database-image` | `poe image` | Build the database container image: the PostgreSQL base plus `backend/schema.sql` |
 | `pixi run frontend-install` | `pnpm install` | Install frontend dependencies (`--frozen-lockfile`) |
 | `pixi run frontend-dev` | `pnpm run dev` | Run vite's dev server on port 5173 (hot reload) |
 | `pixi run frontend-build` | `pnpm run build` | Build the frontend into `frontend/dist/` |
@@ -1102,10 +1103,10 @@ opt-in. `ps` is the check that settles it. Where your editor disagrees with CI,
 | `pixi run frontend-format-check` | `pnpm run format-check` | Check frontend formatting without writing changes |
 | `pixi run frontend-image` | `pnpm run image` | Build the SPA container image from the `frontend` environment |
 
-Every task sets its own working directory in `pixi.toml` (`backend/` or `frontend/`), so
-`pixi run <task>` behaves the same wherever you invoke it from. Each task stays inside its
-own stack, and every one of them - the five `backend-db-*` included - addresses its files
-by a plain relative path.
+Every task sets its own working directory in `pixi.toml` (`backend/`, `database/` or
+`frontend/`), so `pixi run <task>` behaves the same wherever you invoke it from. Each task
+stays inside its own directory, and every one of them - the five `backend-db-*` included -
+addresses its files by a plain relative path.
 
 That holds when you skip the forwarder too: poe runs a task from the directory of the
 `pyproject.toml` it loaded, so `poe -C backend db-start` resolves `backend/.pgdata/`
@@ -1115,21 +1116,27 @@ in a `db-*` task finds the port `.env` names. `pixi task list` prints this table
 column.
 
 CI runs every gate above on each pull request, then the SonarCloud scan. It leaves out the
-two `dev` tasks, the two `-fix` variants, `backend-format`, the two `*-image` tasks, the
-two loaders and the four `backend-db-*` tasks other than `backend-db-init`. The two
-`*-image` tasks build rather than check, and are the only two tasks reaching for a tool
-outside the runner's pixi environment. The loaders mutate data, and
+two `dev` tasks, the two `-fix` variants, `backend-format`, the three `*-image` tasks, the
+two loaders and the four `backend-db-*` tasks other than `backend-db-init`. The three
+`*-image` tasks build rather than check, and are the only tasks reaching for a tool
+outside the runner's pixi environment; `publish.yml` is what builds all three images on a
+pull request. The loaders mutate data, and
 `test_expense_postgres.py` and `test_currency_postgres.py` already put the committed
 sample files through the real database path inside `backend-test`.
 
 ### Where commands are defined
 
 The middle column is the whole mechanism - **every task in `pixi.toml` forwards.** Each
-stack owns its own command bodies, in the manifest that already owns how its tools behave:
+directory owns its own command bodies, in the manifest that already owns how its tools
+behave:
 
 - **Backend:** `[tool.poe.tasks]` in `backend/pyproject.toml`, beside the ruff, pytest
   and basedpyright config they invoke, with
   [poethepoet](https://poethepoet.natn.io) as the task runner.
+- **Database:** `[tool.poe.tasks]` in `database/pyproject.toml`, which is a poe manifest
+  and nothing else - no `[project]` table, no Python package. The one command that
+  directory runs has to be defined in that directory for the rule above to hold, and a
+  directory with no manifest has nowhere to put it.
 - **Frontend:** the `scripts` block in `frontend/package.json`, where a Node developer
   expects it.
 
@@ -1205,22 +1212,28 @@ lean environment, and the two produce byte-identical output.
 
 Both are built by `release.yml` on a published release, and both can be built by hand the
 same way CI builds them - `pixi run backend-image` and `pixi run frontend-image`, below.
+The database image is published beside them but belongs to neither environment; it is
+built from no pixi environment at all.
 
 ## Container images
 
-Two images, one per stack, each built from the lean pixi environment of the same name and
-each taking the repository root as its build context. Each stack declares its own image in
-a `docker-bake.hcl` beside its Dockerfile - the context, the Dockerfile and the two OCI
-values only the stack itself knows - and both the local task below and `release.yml` build
-a target out of that file rather than passing those settings on a command line. Both are
-published to Docker Hub by `release.yml`; see [Releases](#releases).
+Three images, each taking the repository root as its build context and each declaring
+itself in a `docker-bake.hcl` beside its Dockerfile - the context, the Dockerfile and the
+two OCI values only that image knows - so both the local task below and `release.yml`
+build a target out of that file rather than passing those settings on a command line. All
+three are published to Docker Hub by `release.yml`; see [Releases](#releases).
+
+Two of them are one per stack, built from the lean pixi environment of the same name. The
+database image is the odd one out and installs no environment at all: it is the official
+PostgreSQL image plus `backend/schema.sql`, so it has no builder stage and carries nothing
+of the lock.
 
 ### Keeping the bases current
 
-Both Dockerfiles pin their runtime base as `tag@sha256:...`, the tag naming the version a
-reader sees and the digest deciding what is pulled, and the `docker` entry in
-`.github/dependabot.yml` moves that pair. One entry covers `/backend` and `/frontend`,
-weekly, and Dependabot rewrites the tag and the digest together.
+All three Dockerfiles pin their runtime base as `tag@sha256:...`, the tag naming the
+version a reader sees and the digest deciding what is pulled, and the `docker` entry in
+`.github/dependabot.yml` moves that pair. One entry covers `/backend`, `/database` and
+`/frontend`, weekly, and Dependabot rewrites the tag and the digest together.
 
 Its commits are prefixed **`deps`**, so a base bump lands in `CHANGELOG.md` under
 Dependencies and cuts a patch release. A base is part of what a user receives when they run
@@ -1230,14 +1243,16 @@ Release is published.
 
 Three properties of the entry live outside the configuration:
 
-- **The three-day `cooldown` applies to the SPA's base.** Dependabot takes publication dates
-  from Docker Hub's `tag_last_pushed`, which covers `nginxinc/nginx-unprivileged`; for
-  `gcr.io` and `ghcr.io` it records a `cooldown_date_unavailable` warning and allows the
-  update. `default-days` is the whole window, an update that moves a digest under an
-  unchanged tag carrying no semver level.
+- **The three-day `cooldown` applies to the SPA's and the database's bases.** Dependabot
+  takes publication dates from Docker Hub's `tag_last_pushed`, which covers
+  `nginxinc/nginx-unprivileged` and `postgres`; for `gcr.io` and `ghcr.io` it records a
+  `cooldown_date_unavailable` warning and allows the update. `default-days` is the whole
+  window, an update that moves a digest under an unchanged tag carrying no semver level.
 - **The API's base arrives as a digest refresh on the `nonroot` tag**, which stays where it
-  is: that is how a rebuilt distroless base reaches the image. The SPA's `1.31-alpine` moves
-  to another tag carrying the same `-alpine` suffix.
+  is: that is how a rebuilt distroless base reaches the image. The database's `18-alpine`
+  behaves the same way, being a major-series tag that a new PostgreSQL minor keeps - so a
+  18.6 to 18.7 move arrives here as a digest and nothing else. The SPA's `1.31-alpine`
+  moves to another tag carrying the same `-alpine` suffix.
 - **The pixi builder image is ignored.** That version is pinned by hand in three places,
   `use pixi` in `.envrc` and both Dockerfiles, and the root [`CLAUDE.md`](CLAUDE.md) records
   the trio; `update-pixi-dependencies.yml` bumps the pins *inside* `pixi.toml`. The ignore
@@ -1450,20 +1465,73 @@ The base carries a tag and a digest on the same terms as the backend's two, and 
 bumps it, with the three-day cooldown applying because this image lives on Docker Hub. See
 [Keeping the bases current](#keeping-the-bases-current).
 
+### The database image
+
+`database/Dockerfile` is the odd one of the three: no builder stage, no pixi environment,
+one `COPY`. It is `postgres:18-alpine` with `backend/schema.sql` dropped into
+`/docker-entrypoint-initdb.d/`, the base's own hook for first-boot SQL.
+
+```sh
+docker run -d -v expense-tracker-data:/var/lib/postgresql \
+  -e POSTGRES_USER=expense_tracker -e POSTGRES_DB=expense_tracker \
+  -e POSTGRES_HOST_AUTH_METHOD=trust \
+  tomborglum/expense-tracker-database:2.1.0
+```
+
+**The hook runs only when the data directory is empty**, and that is what makes this work
+rather than a limitation to work around. It is the bargain `schema.sql` already strikes
+locally: every statement idempotent, `IF NOT EXISTS` never altering, and a change to an
+existing table cured by throwing the cluster away rather than by a migration. Here the
+cluster is a volume, so **dropping the volume is what re-applies the schema** -
+`backend-db-reset` by another name.
+
+The image sets `POSTGRES_INITDB_ARGS=--locale=C --encoding=UTF8`, the two flags
+`db-create` passes `initdb`. That is not decoration: `GET /api/expenses/categories` orders
+`category` in SQL, and C collation is byte order under musl and glibc alike, so the
+deployed server sorts exactly as the conda-forge cluster a developer runs. Declaring it in
+the image rather than leaving it to the caller is what stops it being lost by whoever runs
+the thing. `18-alpine` resolves to 18.6, the version `pixi.toml` pins, so the two agree
+today without either naming the other.
+
+**It runs as uid 70 and ships no `gosu`.** The base calls `gosu` in exactly one situation,
+dropping from root to the `postgres` user, and all three of its call sites sit behind
+`if [ "$(id -u)" = '0' ]` - so starting as 70 reaches none of them and the binary is
+unreachable code. It was also 1.7 MB of Go carrying **26 HIGH/CRITICAL** findings into
+[the vulnerability gate](#the-vulnerability-gate), in `net/http`, `crypto/tls`,
+`encoding/xml`, `html/template` and `net/url`, none of which a program that resolves a user
+and `exec`s could reach either. Deleting it takes this image to **zero** findings.
+
+What that gives up is the other thing root does: `docker_create_db_directories` chowns the
+data directory. A fresh **named** volume needs no chown, docker seeding it from the image's
+own `/var/lib/postgresql`, which the base ships `70:70` and mode `1777`. A host **bind**
+mount needs `chown 70:70` on the directory first, or `initdb` stops at
+`mkdir: can't create directory '/var/lib/postgresql/18/': Permission denied`. An explicit
+`--user 0` fails at once with `gosu: not found` and exit 127 rather than starting degraded.
+
+`PGDATA` is the base's own `/var/lib/postgresql/18/docker`, underneath the volume it
+declares - which is the whole `/var/lib/postgresql` directory rather than the pre-18
+`data/` beneath it. That is the path to mount.
+
+The image is about 433 MB and effectively all of it is the base; `schema.sql` is 8 kB. The
+debian variant is 650 MB, but the reason for alpine is the gate rather than the size: 62
+HIGH/CRITICAL in `postgres:18.6` with a fix available for **none** of them, against the 2
+here, both of which `.trivyignore.yaml` already covered for the SPA's alpine base.
+
 ## Releases
 
-`.github/workflows/publish.yml` publishes both images to Docker Hub when release-please's
-GitHub Release is published, calling `.github/workflows/release.yml` to do it. Four tags
-per image, derived once by `docker/metadata-action` so the two cannot disagree: `1.1.0`,
-`1.1`, `sha-<full commit>` and `latest`.
+`.github/workflows/publish.yml` publishes all three images to Docker Hub when
+release-please's GitHub Release is published, calling `.github/workflows/release.yml` to do
+it. Four tags per image, derived once by `docker/metadata-action` so they cannot disagree:
+`1.1.0`, `1.1`, `sha-<full commit>` and `latest`.
 
 ```
 tomborglum/expense-tracker-backend
+tomborglum/expense-tracker-database
 tomborglum/expense-tracker-frontend
 ```
 
-**Neither name is written down.** `publish.yml` names the directories, `backend` and
-`frontend`, and `release.yml`'s `meta` job composes
+**No one of those names is written down.** `publish.yml` names the directories, `backend`,
+`database` and `frontend`, and `release.yml`'s `meta` job composes
 `<namespace>/<repository>-<directory>` from them - the namespace an input that
 `publish.yml` fills from the `DOCKERHUB_NAMESPACE` repository variable, the repository
 read from `github.event.repository.name`. **So renaming this GitHub repository renames
@@ -1474,10 +1542,10 @@ The same job derives the OCI metadata: eight `org.opencontainers.image.*` values
 twice over, as labels in the image config and as annotations on its manifest, so a
 registry client can read `source` and `revision` without pulling the image. Two of the
 eight do not come from there, because metadata-action reads them from the **repository**
-and so hands both images the same answer - which had the SPA image advertising the REST
+and so hands every image the same answer - which had the SPA image advertising the REST
 API and titled both of them `expense-tracker`:
 
-- **`title` and `description` are the stack's own**, declared in its `docker-bake.hcl`
+- **`title` and `description` are the image's own**, declared in its `docker-bake.hcl`
   beside the context and the Dockerfile and nowhere in the workflow. The image is what
   knows what it is; the pipeline knows how to combine the pieces.
 
@@ -1567,11 +1635,15 @@ Three details carry the weight:
 which is what keeps one digest across the scan, the push, the attestations and the
 signature, and carries the multi-platform index and its attestations as they are.
 
-**The published images are x86-64, and the platform comes from the lock.** `pixi.toml`'s
-`platforms = ["linux-64"]` is the declaration: both images install from `pixi.lock`, which
-carries that solve and no other, so `pixi install --locked` is where the architecture is
-decided, and the bake file and the workflow name no platform. Adding `linux/arm64` starts
-with the lock gaining that solve.
+**The published images are x86-64, and for two of the three the platform comes from the
+lock.** `pixi.toml`'s `platforms = ["linux-64"]` is the declaration: the API and SPA images
+install from `pixi.lock`, which carries that solve and no other, so `pixi install --locked`
+is where their architecture is decided, and the bake file and the workflow name no
+platform. **The database image is the exception** - it installs no environment at all, and
+`postgres:18-alpine` publishes eight platforms, so what holds that one to x86-64 is the
+architecture of the runner it is built on and nothing in this repository. Adding
+`linux/arm64` starts with the lock gaining that solve, and with this image needing to name
+a platform it can leave implicit today.
 
 Each image carries an SBOM and a SLSA provenance attestation, the provenance at
 `mode=max`. That is a deliberate choice with one consequence worth knowing, because it is
@@ -1769,7 +1841,7 @@ console and re-run the failed job: the AWS side lives outside the tag, so that l
 free. **If the workflow file itself is wrong**, a `release` event runs the file as it
 exists on the tag, so the fix is a `fix:` PR and the patch release it cuts. The
 `pull_request` trigger is what exercises the file ahead of that: every pull request builds,
-scans and gates both images, with the `push` job held back by
+scans and gates all three images, with the `push` job held back by
 `if: github.event_name == 'release'`, so the change that touches the file runs it. The
 trigger covers every path, keeping what it watches in one place with what the Dockerfiles
 read, and a superseded pull request run is cancelled where a release run runs to the end.
