@@ -1,5 +1,69 @@
 # Changelog
 
+## [2.0.0](https://github.com/TomBorglum/expense-tracker/compare/v1.0.0...v2.0.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* read categories as colon-separated paths ([#123](https://github.com/TomBorglum/expense-tracker/issues/123))
+* wrap every collection body in an items object ([#122](https://github.com/TomBorglum/expense-tracker/issues/122))
+* `backend-load-expenses` no longer reads `*.tsv` from `$EXPENSE_DATA_DIR`. A directory still holding them loads nothing.
+
+### Features
+
+* accept an import record that leaves out its details ([#129](https://github.com/TomBorglum/expense-tracker/issues/129)) ([dd5c15c](https://github.com/TomBorglum/expense-tracker/commit/dd5c15c209b0cb77d78a9ed5cea7c6886bb7fb4a))
+* **backend:** carry a range average beside the period totals ([#146](https://github.com/TomBorglum/expense-tracker/issues/146)) ([ea64bd9](https://github.com/TomBorglum/expense-tracker/commit/ea64bd9f5976a8e5ab0e89ed3f335768b254c074))
+* **backend:** carry a running average on every period total ([#143](https://github.com/TomBorglum/expense-tracker/issues/143)) ([25fbcb8](https://github.com/TomBorglum/expense-tracker/commit/25fbcb8803977c2bfadfa5fd49f26b3de992c34e))
+* **backend:** carry the expense key through to the payload ([#153](https://github.com/TomBorglum/expense-tracker/issues/153)) ([b2def17](https://github.com/TomBorglum/expense-tracker/commit/b2def17e53426684953f20fab6aa49e9f7715603))
+* **backend:** take in a category selection rather than a filter ([#155](https://github.com/TomBorglum/expense-tracker/issues/155)) ([b94e04a](https://github.com/TomBorglum/expense-tracker/commit/b94e04a257a10fa4e2140caefdccde1480254681))
+* **backend:** take in the defer action and load no row for it ([#149](https://github.com/TomBorglum/expense-tracker/issues/149)) ([a9216c0](https://github.com/TomBorglum/expense-tracker/commit/a9216c0ed564af5aacd19881642597d5c811a330))
+* drop details from the expense payload and the ledger ([#152](https://github.com/TomBorglum/expense-tracker/issues/152)) ([d1a49e9](https://github.com/TomBorglum/expense-tracker/commit/d1a49e929ed3cb3be812f07254f224b154172244))
+* filter expenses and totals by category ([#103](https://github.com/TomBorglum/expense-tracker/issues/103)) ([2245469](https://github.com/TomBorglum/expense-tracker/commit/2245469d9f80e2c0b2be147fe63557f5d0eaa30b))
+* filter expenses and totals by category in the frontend ([#106](https://github.com/TomBorglum/expense-tracker/issues/106)) ([acdc443](https://github.com/TomBorglum/expense-tracker/commit/acdc4431ede907a479b475916e4e105cefcab01b))
+* **frontend:** collapse and expand category nodes in the picker ([#138](https://github.com/TomBorglum/expense-tracker/issues/138)) ([8d37560](https://github.com/TomBorglum/expense-tracker/commit/8d37560e82c58dca306bbaa13ab4c35c10d497c6))
+* **frontend:** merge the category and details columns into one ([#142](https://github.com/TomBorglum/expense-tracker/issues/142)) ([b4a01d3](https://github.com/TomBorglum/expense-tracker/commit/b4a01d3f4c8eca5b5a7b7eab728c38014f57f585))
+* **frontend:** show the expense key beside its category ([#154](https://github.com/TomBorglum/expense-tracker/issues/154)) ([85bc29e](https://github.com/TomBorglum/expense-tracker/commit/85bc29eea29b17b61e2dc5728ce0cb3c03777a45))
+* **frontend:** show the range average above the periods table ([#147](https://github.com/TomBorglum/expense-tracker/issues/147)) ([82b3583](https://github.com/TomBorglum/expense-tracker/commit/82b35832af67a15e9a058bb5e622817435f9e3e1))
+* **frontend:** show the running average beside each period total ([#144](https://github.com/TomBorglum/expense-tracker/issues/144)) ([27bbdbd](https://github.com/TomBorglum/expense-tracker/commit/27bbdbd73fec5e4e5ca208e5e625fbe20136fa18))
+* **frontend:** state the categories as a selection rather than a filter ([#156](https://github.com/TomBorglum/expense-tracker/issues/156)) ([35c1b65](https://github.com/TomBorglum/expense-tracker/commit/35c1b655292904bee55fe894baf4e5fdb13e0c0c))
+* identify a category in a URL by a slug ([#158](https://github.com/TomBorglum/expense-tracker/issues/158)) ([534339d](https://github.com/TomBorglum/expense-tracker/commit/534339de485567834e850d90f6c41c47fcb9c040))
+* list the recorded expense categories ([#105](https://github.com/TomBorglum/expense-tracker/issues/105)) ([5017793](https://github.com/TomBorglum/expense-tracker/commit/5017793ac07f93f7763fd04c168bbc2c99b7e3b6))
+* offer the categories as a tree in the picker ([#125](https://github.com/TomBorglum/expense-tracker/issues/125)) ([f5595b4](https://github.com/TomBorglum/expense-tracker/commit/f5595b4b503d2cce616f3868a55d697c462ed5ec))
+* pin the refund model and refuse a zero amount ([#102](https://github.com/TomBorglum/expense-tracker/issues/102)) ([c1dc394](https://github.com/TomBorglum/expense-tracker/commit/c1dc39481d1e4f453092a62335d72e393125069a))
+* publish container images to Docker Hub on release ([#162](https://github.com/TomBorglum/expense-tracker/issues/162)) ([7386140](https://github.com/TomBorglum/expense-tracker/commit/73861400ce1fe20136c2b554edbf491cab428cce))
+* read categories as colon-separated paths ([#123](https://github.com/TomBorglum/expense-tracker/issues/123)) ([b609c65](https://github.com/TomBorglum/expense-tracker/commit/b609c658e02591e68f945c371391a77505400458))
+* read expense-data's YAML month files instead of TSV ([#121](https://github.com/TomBorglum/expense-tracker/issues/121)) ([84d853e](https://github.com/TomBorglum/expense-tracker/commit/84d853eccdd3e08bb717e21ff98e788c30edaca0))
+* return expenses and totals oldest first ([#97](https://github.com/TomBorglum/expense-tracker/issues/97)) ([6233417](https://github.com/TomBorglum/expense-tracker/commit/6233417f95b0b63b27d673c3d12c45ca9aecf53a))
+* show credits as money coming in rather than negative spending ([#112](https://github.com/TomBorglum/expense-tracker/issues/112)) ([b1c6fbe](https://github.com/TomBorglum/expense-tracker/commit/b1c6fbe3dadd83119004263cffb63b9d91c9d1fe))
+* show expense details before the amount ([#111](https://github.com/TomBorglum/expense-tracker/issues/111)) ([8606929](https://github.com/TomBorglum/expense-tracker/commit/86069293389d22dc334836ecf02cf5b040319c71))
+* wrap every collection body in an items object ([#122](https://github.com/TomBorglum/expense-tracker/issues/122)) ([e485315](https://github.com/TomBorglum/expense-tracker/commit/e4853152693b9e3720962ba41e3ffb5300ab8415))
+
+
+### Bug Fixes
+
+* add RON exchange rates so converted views load again ([#110](https://github.com/TomBorglum/expense-tracker/issues/110)) ([a778724](https://github.com/TomBorglum/expense-tracker/commit/a778724f7e20563d0a0f3e1fe478154e582eb0c9))
+* **backend:** sum totals at the resolution the expenses view lists ([#141](https://github.com/TomBorglum/expense-tracker/issues/141)) ([b189af9](https://github.com/TomBorglum/expense-tracker/commit/b189af9cdcd6ff7f2771b2b6feb11a2c86762c11))
+* Delete .mcp.json ([#133](https://github.com/TomBorglum/expense-tracker/issues/133)) ([2e1632e](https://github.com/TomBorglum/expense-tracker/commit/2e1632e5848fa94676e26949775c4141c1d1531f))
+* **frontend:** give the expenses category column the table's slack ([#139](https://github.com/TomBorglum/expense-tracker/issues/139)) ([a56a272](https://github.com/TomBorglum/expense-tracker/commit/a56a27246d17a6b096e9a53339784aaf45eb8911))
+* Update .envrc ([#132](https://github.com/TomBorglum/expense-tracker/issues/132)) ([d877c64](https://github.com/TomBorglum/expense-tracker/commit/d877c646b79915b3d776c80e56196f58e54e927b))
+
+
+### Dependencies
+
+* bump brace-expansion from 5.0.9 to 5.0.12 in /frontend ([#119](https://github.com/TomBorglum/expense-tracker/issues/119)) ([e35f484](https://github.com/TomBorglum/expense-tracker/commit/e35f4842360e164df6b89b74b3b2d8e664c222c9))
+* bump source-map-js from 1.2.1 to 1.2.2 in /frontend ([#118](https://github.com/TomBorglum/expense-tracker/issues/118)) ([7abb472](https://github.com/TomBorglum/expense-tracker/commit/7abb4722eb26d0f6aa336ef1c612feabb3369712))
+* bump the frontend group across 1 directory with 13 updates ([#120](https://github.com/TomBorglum/expense-tracker/issues/120)) ([5af026a](https://github.com/TomBorglum/expense-tracker/commit/5af026ae081a473e52dc3eae3ddb11c230d0d2ad))
+* bump the frontend group across 1 directory with 17 updates ([#109](https://github.com/TomBorglum/expense-tracker/issues/109)) ([5c7f418](https://github.com/TomBorglum/expense-tracker/commit/5c7f4188b6b28a0affcaaf75769d487048a0a308))
+* bump the frontend group in /frontend with 11 updates ([#114](https://github.com/TomBorglum/expense-tracker/issues/114)) ([7c839c8](https://github.com/TomBorglum/expense-tracker/commit/7c839c87fd6bb53d0b063a54526309c10620421c))
+* bump the frontend group in /frontend with 5 updates ([#140](https://github.com/TomBorglum/expense-tracker/issues/140)) ([5068db5](https://github.com/TomBorglum/expense-tracker/commit/5068db5f9619946bea5801d657d4c2beda00c9c5))
+* bump the frontend group in /frontend with 6 updates ([#137](https://github.com/TomBorglum/expense-tracker/issues/137)) ([5fd6c35](https://github.com/TomBorglum/expense-tracker/commit/5fd6c35b0860a51d80ece5685f850965196674fd))
+* bump the frontend group in /frontend with 7 updates ([#124](https://github.com/TomBorglum/expense-tracker/issues/124)) ([6c75078](https://github.com/TomBorglum/expense-tracker/commit/6c75078de48c43afa86402045b63db02477e0673))
+* bump the frontend group in /frontend with 8 updates ([#100](https://github.com/TomBorglum/expense-tracker/issues/100)) ([bd8d5f1](https://github.com/TomBorglum/expense-tracker/commit/bd8d5f159291f561a3e8f2468151ee53218006cf))
+* bump the frontend group in /frontend with 9 updates ([#151](https://github.com/TomBorglum/expense-tracker/issues/151)) ([41274a8](https://github.com/TomBorglum/expense-tracker/commit/41274a86d2a9a6bd52f4f220f81e157e915c3f28))
+* update pixi dependencies ([#135](https://github.com/TomBorglum/expense-tracker/issues/135)) ([3c8e9be](https://github.com/TomBorglum/expense-tracker/commit/3c8e9beb72778ca2a2ae882836db0c7c337dde78))
+* update pixi dependencies ([#145](https://github.com/TomBorglum/expense-tracker/issues/145)) ([5da4ed3](https://github.com/TomBorglum/expense-tracker/commit/5da4ed3f5e2733f3fb14d843e9ef0bde00b7ca09))
+* update pixi dependencies ([#157](https://github.com/TomBorglum/expense-tracker/issues/157)) ([aa91f99](https://github.com/TomBorglum/expense-tracker/commit/aa91f992cd7625f2c3746769b2a5228b10d68975))
+
 ## 1.0.0 (2026-09-02)
 
 
