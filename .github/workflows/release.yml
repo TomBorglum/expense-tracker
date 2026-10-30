@@ -236,29 +236,23 @@ jobs:
           # beside the image, as the attestation manifest's, so a walk that could reach it
           # compares one empty value with another. A config declaring a platform cannot be
           # that one.
-          config="$(jq -r '.Metadata.ImageID // empty' /tmp/trivy.json)"
+          config="$(jq -r '.Metadata.ImageID // ""' /tmp/trivy.json)"
           blob="/tmp/oci/blobs/sha256/${config#sha256:}"
-          scanned=""
-          if [ -n "$config" ] && [ -s "$blob" ]; then
-            scanned="$(jq -r '[(.os // ""), (.architecture // "")] | join("/")' "$blob")"
-          fi
-          if [ "$scanned" != "$PLATFORM" ]; then
+          if ! [ -f "$blob" ] || [ "$(jq -r '"\(.os)/\(.architecture)"' "$blob")" != "$PLATFORM" ]; then
             echo "::error::trivy reported $config for the $STACK image, which is no $PLATFORM config in the layout it scanned, so it scanned something else."
-            jq '{Metadata: .Metadata, Targets: [.Results // [] | .[] | .Target]}' /tmp/trivy.json
+            jq '{Metadata: .Metadata, Targets: [.Results[]?.Target]}' /tmp/trivy.json
             exit 1
           fi
-          echo "scanned $STACK: $config, $(jq -r '.Metadata.OS | if . == null then "no OS packages" else "\(.Family) \(.Name)" end' /tmp/trivy.json), $(jq '.Metadata.DiffIDs | length' /tmp/trivy.json) layers"
+          echo "scanned $STACK: $config ($PLATFORM)"
 
-          jq -r '[.Results // [] | .[] | .Vulnerabilities // [] | .[]]
-                 | if length == 0 then "no HIGH or CRITICAL findings"
-                   else (.[] | "\(.Severity)\t\(.VulnerabilityID)\t\(.PkgName) \(.InstalledVersion) -> \(.FixedVersion // "no fix")")
-                   end' /tmp/trivy.json
-
-          count="$(jq '[.Results // [] | .[] | .Vulnerabilities // [] | .[]] | length' /tmp/trivy.json)"
-          if [ "$count" -gt 0 ]; then
-            echo "::error::$count HIGH or CRITICAL finding(s) in the $STACK image."
+          findings="$(jq -r '.Results[]?.Vulnerabilities[]?
+                             | "\(.Severity)\t\(.VulnerabilityID)\t\(.PkgName) \(.InstalledVersion) -> \(.FixedVersion // "no fix")"' /tmp/trivy.json)"
+          if [ -n "$findings" ]; then
+            printf '%s\n' "$findings"
+            echo "::error::$(printf '%s\n' "$findings" | wc -l) HIGH or CRITICAL finding(s) in the $STACK image."
             exit 1
           fi
+          echo "no HIGH or CRITICAL findings"
 
       # The digest travels with the archive so the push job can prove nothing changed in
       # transit, rather than that being read off two logs by eye.
