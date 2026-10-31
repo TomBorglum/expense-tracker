@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.1.0](https://github.com/TomBorglum/expense-tracker/compare/v2.0.0...v2.1.0) (2026-10-31)
+
+
+### Features
+
+* publish a database container image ([#172](https://github.com/TomBorglum/expense-tracker/issues/172)) ([47b896a](https://github.com/TomBorglum/expense-tracker/commit/47b896a8e6106189d4a6d663d37d202138d4390b))
+* publish the compose file as an OCI artifact ([#175](https://github.com/TomBorglum/expense-tracker/issues/175)) ([a38aea3](https://github.com/TomBorglum/expense-tracker/commit/a38aea394aa2f6bbd96212a3654ce0d82a8e5cca))
+
+
+### Dependencies
+
+* bump the frontend group in /frontend with 7 updates ([#166](https://github.com/TomBorglum/expense-tracker/issues/166)) ([5f1eafb](https://github.com/TomBorglum/expense-tracker/commit/5f1eafbd4b7b434eaab4b5912fb7d2df5284204c))
+
 ## [2.0.0](https://github.com/TomBorglum/expense-tracker/compare/v1.0.0...v2.0.0) (2026-10-30)
 
 
