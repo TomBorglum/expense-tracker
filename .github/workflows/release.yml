@@ -153,10 +153,18 @@ jobs:
           tags: ${{ env.TAG_PATTERNS }}
 
       # The compose artifact's tags, derived SEPARATELY rather than by handing the step
-      # above a fourth name. Two reasons, and both are load-bearing: `push` checks the
-      # images it staged against the repositories THAT step's tags name, so a name with no
-      # image behind it would fail that check, and `bake-target` belongs to images alone.
+      # above a fourth name. ONE reason, and it is in `push`: before copying anything it
+      # diffs the repositories the image artifacts carry against the repositories the
+      # derived tags name, and the stack has no artifact because nothing builds it - so a
+      # fourth name there fails that check and aborts every release. The copy loop would
+      # skip those refs anyway, iterating artifacts rather than tags.
+      #
+      # `bake-target` is absent below because nothing bakes a compose file, not because
+      # sharing the step would break it: only the label and annotation bake files travel
+      # from here, and neither names an image.
+      #
       # The patterns are shared, so the two derivations still cannot disagree on a tag.
+      # `flavor` is the one input still restated, and the reason is the same as above's.
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta-compose
         with:
