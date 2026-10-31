@@ -169,10 +169,11 @@ or with what nothing checks.
   `DATABASE_URL` each own is in [`README.md`](../README.md#configuration). Pinned by
   `test_missing_database_settings_are_refused_at_startup`.
 - **Any new task reaching a server without an explicit `--port` takes the
-  `: "${PGPORT:?...}"` guard.** initdb, psql and createdb each default to 5432 and the OS
-  username, so the guard is what holds a task to the port `.env` names. `dev` is the
-  exception and needs none: uvicorn *binds* its port rather than reaching a server.
-  `test_a_non_numeric_port_is_refused`.
+  `: "${PGPORT:?...}"` guard.** initdb, psql and createdb each fall back to 5432 and the
+  OS username on their own, and `.env` names 5432 as well - so the fallback finds the right
+  server as the wrong user, and the guard is what aborts an unblessed shell rather than
+  letting it connect. `dev` is the exception and needs none: uvicorn *binds* its port
+  rather than reaching a server. `test_a_non_numeric_port_is_refused`.
 
 ## Quality gates
 

@@ -476,7 +476,7 @@ the only code that talks to it. Three settings are baked into the generated
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `port` | `$PGPORT`, `5433` by default | Clear of a system PostgreSQL on 5432 |
+| `port` | `$PGPORT`, `5432` by default | PostgreSQL's own default, so a client that falls back to it finds this cluster |
 | `listen_addresses` | `127.0.0.1` | Loopback only |
 | `unix_socket_directories` | `/tmp` | The DSN is TCP |
 
@@ -1854,7 +1854,7 @@ the expense files are.
 
 ```
 PGHOST=127.0.0.1
-PGPORT=5433
+PGPORT=5432
 PGUSER=expense_tracker
 PGDATABASE=expense_tracker
 UVICORN_PORT=8000
