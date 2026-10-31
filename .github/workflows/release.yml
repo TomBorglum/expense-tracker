@@ -1,15 +1,16 @@
 name: Release
 
-# Builds, scans and publishes one image per directory it is given. publish.yml is what
-# names them and what carries the triggers: this file is CALLED, never triggered, and
+# Builds, scans and publishes one image per directory it is given, then publishes
+# compose.yaml as an OCI artifact naming those images by digest. publish.yml is what names
+# the directories and what carries the triggers: this file is CALLED, never triggered, and
 # that file's header says why it keeps the name it has.
 #
-# Publishes to Docker Hub when release-please's GitHub Release is published, and
-# exercises the build half on any pull request that changes what goes into an image.
+# Publishes to Docker Hub when release-please's GitHub Release is published, and exercises
+# the build half on any pull request that changes what goes into an image or the stack.
 #
 # THE ISOLATION PROPERTY THIS FILE EXISTS TO HOLD. `build` runs repository code - a
 # Dockerfile, `pixi install`, `pnpm install` - and holds the Docker Hub credential at
-# arm's length: it is the only job that checks the repository out, and it has no
+# arm's length: neither it nor `compose`, the two jobs that check the repository out, has
 # `id-token: write`, which is what the AWS exchange needs. `push` holds the credential and
 # checks nothing out. So a malicious dependency pulled into either install step lands in
 # the job without that token. CLAUDE.md states this as an invariant.
@@ -64,9 +65,24 @@ jobs:
   # Needs no checkout - metadata-action reads the event context, not the working tree.
   meta:
     runs-on: ubuntu-latest
+    env:
+      # The tags, declared ONCE for the two derivations below - the images' and the
+      # compose artifact's - so a release cannot tag the stack differently from the images
+      # that stack names. A step's `with:` can read the `env` context, which is what lets
+      # one declaration serve both; a YAML anchor would not, GitHub resolving none.
+      #
+      # The semver patterns resolve only on a tag ref, so a pull_request run yields the
+      # sha tag alone - which is all the build half needs, since it never pushes.
+      TAG_PATTERNS: |
+        type=semver,pattern={{version}}
+        type=semver,pattern={{major}}.{{minor}}
+        type=sha,format=long
+        type=raw,value=latest,enable=${{ github.event_name == 'release' }}
     outputs:
       tags: ${{ steps.meta.outputs.tags }}
       images: ${{ steps.images.outputs.map }}
+      compose-repository: ${{ steps.images.outputs.compose }}
+      compose-tags: ${{ steps.meta-compose.outputs.tags }}
       bake-labels: ${{ steps.bake.outputs.labels }}
       bake-annotations: ${{ steps.bake.outputs.annotations }}
     steps:
@@ -107,8 +123,14 @@ jobs:
           jq -c --arg ns "$NAMESPACE" --arg repo "$REPOSITORY" \
             'map({key: ., value: "\($ns)/\($repo)-\(.)"}) | from_entries' \
             /tmp/directories.json | sed 's/^/map=/' >> "$GITHUB_OUTPUT"
+          # The compose artifact's repository: the same pair WITHOUT a directory suffix,
+          # because the stack is not an image and no directory builds it. Composed here
+          # with the rest so the formula stays in one step, and read back by the second
+          # derivation below and by the publish step in `push`.
+          printf 'compose=%s/%s\n' "$NAMESPACE" "$REPOSITORY" >> "$GITHUB_OUTPUT"
           jq -r --arg ns "$NAMESPACE" --arg repo "$REPOSITORY" \
             '.[] | "\(.) -> \($ns)/\($repo)-\(.)"' /tmp/directories.json
+          echo "compose -> $NAMESPACE/$REPOSITORY"
 
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
@@ -122,15 +144,22 @@ jobs:
           # here, which is what lets a caller name the directories and nothing else.
           images: ${{ steps.images.outputs.list }}
           # latest=false turns off the implicit "latest on any semver tag", so the moving
-          # tag is declared below like every other one rather than appearing by default.
+          # tag is declared in TAG_PATTERNS above like every other one rather than
+          # appearing by default. Both derivations need it, for the same reason.
           flavor: latest=false
-          # The semver patterns resolve only on a tag ref, so a pull_request run yields
-          # the sha tag alone - which is all the build half needs, since it never pushes.
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=long
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+          tags: ${{ env.TAG_PATTERNS }}
+
+      # The compose artifact's tags, derived SEPARATELY rather than by handing the step
+      # above a fourth name. Two reasons, and both are load-bearing: `push` checks the
+      # images it staged against the repositories THAT step's tags name, so a name with no
+      # image behind it would fail that check, and `bake-target` belongs to images alone.
+      # The patterns are shared, so the two derivations still cannot disagree on a tag.
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: meta-compose
+        with:
+          images: ${{ steps.images.outputs.compose }}
+          flavor: latest=false
+          tags: ${{ env.TAG_PATTERNS }}
 
       # metadata-action writes these bake files into THIS runner's temp directory, so
       # their paths mean nothing in the build job - the contents travel instead. One
@@ -154,8 +183,8 @@ jobs:
           printf 'annotations=%s\n' "$(tr -d '\n' < "$ANNOTATIONS_FILE")" >> "$GITHUB_OUTPUT"
           cat "$LABELS_FILE" "$ANNOTATIONS_FILE"
 
-  # The untrusted job: the only one that checks out, and the only one that runs anything
-  # from the repository. No `id-token` - see the header.
+  # The untrusted job: it runs the repository's own build tooling, which `compose`, the
+  # other job that checks out, does not. No `id-token` in either - see the header.
   build:
     needs: meta
     runs-on: ubuntu-latest
@@ -332,10 +361,52 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  # The stack itself, carried to `push` the only way it can be. `push` holds the Docker
+  # Hub credential and checks nothing out, so something else has to check compose.yaml out
+  # on its behalf - and that makes this the second job running repository code, so it gets
+  # `contents: read` and NO `id-token: write`, the invariant the header states. An
+  # artifact is the handover for the same reason the image archives are.
+  #
+  # It is also the only gate on compose.yaml anywhere: ci.yml never reads that file, so
+  # without this job a file that fails to load would be found by a release.
+  compose:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here talks to git again, and a job holding repository code must not
+          # also hold a credential for the repository.
+          persist-credentials: false
+
+      - name: Validate the compose file
+        run: |
+          set -euo pipefail
+          docker compose version
+          # `publish` was an experimental command when it was added, so a runner whose
+          # compose predates it would fail a release at its very last step. Asserted here,
+          # where a pull request reports it, rather than on the tag.
+          docker compose publish --help > /dev/null
+          # Loaded with every variable unset, which is what proves each `${...}` in the
+          # file carries a default: a bare one resolves to an EMPTY bind source, which
+          # compose rejects. Both profiles, because `config` renders only the services a
+          # profile selects and the two loaders are the services with mounts.
+          docker compose -f compose.yaml config --quiet
+          docker compose -f compose.yaml --profile load config --quiet
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: compose
+          path: compose.yaml
+          # The image archives' retention, for the same reason.
+          retention-days: 1
+          if-no-files-found: error
+
   # The trusted job. It checks nothing out: everything that runs in it is either a
   # SHA-pinned action or a `run` block written in this file.
   push:
-    needs: [meta, build]
+    needs: [meta, build, compose]
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
@@ -373,6 +444,13 @@ jobs:
         with:
           pattern: image-*
           path: /tmp/images
+
+      # Published last, downloaded here, and never executed either - compose reads this
+      # file, and the only thing it does with it is upload it again.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: compose
+          path: /tmp/compose
 
       # BEFORE regctl-installer, and that order is load-bearing rather than tidy: the
       # regctl installer verifies the binary it downloads against regclient's cosign
@@ -494,14 +572,69 @@ jobs:
             echo "$directory: $matched tag(s) published"
           done
 
+      # The stack itself, to <namespace>/<repository> - the image repositories without a
+      # directory suffix. AFTER the copy above, and that order is the whole reason this
+      # step lives in this job rather than one of its own: --resolve-image-digests reads
+      # each digest back OUT of the registry, so the images have to be there already.
+      #
+      # ONE PUBLISH PER TAG, each resolving against that tag's own images, so the
+      # artifact tagged 2.1.0 names the images tagged 2.1.0. Every tag resolves to the
+      # same digests; what differs is only the text the document carries beside them.
+      #
+      # What the artifact holds was measured against a throwaway registry rather than
+      # assumed: compose.yaml BYTE FOR BYTE, comments and all, plus a second layer named
+      # image-digests.yaml restating all five `image:` keys as `<tag>@sha256:...`. That
+      # overlay is merged last, so NEITHER variable below has any effect on a deployment
+      # that loads the artifact - they exist to tell this step what to resolve.
+      - name: Publish the stack to Docker Hub
+        id: compose
+        env:
+          COMPOSE_TAGS: ${{ needs.meta.outputs.compose-tags }}
+          # The prefix compose.yaml's five `image:` keys compose against, which is the
+          # namespace and repository the images themselves carry - read back out of `meta`
+          # rather than recomposed here.
+          EXPENSE_TRACKER_IMAGE_PREFIX: ${{ needs.meta.outputs.compose-repository }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$COMPOSE_TAGS" > /tmp/compose-tags
+          published=0
+          while read -r ref; do
+            [ -n "$ref" ] || continue
+            # The repository holds no port, so the last colon is the tag's.
+            export EXPENSE_TRACKER_VERSION="${ref##*:}"
+            echo "publishing the stack -> $ref, naming images at :$EXPENSE_TRACKER_VERSION"
+            docker compose -f /tmp/compose/compose.yaml publish "$ref" \
+              --resolve-image-digests --yes
+            published=$((published + 1))
+          done < /tmp/compose-tags
+          # The same guard the staging step applies to the images: a derivation that
+          # yielded nothing would otherwise leave a release with its images published and
+          # no stack describing them, silently.
+          if [ "$published" -eq 0 ]; then
+            echo "::error::no compose tags were derived, so the stack was not published."
+            exit 1
+          fi
+          # Read back from the registry, because the signature below covers content rather
+          # than a name, and every tag above carries this one digest.
+          digest="$(regctl manifest digest "$(head -1 /tmp/compose-tags)")"
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+          echo "$published tag(s) published at $digest"
+
       # Keyless, reusing this job's own OIDC token, so there is no signing key to hold.
       # The digest is the index's, so one signature covers the image and its attestations.
       - name: Sign every published digest
+        env:
+          COMPOSE_REPOSITORY: ${{ needs.meta.outputs.compose-repository }}
+          COMPOSE_DIGEST: ${{ steps.compose.outputs.digest }}
         run: |
           set -euo pipefail
           for dir in /tmp/images/image-*/; do
             cosign sign --yes "$(cat "$dir/repository")@$(cat "$dir/digest")"
           done
+          # The stack on the images' own terms. cosign signs a digest, so the artifact's
+          # media type - application/vnd.docker.compose.project - is nothing it has to
+          # know about.
+          cosign sign --yes "$COMPOSE_REPOSITORY@$COMPOSE_DIGEST"
 
       - name: Log out of Docker Hub
         if: always()

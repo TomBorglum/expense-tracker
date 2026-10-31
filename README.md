@@ -1531,6 +1531,7 @@ it. Four tags per image, derived once by `docker/metadata-action` so they cannot
 tomborglum/expense-tracker-backend
 tomborglum/expense-tracker-database
 tomborglum/expense-tracker-frontend
+tomborglum/expense-tracker            <- the stack, not an image
 ```
 
 **No one of those names is written down.** `publish.yml` names the directories, `backend`,
@@ -1540,6 +1541,11 @@ tomborglum/expense-tracker-frontend
 read from `github.event.repository.name`. **So renaming this GitHub repository renames
 what a release publishes to**, which `CLAUDE.md` carries as a pair that nothing checks.
 The composition is logged on every pull request run.
+
+The fourth repository is the same pair **without** a directory suffix, and it holds
+`compose.yaml` as an OCI artifact rather than an image, under the same four tags derived
+from the same patterns. [Deployment](#deployment) is what loads it; what it holds is
+[The published stack](#the-published-stack) below.
 
 The same job derives the OCI metadata: eight `org.opencontainers.image.*` values, carried
 twice over, as labels in the image config and as annotations on its manifest, so a
@@ -1574,11 +1580,13 @@ It is a release workflow rather than a deployment workflow. Its whole output is 
 Docker Hub, and when such a tag becomes live somewhere is a separate concern, so the
 workflow involves no GitHub Environment and files no deployment records.
 
-### Why it is three jobs
+### Why it is four jobs
 
 ```
-publish.yml  ->  meta  ->  build (matrix: backend, frontend)  ->  push
-                 \____________ release.yml ____________________________/
+publish.yml  ->  meta  ->  build (matrix: backend, database, frontend)  -\
+                                                                          >-  push
+                 compose  -----------------------------------------------/
+                 \_____________________ release.yml _____________________/
 ```
 
 `publish.yml` is the caller and holds the triggers, the concurrency group and both
@@ -1591,11 +1599,12 @@ path is what leaves that policy alone.
 **The split exists for one reason, and it is the only interesting thing about the file.**
 `build` runs repository code: a Dockerfile, `pixi install`, `pnpm install`. A malicious
 dependency in any of those is one layer away from push access to published images, so
-`build` is the only job that checks the repository out, and it is granted `contents: read`
-and **no `id-token: write`**, so the token AWS accepts is out of its reach. `push` is the
-mirror image: it holds the credentials and **checks nothing out**, so everything that
-executes in it is either a SHA-pinned action or a `run` block written in the workflow file
-itself. `CLAUDE.md` carries the split as an invariant.
+`build` is granted `contents: read` and **no `id-token: write`**, and the token AWS
+accepts is out of its reach. `compose` checks out too, for the one file it uploads, and is
+granted exactly the same pair. `push` is the mirror image of both: it holds the
+credentials and **checks nothing out**, so everything that executes in it is either a
+SHA-pinned action or a `run` block written in the workflow file itself. `CLAUDE.md`
+carries the split as an invariant.
 
 `build` hands `push` an OCI archive through an artifact, along with the digest it built.
 Untrusted bytes are safe to hand over precisely because `push` never executes them - it
@@ -1610,6 +1619,13 @@ out of there, so the tags and the artifacts cannot spell a repository differentl
 anything is copied, `push` still compares the two sets, which is what catches a count that
 does not match: a build that uploaded nothing, or an artifact that arrived twice, would
 otherwise publish a partial release quietly.
+
+`compose` is the fourth job because of that same split, not because the work is heavy: it
+checks out `compose.yaml`, loads it with every variable unset, and uploads it. **That load
+is the only gate on the file anywhere** - `ci.yml` never reads it - so a `${...}` left
+without a default is caught by the pull request rather than by a release. The job also
+asserts `docker compose publish` exists on the runner, since the command was experimental
+when it was added and `push` is the one job no pull request can exercise.
 
 ### How the credential is reached
 
@@ -1817,6 +1833,35 @@ one parameter - so that scoping is where the separation lives.
    `release.yml`, which has to be the account the PAT above belongs to. `AWS_REGION`
    already exists for the smoke test.
 
+### The published stack
+
+`compose.yaml` is published to the fourth repository as an OCI artifact of type
+`application/vnd.docker.compose.project`, by `docker compose publish` in the `push` job
+and **after** the images are copied - `--resolve-image-digests` reads each digest back out
+of the registry, so they have to be there first.
+
+It holds **two layers**, which was measured against a throwaway registry rather than taken
+from the documentation:
+
+| Layer | What it is |
+|---|---|
+| `compose.yaml` | The committed file, **byte for byte**, comments and all. |
+| `image-digests.yaml` | A generated overlay restating all five `image:` keys as `<tag>@sha256:...`. |
+
+The overlay is merged last, so `EXPENSE_TRACKER_IMAGE_PREFIX` and
+`EXPENSE_TRACKER_VERSION` **have no effect on a deployment that loads the artifact**. They
+exist for a checkout, and for telling the publish step which images to resolve - which is
+why the artifact is published **once per tag**, each resolving against that tag's own
+images, so the artifact tagged `2.1.0` names images spelled `2.1.0@sha256:...`. Every tag
+resolves to the same digests; only the text beside them differs.
+
+The published digest is then signed by `cosign`, keyless, on exactly the terms the images
+are. cosign signs a digest, so the artifact's media type is nothing it has to know about.
+
+Only the bind mount *declarations* travel - the two `source:` paths as the file spells
+them, defaults included. **No directory contents are published**, and nothing in the
+artifact is specific to a machine.
+
 ### Verifying a release
 
 ```sh
@@ -1824,6 +1869,13 @@ docker buildx imagetools inspect tomborglum/expense-tracker-backend:2.0.0
 cosign verify tomborglum/expense-tracker-backend@sha256:<digest> \
   --certificate-identity-regexp '.*expense-tracker.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The stack takes the same two commands against the suffixless repository, and
+`docker compose config` is the third - it renders what a deployment would actually run:
+
+```sh
+docker compose -f oci://docker.io/tomborglum/expense-tracker:2.0.0 config
 ```
 
 `cosign verify` is the only view of the signature from outside. `cosign-installer`'s
@@ -1858,8 +1910,9 @@ laptop - and `docker compose up` is the whole operation.
 
 Every service names an `image:` and none a `build:`. That is a hard rule rather than a
 preference: `docker compose publish` refuses a service carrying `build` without `image`,
-and the file is meant to be published as an OCI artifact and loaded on a machine holding no
-checkout, where there is nothing to build from anyway.
+and a release publishes this file as an OCI artifact to be loaded on a machine holding no
+checkout, where there is nothing to build from anyway. **That is the deployment the file
+is for**; running it from this checkout is the development case.
 
 ### The services
 
@@ -1888,6 +1941,44 @@ completing are the same moment.
 Neither `backend` nor `frontend` declares a healthcheck. The API image is distroless and
 holds no shell, no curl and no wget, so there is nothing in it to probe itself with, and
 adding one would mean adding a binary to a published image to serve compose.
+
+### Running it from a release
+
+A release publishes the file itself, so a host needs **no checkout and no clone** - one
+directory holding one `.env`:
+
+```sh
+cat > .env <<'EOF'
+EXPENSE_TRACKER_CURRENCIES_DIR=/home/you/somewhere/currencies
+EXPENSE_DATA_DIR=/home/you/projects/expense-data/data
+EOF
+
+stack=oci://docker.io/tomborglum/expense-tracker:2.1.0
+docker compose -f "$stack" up -d -y
+printf 'y\n' | docker compose -f "$stack" run --rm -T load-currencies
+printf 'y\n' | docker compose -f "$stack" run --rm -T load-expenses
+```
+
+That `.env` is the only state the host keeps. The images come out of the artifact pinned
+by digest, so neither `EXPENSE_TRACKER_IMAGE_PREFIX` nor `EXPENSE_TRACKER_VERSION` has any
+effect here - the artifact's tag is what selects a version, and [The published
+stack](#the-published-stack) says why.
+
+Three things about the `oci://` path are worth knowing before the first run, because none
+of them is guessable from the compose documentation and all three were measured:
+
+- **A relative bind source resolves against compose's download cache**, not the current
+  directory. The two defaults in the file are relative and correct for a checkout, so a
+  host holding none must name both directories **absolutely**, as the `.env` above does.
+  `create_host_path: false` is what turns a missing one into a container that refuses to
+  start rather than an empty mount.
+- **Loading an `oci://` file prompts** for the interpolation variables and the sources
+  they resolved from, every time. `up` takes `-y` for it. **`run` has no such flag**, so
+  it wants a `y` typed - or `printf 'y\n' |` ahead of it with `-T`, which is what a
+  script needs and what the commands above use.
+- **`COMPOSE_FILE` cannot carry an `oci://` reference.** Compose splits that variable on
+  `:`, so the value becomes three nonexistent paths. Pass `-f oci://...` instead, or set
+  `COMPOSE_PATH_SEPARATOR=,` first.
 
 ### Running it from this checkout
 
@@ -1984,29 +2075,10 @@ Error response from daemon: invalid mount config for type "bind":
 bind source path does not exist: /...
 ```
 
-### What publishing it will change
-
-Nothing publishes this file yet. The `oci://` path was rehearsed end to end against a
-throwaway local registry before any workflow is written to depend on it, and three things
-it found are worth writing down here, because none of them is guessable from the compose
-documentation:
-
-- **A relative bind source resolves against compose's download cache**, not the current
-  directory, when the file is loaded from `oci://`. The two defaults above are relative and
-  correct for a checkout; a deployment holding no checkout names both directories
-  **absolutely**, in a `.env` beside wherever the deploy command runs. That `.env` is then
-  the only state the host keeps.
-- **Loading an `oci://` file prompts** for the interpolation variables and the sources they
-  resolved from, every time. `docker compose up` takes `-y` for it. `docker compose run`
-  has **no such flag**, so it wants a `y` typed - or `printf 'y\n' |` ahead of it with
-  `-T`, which is what a script needs.
-- **`COMPOSE_FILE` cannot carry an `oci://` reference.** Compose splits that variable on
-  `:`, so the value becomes three nonexistent paths. Pass `-f oci://...` instead, or set
-  `COMPOSE_PATH_SEPARATOR=,` first.
-
 The project name is pinned to `expense-tracker` in the file rather than taken from the
 directory, so the volume is `expense-tracker_database-data` wherever the file is loaded
-from and `down -v` reaches the same one every time.
+from - a checkout, a scratch directory holding one `.env`, or an `oci://` reference - and
+`down -v` reaches the same one every time.
 
 ## Configuration
 
