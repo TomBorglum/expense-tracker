@@ -1566,8 +1566,8 @@ and merges per key, so a key the stack names wins and every shared one survives,
 image. **The stack's own file is therefore loaded last**, which is what puts its `title`
 and `description` on the published image.
 
-The target is spelled `image` in four places: both bake files, metadata-action's
-`bake-target`, and the build step's `targets` and `set:` keys. Those four agreeing is what
+The target is spelled `image` in five places: all three bake files, metadata-action's
+`bake-target`, and the build step's `targets` and `set:` keys. Those five agreeing is what
 lands the overrides on the target the stack declares, and nothing reports a mismatch, which
 is why `CLAUDE.md` carries that pair.
 

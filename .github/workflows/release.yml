@@ -79,10 +79,13 @@ jobs:
         type=sha,format=long
         type=raw,value=latest,enable=${{ github.event_name == 'release' }}
     outputs:
-      tags: ${{ steps.meta.outputs.tags }}
-      images: ${{ steps.images.outputs.map }}
-      compose-repository: ${{ steps.images.outputs.compose }}
+      # Two halves on the same terms, each a pair: what to tag, and where it goes. The
+      # bake overrides have no second half - there is no bake file for an artifact that
+      # nothing builds.
+      image-tags: ${{ steps.meta-images.outputs.tags }}
+      image-repositories: ${{ steps.images.outputs.map }}
       compose-tags: ${{ steps.meta-compose.outputs.tags }}
+      compose-repository: ${{ steps.images.outputs.compose }}
       bake-labels: ${{ steps.bake.outputs.labels }}
       bake-annotations: ${{ steps.bake.outputs.annotations }}
     steps:
@@ -133,7 +136,7 @@ jobs:
           echo "compose -> $NAMESPACE/$REPOSITORY"
 
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        id: meta
+        id: meta-images
         with:
           # The target every directory's bake file declares, so the generated overrides
           # land on it. The action's own default target is `docker-metadata-action`, which
@@ -174,8 +177,8 @@ jobs:
       - name: Carry the bake overrides to the build job
         id: bake
         env:
-          LABELS_FILE: ${{ steps.meta.outputs.bake-file-labels }}
-          ANNOTATIONS_FILE: ${{ steps.meta.outputs.bake-file-annotations }}
+          LABELS_FILE: ${{ steps.meta-images.outputs.bake-file-labels }}
+          ANNOTATIONS_FILE: ${{ steps.meta-images.outputs.bake-file-annotations }}
         run: |
           set -euo pipefail
           [ -s "$LABELS_FILE" ] && [ -s "$ANNOTATIONS_FILE" ]
@@ -344,7 +347,7 @@ jobs:
           # bake-action reports one entry per target rather than a bare digest.
           DIGEST: ${{ fromJSON(steps.build.outputs.metadata).image['containerimage.digest'] }}
           # Read back out of `meta`, not recomposed: the formula lives in one step.
-          IMAGE: ${{ fromJSON(needs.meta.outputs.images)[matrix.directory] }}
+          IMAGE: ${{ fromJSON(needs.meta.outputs.image-repositories)[matrix.directory] }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/out
@@ -510,7 +513,7 @@ jobs:
       # images exist, and each carries the repository its build job was given.
       - name: Stage every image and verify its digest
         env:
-          TAGS: ${{ needs.meta.outputs.tags }}
+          TAGS: ${{ needs.meta.outputs.image-tags }}
         run: |
           set -euo pipefail
 
@@ -554,7 +557,7 @@ jobs:
       # `docker buildx imagetools create` reads sources already in a registry.
       - name: Copy every image to Docker Hub
         env:
-          TAGS: ${{ needs.meta.outputs.tags }}
+          TAGS: ${{ needs.meta.outputs.image-tags }}
         run: |
           set -euo pipefail
           printf '%s\n' "$TAGS" > /tmp/tags
