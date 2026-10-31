@@ -57,3 +57,24 @@ jobs:
       # the PAT in SSM belongs to. Unset, it arrives as an empty string and release.yml's
       # `images` step fails the run before anything is built.
       namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
+      # The other half of every image name. Read off the event rather than written down,
+      # which is what makes the published names FOLLOW A RENAME of this repository -
+      # including `latest`, which forks silently onto the new repositories. CLAUDE.md
+      # carries that as a pair nothing checks.
+      repository: ${{ github.event.repository.name }}
+      # The AWS pair, both repository variables for the same reason the namespace is one,
+      # and the ARN for one more: it holds the 12-digit account id, so a variable is what
+      # keeps that out of this public file and out of the diff. README.md, under Releases,
+      # records both and the objects they name.
+      aws-region: ${{ vars.AWS_REGION }}
+      aws-role-arn: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+      # A literal, where the two above are variables: a parameter PATH is not a secret -
+      # README.md prints it - and what bounds the read is the role's policy, which grants
+      # `ssm:GetParameter` on this one parameter alone. Written here so it stays
+      # reviewable in the diff, beside the directories.
+      pat-parameter-name: /expense-tracker/release/dockerhub-pat
+      # Composed rather than left at release.yml's `release` default, so a release is
+      # identifiable in CloudTrail by the repository it came from, and so that name
+      # follows a rename the way the image names above do. Nothing conditions on it: the
+      # trust policy reads `sub` and `job_workflow_ref`.
+      role-session-name: ${{ github.event.repository.name }}-release

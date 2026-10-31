@@ -2,8 +2,8 @@ name: Release
 
 # Builds, scans and publishes one image per directory it is given, then publishes
 # compose.yaml as an OCI artifact naming those images by digest. publish.yml is what names
-# the directories and what carries the triggers: this file is CALLED, never triggered, and
-# that file's header says why it keeps the name it has.
+# the directories, everything else specific to one repository, and the triggers: this file
+# is CALLED, never triggered, and that file's header says why it keeps the name it has.
 #
 # Publishes to Docker Hub when release-please's GitHub Release is published, and exercises
 # the build half on any pull request that changes what goes into an image or the stack.
@@ -24,8 +24,10 @@ name: Release
 # may print the account id or the PAT, and anything added must be masked on the same terms.
 
 # The caller's triggers reach this file through the `github` context, which in a called
-# workflow is always the CALLER's: `github.event_name`, `github.ref` and
-# `github.event.repository` below all read publish.yml's event.
+# workflow is always the CALLER's: `github.event_name` below reads publish.yml's event,
+# and metadata-action reads `github.ref` itself, which is what resolves the semver
+# patterns. Nothing here reads `github.event.repository` - the repository arrives as an
+# input, so the name this file composes stays the caller's to decide.
 #
 # publish.yml carries the concurrency group, because GitHub cancels the caller when caller
 # and called share one. A RELEASE is never cancelled: a run stopped partway through the
@@ -49,6 +51,48 @@ on:
           logs in as. Validated in the `images` step, which is also where it becomes half
           of each repository name.
         required: true
+        type: string
+      repository:
+        description: >-
+          The repository half of every image name, between the namespace and the
+          directory. An input rather than a read of the caller's own repository, so this
+          file composes a published name without knowing whose it is: a caller passing
+          `github.event.repository.name` gets names that follow a repository rename, and
+          one passing a literal gets names that do not. Validated in the `images` step on
+          the namespace's terms.
+        required: true
+        type: string
+      aws-region:
+        description: >-
+          The region holding both the role below and the parameter below that. Read by the
+          credential exchange and by the parameter read, which are the only two AWS calls
+          this workflow makes.
+        required: true
+        type: string
+      aws-role-arn:
+        description: >-
+          The role `push` assumes with its OIDC token. It needs a trust policy that accepts
+          this workflow's claims and a policy granting the parameter read below. An ARN is
+          an address rather than a secret, so it travels as an input and reaches the log:
+          what bounds it is the trust policy, not its obscurity. The account id inside it
+          is masked before the exchange.
+        required: true
+        type: string
+      pat-parameter-name:
+        description: >-
+          SSM Parameter Store path holding the registry password, a SecureString read with
+          --with-decryption and piped straight into `docker login`. The role above has to
+          grant `ssm:GetParameter` on it, which is what bounds a caller to its own.
+        required: true
+        type: string
+      role-session-name:
+        description: >-
+          Names the assumed-role session in CloudTrail and in the credential step's log. A
+          label only - the trust policy conditions on `sub` and `job_workflow_ref` and
+          never on this - so the default suits any caller, and one wanting its runs told
+          apart passes its own.
+        required: false
+        default: release
         type: string
 
 permissions:
@@ -93,8 +137,9 @@ jobs:
       # Both consumers read it back out of this step - metadata-action below from `list`,
       # the build job from `map` - so the two cannot spell a repository differently.
       #
-      # `github.event.repository.name` is the CALLER's repository, which is what makes
-      # the image names follow a repository rename. CLAUDE.md records that.
+      # BOTH halves of the name are the caller's, passed in rather than read off
+      # `github.event.repository`, so nothing here is tied to one repository. publish.yml
+      # is where the repository is chosen, and CLAUDE.md records what choosing it decides.
       #
       # Two single-line outputs, no heredoc, for the reason the bake step below gives.
       # `list` is comma-joined: metadata-action splits its `images` input on newlines
@@ -104,7 +149,7 @@ jobs:
         id: images
         env:
           DIRECTORIES: ${{ inputs.directories }}
-          REPOSITORY: ${{ github.event.repository.name }}
+          REPOSITORY: ${{ inputs.repository }}
         run: |
           set -euo pipefail
           # Checked rather than trusted: `required` is satisfied by a key being present,
@@ -112,6 +157,12 @@ jobs:
           # which would otherwise compose a name `docker login` cannot push to.
           if [[ ! "$NAMESPACE" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
             echo "::error::namespace must be lowercase letters, digits, - or _, got: '$NAMESPACE'"
+            exit 1
+          fi
+          # The other half, which needed no check while a GitHub context supplied it. A
+          # repository name GitHub accepts can carry uppercase, and that pushes nowhere.
+          if [[ ! "$REPOSITORY" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "::error::repository must be lowercase letters, digits, ., - or _, got: '$REPOSITORY'"
             exit 1
           fi
           printf '%s' "$DIRECTORIES" > /tmp/directories.json
@@ -475,17 +526,33 @@ jobs:
           # into a registry while the Docker Hub credential is live in the job.
           release: v0.11.7
 
+      # BEFORE the step below, which prints the ARN holding this id as it expands its
+      # `with:` block. An input carries no redaction of its own - that is the one thing a
+      # secret is for - and mask-aws-account-id only takes effect once the action is
+      # running, so this is what covers the ARN's own appearance in a world-readable log.
+      - name: Mask the AWS account id
+        env:
+          ROLE_ARN: ${{ inputs.aws-role-arn }}
+        run: |
+          set -euo pipefail
+          # Field 5 of arn:aws:iam::<account-id>:role/<name>.
+          account="$(printf '%s' "$ROLE_ARN" | cut -d: -f5)"
+          if [ -n "$account" ]; then
+            echo "::add-mask::$account"
+          fi
+
       - name: Configure AWS credentials
         id: creds
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          # A repository variable, not a secret: a role ARN is an address, assuming it
-          # needs an OIDC token this trust policy accepts, and keeping it in the log is
-          # what makes a refused exchange diagnosable. The account id inside it is masked
-          # below instead.
-          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: expense-tracker-release
+          # An input, not a secret: a role ARN is an address, assuming it needs an OIDC
+          # token this trust policy accepts, and keeping it in the log is what makes a
+          # refused exchange diagnosable. Keeping it out of a world-readable FILE is the
+          # caller's half; the account id inside it is masked by the step above and by
+          # mask-aws-account-id below.
+          role-to-assume: ${{ inputs.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+          role-session-name: ${{ inputs.role-session-name }}
           # Short enough that a leaked credential outlives little, long enough for two
           # image pushes and their signatures.
           role-duration-seconds: 900
@@ -505,11 +572,12 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ steps.creds.outputs.aws-access-key-id }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.creds.outputs.aws-secret-access-key }}
           AWS_SESSION_TOKEN: ${{ steps.creds.outputs.aws-session-token }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_REGION: ${{ inputs.aws-region }}
+          PARAMETER_NAME: ${{ inputs.pat-parameter-name }}
         run: |
           set -euo pipefail
           aws ssm get-parameter \
-            --name /expense-tracker/release/dockerhub-pat \
+            --name "$PARAMETER_NAME" \
             --with-decryption \
             --query Parameter.Value \
             --output text \

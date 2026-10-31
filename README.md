@@ -1536,11 +1536,12 @@ tomborglum/expense-tracker            <- the stack, not an image
 
 **No one of those names is written down.** `publish.yml` names the directories, `backend`,
 `database` and `frontend`, and `release.yml`'s `meta` job composes
-`<namespace>/<repository>-<directory>` from them - the namespace an input that
-`publish.yml` fills from the `DOCKERHUB_NAMESPACE` repository variable, the repository
-read from `github.event.repository.name`. **So renaming this GitHub repository renames
-what a release publishes to**, which `CLAUDE.md` carries as a pair that nothing checks.
-The composition is logged on every pull request run.
+`<namespace>/<repository>-<directory>` from them - both halves inputs that `publish.yml`
+fills, the namespace from the `DOCKERHUB_NAMESPACE` repository variable and the repository
+from `github.event.repository.name`. **So renaming this GitHub repository renames what a
+release publishes to**, which `CLAUDE.md` carries as a pair that nothing checks. The
+composition is logged on every pull request run, and `release.yml` checks the shape of
+both halves before anything is built.
 
 The fourth repository is the same pair **without** a directory suffix, and it holds
 `compose.yaml` as an OCI artifact rather than an image, under the same four tags derived
@@ -1589,10 +1590,16 @@ publish.yml  ->  meta  ->  build (matrix: backend, database, frontend)  -\
                  \_____________________ release.yml _____________________/
 ```
 
-`publish.yml` is the caller and holds the triggers, the concurrency group and both
-inputs: the **directories** to build and the **namespace** to publish under.
-`release.yml` is called, and holds everything about how an image is built, scanned and
-pushed. The filenames look inverted on purpose - the AWS trust policy below pins
+`publish.yml` is the caller and holds the triggers, the concurrency group and **every
+value specific to this repository**: the directories to build, the namespace and
+repository the image names compose from, the AWS region and role the credential exchange
+uses, the parameter the registry password is read from, and the session name that read is
+made under. `release.yml` is called, and holds everything about how an image is built,
+scanned and pushed - it reads no `vars` and no `github.event.repository`, so the whole of
+what ties a run to one repository is readable in the caller's `with:` block. That is what
+makes it movable to a shared workflows repository.
+
+The filenames look inverted on purpose - the AWS trust policy below pins
 `job_workflow_ref`, which names the **called** workflow, so `release.yml` keeping its
 path is what leaves that policy alone.
 
@@ -1713,9 +1720,12 @@ only through a reviewed PR - and tags being created by release-please from `main
 ### The AWS objects
 
 Created once, by hand, in region `eu-north-1`. `<account-id>` below is the 12-digit AWS
-account id, which is why the role ARN is a repository **variable** and never a literal in
-the workflow: it keeps the account id out of a world-readable file and out of the diff,
-while `mask-aws-account-id` is what keeps it out of the log.
+account id, which is why the role ARN is a repository **variable** that `publish.yml`
+passes in, and never a literal in either workflow: it keeps the account id out of a
+world-readable file and out of the diff. Two things keep it out of the **log**:
+`mask-aws-account-id`, and a step in `push` that masks the account field of the ARN
+before the credential step can print it - an input carries no redaction of its own, and
+the action's own masking only starts once the action does.
 
 Everything here sits inside AWS's **always-free** tier, which is a standing constraint on
 what gets created. IAM, STS, the OIDC provider, a standard-tier SSM parameter and the
