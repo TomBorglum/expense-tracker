@@ -1,0 +1,208 @@
+# The deployed stack: the three images on one network, plus two one-shot loaders behind a
+# profile. This file is what a deployment IS - there is no other manifest, no chart and no
+# deploy script - and the target is a single host, which is why every service names an
+# `image:` and none a `build:`.
+#
+# That rule is not a style choice: `docker compose publish` REFUSES a service carrying
+# `build` without `image`, and this file is meant to be published as an OCI artifact and
+# loaded as `-f oci://...` on a machine holding no checkout. Nothing is built where this
+# runs.
+#
+# The project name is fixed rather than taken from the directory, so the named volume
+# below is `expense-tracker_database-data` wherever the file is loaded from - a checkout, a
+# scratch directory holding one .env, or an `oci://` reference. `docker compose down -v`
+# then reaches the same volume every time.
+name: expense-tracker
+
+services:
+  # The schema travels in the image, applied by the base's entrypoint on an empty data
+  # directory. So this service needs no init script, no migration step and no ordering
+  # against anything: it is the first thing up and the only thing that writes.
+  database:
+    image: ${EXPENSE_TRACKER_IMAGE_PREFIX:-expense-tracker}-database:${EXPENSE_TRACKER_VERSION:-dev}
+    # The pair backend/.env's PGUSER and PGDATABASE have to agree with, which CLAUDE.md
+    # carries as a pair nothing checks. The entrypoint creates both on first boot, and
+    # POSTGRES_USER becomes the superuser, so an existing volume ignores a change here.
+    #
+    # trust auth on the compose network alone: nothing published holds a credential,
+    # `docker compose up` needs no arguments, and the backend reaches this server with the
+    # same four PG* names a developer's blessed shell carries - so config.py is untouched.
+    # It is the posture the dev cluster already runs, and it is safe for exactly the same
+    # reason: there is no route to this port from outside the network. The `ports:` key
+    # being ABSENT is what holds that true, and adding one would publish an unauthenticated
+    # superuser to the host.
+    #
+    # POSTGRES_INITDB_ARGS is deliberately not here. database/Dockerfile sets it as ENV so
+    # the locale cannot be lost by a caller who does not know to ask for it, and that image
+    # is its single source of truth.
+    environment:
+      POSTGRES_USER: expense_tracker
+      POSTGRES_DB: expense_tracker
+      POSTGRES_HOST_AUTH_METHOD: trust
+    # The path the base image actually declares as its volume. PostgreSQL 18 puts PGDATA at
+    # /var/lib/postgresql/18/docker UNDERNEATH it, so the pre-18 /var/lib/postgresql/data
+    # is the wrong mount point and would leave the real data directory inside the container
+    # layer. A named volume rather than a bind mount because the image runs as uid 70 with
+    # gosu removed: docker seeds a fresh named volume from the image's own directory,
+    # ownership included, where a host directory would need `chown 70:70` by hand first.
+    volumes:
+      - database-data:/var/lib/postgresql
+    # The -h is load-bearing and was measured, not assumed. Without it pg_isready uses the
+    # unix socket, which the entrypoint's init-phase temporary server DOES answer - observed
+    # reporting ready while schema.sql was still being applied, which starts the backend
+    # against a database that does not exist yet. That temporary server is socket-only, so
+    # over TCP readiness and init completing are the same moment.
+    #
+    # The user and database names are read from where they are set above rather than
+    # declared a second time in the image.
+    healthcheck:
+      test:
+        ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "expense_tracker", "-d", "expense_tracker"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      # initdb plus the schema on a fresh volume, during which a failing probe is the
+      # normal state rather than a strike against the retry count.
+      start_period: 30s
+    restart: unless-stopped
+
+  # The REST API. The four PG* names are the ones config.py composes its DSN from, read
+  # straight out of the environment - it opens no file, so there is no .env in this image
+  # and no DATABASE_URL to set. PGHOST is the service name, which is the compose network's
+  # own DNS, and PGPORT is 5432 because inside the network there is nothing to collide
+  # with. Whichever port the local cluster listens on is a fact about a developer's host,
+  # not about this stack.
+  backend:
+    image: ${EXPENSE_TRACKER_IMAGE_PREFIX:-expense-tracker}-backend:${EXPENSE_TRACKER_VERSION:-dev}
+    environment:
+      PGHOST: database
+      PGPORT: 5432
+      PGUSER: expense_tracker
+      PGDATABASE: expense_tracker
+    # Published because the BROWSER calls this port, not the SPA container. The host port
+    # is the one API_BASE_URL names below, so the two move together: serving the API
+    # somewhere other than 8000 means setting EXPENSE_TRACKER_API_BASE_URL as well.
+    ports:
+      - "8000:8000"
+    # service_healthy rather than service_started: the API answers 200 with an empty items
+    # array against an empty table, so a database that is up but still applying the schema
+    # would not fail loudly - it would serve plausible, wrong, empty answers.
+    depends_on:
+      database:
+        condition: service_healthy
+    # No healthcheck. The image is distroless and holds no shell, no curl and no wget, so
+    # there is nothing in it to probe itself with; adding one would mean adding a binary to
+    # a published image to serve compose.
+    restart: unless-stopped
+
+  # The SPA, served by unprivileged nginx on 8080 - a privileged port being out of reach of
+  # the uid it runs as.
+  frontend:
+    image: ${EXPENSE_TRACKER_IMAGE_PREFIX:-expense-tracker}-frontend:${EXPENSE_TRACKER_VERSION:-dev}
+    # The origin the BROWSER should call, which is why it cannot be http://backend:8000:
+    # the bundle runs on the host's browser, where that name does not resolve. The image's
+    # own entrypoint script rewrites the build-time placeholder across the document root
+    # with this value, refuses an absent one, and refuses one carrying a path - so a
+    # misconfiguration here stops the container rather than serving an app that reaches
+    # nothing. Wildcard CORS is what lets 8080 call 8000.
+    environment:
+      API_BASE_URL: ${EXPENSE_TRACKER_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "8080:8080"
+    # No depends_on. Nothing in this container talks to the API - the browser does - so an
+    # API that is not up yet is a failed fetch in a page that is already serving, not a
+    # startup ordering problem. Same reason there is no healthcheck: the substitution above
+    # is the only thing that could be wrong, and it exits non-zero on its own.
+    restart: unless-stopped
+
+  # The two loaders, over the API image, which already carries both modules. They are
+  # profiled so `docker compose up` brings up the three services above and nothing else,
+  # and `docker compose run --rm load-expenses` reaches one directly without `--profile`.
+  #
+  # `database` is NOT profiled, so these depends_on entries need no `required: false` -
+  # that is only for depending on a service a profile hides.
+  #
+  # The entrypoint is EXEC form and names the interpreter outright, for the same reason
+  # backend/Dockerfile's does: the image has no shell to expand a string form, and no
+  # `uvicorn`-style console script is involved. It overrides the image's own entrypoint,
+  # which would otherwise start uvicorn. One service per loader because of that - a shell
+  # is what it would take to run both in one container, and there is none.
+  #
+  # Both mounts are read-only, and both host directories must be readable by uid 65532.
+  # Both interpolations take a default deliberately: a bare ${VAR} resolves to an EMPTY
+  # bind source, which compose rejects, so an unset variable would break `compose config`
+  # and the publish that reads it.
+  #
+  # Both are also LONG syntax carrying `create_host_path: false`, which is the one setting
+  # here with data loss behind it. Compose creates a missing bind source by default, so an
+  # unset or mistyped directory would mount an empty one instead of failing - and the
+  # currency loader replaces the whole rate table from what it finds, so an empty directory
+  # deletes every rate and reports `0 files read` with exit 0. Refusing to create the path
+  # turns that into a container that does not start.
+  #
+  # It matters most where a checkout does not exist. The defaults below are RELATIVE, and
+  # a relative bind source in a file loaded from `oci://` resolves against compose's own
+  # download cache rather than the current directory - measured, not assumed - so a
+  # deployment names both directories absolutely or loads nothing at all. README says so
+  # under Deployment.
+  load-currencies:
+    image: ${EXPENSE_TRACKER_IMAGE_PREFIX:-expense-tracker}-backend:${EXPENSE_TRACKER_VERSION:-dev}
+    profiles: ["load"]
+    entrypoint: ["/app/.pixi/envs/backend/bin/python", "-m", "expense_tracker.currency_loader"]
+    command: ["/currencies"]
+    environment:
+      PGHOST: database
+      PGPORT: 5432
+      PGUSER: expense_tracker
+      PGDATABASE: expense_tracker
+    # The rates live in this repository today and are mounted from it. The loader replaces
+    # the whole currency_rate table every run, a rate being a current fact rather than an
+    # event, so re-running this after editing rates.tsv is the supported path.
+    volumes:
+      - type: bind
+        source: ${EXPENSE_TRACKER_CURRENCIES_DIR:-./backend/data/currencies}
+        target: /currencies
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      database:
+        condition: service_healthy
+    # No restart policy. These two run once and exit 0, and `unless-stopped` would restart
+    # a finished loader forever.
+
+  load-expenses:
+    image: ${EXPENSE_TRACKER_IMAGE_PREFIX:-expense-tracker}-backend:${EXPENSE_TRACKER_VERSION:-dev}
+    profiles: ["load"]
+    entrypoint: ["/app/.pixi/envs/backend/bin/python", "-m", "expense_tracker.expense_loader"]
+    command: ["/expenses"]
+    environment:
+      PGHOST: database
+      PGPORT: 5432
+      PGUSER: expense_tracker
+      PGDATABASE: expense_tracker
+    # EXPENSE_DATA_DIR is the name backend/.env already carries, so a blessed shell points
+    # this at the private repository with no further setting. The default is the committed
+    # synthetic fixture set, which is what makes this path provable from a checkout alone -
+    # the same directory README names for filling a local database without that repository.
+    #
+    # The expense loader is append-only: its ledger skips a file whose sha256 matches and
+    # REFUSES one that changed, so a reclassified month is cured by dropping the volume and
+    # reloading, not by re-running this. See the reload sequence in README.
+    volumes:
+      - type: bind
+        source: ${EXPENSE_DATA_DIR:-./backend/tests/data/expenses}
+        target: /expenses
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      database:
+        condition: service_healthy
+
+# The one piece of state the stack keeps, and the thing `docker compose down -v` throws
+# away. Dropping it is the wipe: schema.sql re-runs from the image's initdb.d on an empty
+# data directory, so a reclassified expense directory is reloaded by down -v, up, then both
+# loaders. No backend code exists for that and none is needed.
+volumes:
+  database-data:

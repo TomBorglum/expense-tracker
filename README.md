@@ -17,6 +17,8 @@ expense-tracker/
   pixi.toml, pixi.lock          # environments, dependencies, and one `pixi run` task
                                 #   per command, each forwarding to the stack below
   sonar-project.properties      # one Sonar project spanning both languages
+  compose.yaml                  # the deployment: three services, two profiled
+                                #   loaders, one volume
   .github/                      # CI, release-please, dependabot
   backend/
     pyproject.toml              # hatchling, ruff, pytest, basedpyright, poe tasks
@@ -46,9 +48,10 @@ dependency from `pixi.toml`, and re-provisions whenever `pixi.toml` changes. Run
 That includes PostgreSQL: the server is a conda-forge package like everything else, so it
 arrives with the rest of the environment. See [Database](#database).
 
-Docker is the one tool pixi does not supply, and `pixi run backend-image` is the task that
-calls for it; the development loop runs without it. A machine without it gets
-`docker: command not found` from that task. See [Container images](#container-images).
+Docker is the one tool pixi does not supply. The three `*-image` tasks call for it, and so
+does `compose.yaml`, which is the whole deployment; the development loop runs without
+either. A machine without it gets `docker: command not found` from those tasks. See
+[Container images](#container-images) and [Deployment](#deployment).
 
 `use pixi` comes from a direnv library. On a workstation it is the one
 [`wsl-cloud-init`](https://github.com/TomBorglum/wsl-cloud-init) provisions; in CI, the
@@ -1845,6 +1848,165 @@ scans and gates all three images, with the `push` job held back by
 `if: github.event_name == 'release'`, so the change that touches the file runs it. The
 trigger covers every path, keeping what it watches in one place with what the Dockerfiles
 read, and a superseded pull request run is cancelled where a release run runs to the end.
+
+## Deployment
+
+**`compose.yaml` is the deployment.** There is no chart, no manifest and no deploy script
+beside it: one file describing the three images as three services, plus the two loaders
+behind a `load` profile, on one network with one volume. The target is a single host - a
+laptop - and `docker compose up` is the whole operation.
+
+Every service names an `image:` and none a `build:`. That is a hard rule rather than a
+preference: `docker compose publish` refuses a service carrying `build` without `image`,
+and the file is meant to be published as an OCI artifact and loaded on a machine holding no
+checkout, where there is nothing to build from anyway.
+
+### The services
+
+| Service | Port | What it is |
+|---|---|---|
+| `database` | none | The database image, which carries `schema.sql` and applies it on an empty data directory. Trust auth, reachable on the compose network alone. |
+| `backend` | `8000` | The API. Published because the **browser** calls it. |
+| `frontend` | `8080` | The SPA, nginx serving the bundle, with the API origin substituted at container start. |
+| `load-currencies` | - | `profiles: ["load"]`. One shot, over the API image, reading `/currencies`. |
+| `load-expenses` | - | `profiles: ["load"]`. One shot, over the API image, reading `/expenses`. |
+
+The database publishes **no port**, which is what makes trust auth safe - the same bargain
+`db-create` strikes with `--set=listen_addresses=127.0.0.1` for the local cluster, and the
+reason `docker compose up` needs no arguments and nothing published holds a credential.
+Adding a `ports:` entry to that service would publish an unauthenticated superuser to the
+host.
+
+`backend` waits on `database` being **healthy**, not merely started. The API answers `200`
+with an empty `items` array against an empty table, so a database still applying its schema
+would not fail loudly - it would serve plausible, wrong, empty answers. The healthcheck is
+`pg_isready -h 127.0.0.1`, and the `-h` is load-bearing: without it `pg_isready` uses the
+unix socket, which the entrypoint's init-phase temporary server answers while the schema is
+still being applied. That temporary server is socket-only, so over TCP readiness and init
+completing are the same moment.
+
+Neither `backend` nor `frontend` declares a healthcheck. The API image is distroless and
+holds no shell, no curl and no wget, so there is nothing in it to probe itself with, and
+adding one would mean adding a binary to a published image to serve compose.
+
+### Running it from this checkout
+
+The three image references default to the local `:dev` tags, which are exactly what the
+`*-image` tasks build, so a checkout needs no variables at all:
+
+```sh
+pixi run backend-image && pixi run database-image && pixi run frontend-image
+docker compose up -d
+```
+
+The SPA is then on <http://localhost:8080> and the API on <http://localhost:8000>. **8000
+is also the port `pixi run backend-dev` binds**, so the two cannot run at once; stop one
+before starting the other, or move the stack with the variables below.
+
+Which images it runs is two variables:
+
+```sh
+EXPENSE_TRACKER_IMAGE_PREFIX   # default `expense-tracker`
+EXPENSE_TRACKER_VERSION        # default `dev`
+```
+
+They compose as `<prefix>-<service>:<version>`, which is the shape
+[Releases](#releases) composes published names in, so pointing the stack at a release is
+one setting and **no published name is written down in this file either**:
+
+```sh
+EXPENSE_TRACKER_IMAGE_PREFIX=<namespace>/expense-tracker \
+EXPENSE_TRACKER_VERSION=2.1.0 docker compose up -d
+```
+
+Where the browser should reach the API is a third, `EXPENSE_TRACKER_API_BASE_URL`,
+defaulting to `http://localhost:8000`. It cannot be `http://backend:8000`: the bundle runs
+in the host's browser, where that name does not resolve. The SPA image's entrypoint refuses
+an absent value and one carrying a path, so a mistake here stops that container rather than
+serving an app that reaches nothing. Moving the API off host port 8000 means editing the
+`ports:` entry and setting this variable to match.
+
+### Loading data
+
+The two loaders are one-shot, so `run --rm` is the precise form and reaches a profiled
+service without naming the profile:
+
+```sh
+docker compose run --rm load-currencies
+docker compose run --rm load-expenses
+```
+
+`docker compose --profile load up -d` is the other form, and brings the whole stack up with
+both loaders alongside it.
+
+The loaders keep the differing reload shapes [Loading
+expenses](#loading-expenses) and [Loading exchange rates](#loading-exchange-rates)
+describe: currencies replace the whole rate table every run, and expenses are append-only
+with a ledger that **refuses** a file whose contents changed.
+So a reclassified month is not cured by re-running `load-expenses`. It is cured by throwing
+the database away:
+
+```sh
+docker compose down -v                     # drop the volume: this IS the wipe
+docker compose up -d                       # a fresh volume re-runs schema.sql
+docker compose run --rm load-currencies
+docker compose run --rm load-expenses
+```
+
+`down -v` drops the one named volume, the image's `initdb.d` re-applies `schema.sql` on the
+empty data directory it leaves behind, and both loaders start from nothing. **No backend
+code exists for that sequence and none is needed** - which is the whole reason the schema
+travels in the image rather than being applied by a step of its own.
+
+### The two directories it mounts
+
+```sh
+EXPENSE_TRACKER_CURRENCIES_DIR   # default ./backend/data/currencies
+EXPENSE_DATA_DIR                 # default ./backend/tests/data/expenses
+```
+
+Both are mounted read-only, and both must be readable by **uid 65532**, which is what the
+API image runs as.
+
+`EXPENSE_DATA_DIR` is the name `backend/.env` already carries, so **a blessed shell points
+`load-expenses` at the private expense repository with no further setting** - the committed
+fixture default applies only where that variable is unset. To load the synthetic fixtures
+in a shell that has it, override it for the one command.
+
+Both mounts are declared in long syntax carrying **`create_host_path: false`**, and that is
+the one setting here with data loss behind it. Compose creates a missing bind source by
+default, and the currency loader replaces the whole rate table from whatever it finds, so an
+empty directory **deletes every rate** and reports `0 files read` with exit 0. Refusing to
+create the path turns a mistyped directory into a container that does not start:
+
+```
+Error response from daemon: invalid mount config for type "bind":
+bind source path does not exist: /...
+```
+
+### What publishing it will change
+
+Nothing publishes this file yet. The `oci://` path was rehearsed end to end against a
+throwaway local registry before any workflow is written to depend on it, and three things
+it found are worth writing down here, because none of them is guessable from the compose
+documentation:
+
+- **A relative bind source resolves against compose's download cache**, not the current
+  directory, when the file is loaded from `oci://`. The two defaults above are relative and
+  correct for a checkout; a deployment holding no checkout names both directories
+  **absolutely**, in a `.env` beside wherever the deploy command runs. That `.env` is then
+  the only state the host keeps.
+- **Loading an `oci://` file prompts** for the interpolation variables and the sources they
+  resolved from, every time. `docker compose up` takes `-y` for it. `docker compose run`
+  has **no such flag**, so it wants a `y` typed - or `printf 'y\n' |` ahead of it with
+  `-T`, which is what a script needs.
+- **`COMPOSE_FILE` cannot carry an `oci://` reference.** Compose splits that variable on
+  `:`, so the value becomes three nonexistent paths. Pass `-f oci://...` instead, or set
+  `COMPOSE_PATH_SEPARATOR=,` first.
+
+The project name is pinned to `expense-tracker` in the file rather than taken from the
+directory, so the volume is `expense-tracker_database-data` wherever the file is loaded
+from and `down -v` reaches the same one every time.
 
 ## Configuration
 

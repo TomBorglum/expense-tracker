@@ -1,6 +1,7 @@
-# What never belongs in a build context. Both Dockerfiles take the repository root as their
-# context, so one list serves both: this file is about what must not be uploaded to the
-# daemon at all, while each Dockerfile's COPY lines decide what reaches an image.
+# What never belongs in a build context. All three Dockerfiles take the repository root as
+# their context, so one list serves all of them: this file is about what must not be
+# uploaded to the daemon at all, while each Dockerfile's COPY lines decide what reaches an
+# image.
 
 # The developer's own pixi environments - hundreds of megabytes of prefixes that the build
 # materialises its own copy of, and by far the largest thing a context would otherwise
@@ -8,7 +9,7 @@
 # inside an image that holds it somewhere else.
 .pixi/
 
-# Git history. Neither build reads it, and it carries every past revision of every file.
+# Git history. No build reads it, and it carries every past revision of every file.
 .git/
 .gitignore
 .github/
@@ -37,9 +38,13 @@ coverage/
 # from the environment and opens no file, so for it such a file could only mislead; the
 # frontend's is inlined by vite at build time, so its image writes the value it wants
 # rather than inheriting one from here. .envrc matches this rule and is excluded with
-# them, nothing in either image being a blessed shell.
+# them, nothing in any of the three images being a blessed shell.
 .env*
 
 # Editor and agent state.
 .claude/
 .zed/
+
+# The deployment. It describes how the images these builds produce are run, so no build
+# reads it and an image carrying it would be carrying its own deployment.
+compose.yaml
