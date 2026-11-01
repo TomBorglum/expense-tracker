@@ -93,7 +93,7 @@ env:
   # The Docker Hub namespace half of every image name, and the account `push` logs in as.
   # The caller's, so this file carries nothing specific to one account. Step-level `env`
   # merges onto this rather than replacing it, which is what lets both readers name it.
-  NAMESPACE: ${{ inputs.dockerhub-namespace }}
+  DOCKERHUB_NAMESPACE: ${{ inputs.dockerhub-namespace }}
 
 jobs:
   # Tags and labels derived ONCE, so no image and its metadata can disagree with another's.
@@ -145,8 +145,8 @@ jobs:
           # Checked rather than trusted: `required` is satisfied by a key being present,
           # and an unset repository variable reaches a called workflow as an empty string,
           # which would otherwise compose a name `docker login` cannot push to.
-          if [[ ! "$NAMESPACE" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
-            echo "::error::namespace must be lowercase letters, digits, - or _, got: '$NAMESPACE'"
+          if [[ ! "$DOCKERHUB_NAMESPACE" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+            echo "::error::namespace must be lowercase letters, digits, - or _, got: '$DOCKERHUB_NAMESPACE'"
             exit 1
           fi
           printf '%s' "$DIRECTORIES" > /tmp/directories.json
@@ -155,20 +155,20 @@ jobs:
             echo "::error::directories must be a non-empty JSON array, got: $DIRECTORIES"
             exit 1
           fi
-          jq -r --arg ns "$NAMESPACE" --arg repo "$REPOSITORY" \
+          jq -r --arg ns "$DOCKERHUB_NAMESPACE" --arg repo "$REPOSITORY" \
             '[.[] | "\($ns)/\($repo)-\(.)"] | join(",")' \
             /tmp/directories.json | sed 's/^/list=/' >> "$GITHUB_OUTPUT"
-          jq -c --arg ns "$NAMESPACE" --arg repo "$REPOSITORY" \
+          jq -c --arg ns "$DOCKERHUB_NAMESPACE" --arg repo "$REPOSITORY" \
             'map({key: ., value: "\($ns)/\($repo)-\(.)"}) | from_entries' \
             /tmp/directories.json | sed 's/^/map=/' >> "$GITHUB_OUTPUT"
           # The compose artifact's repository: the same pair WITHOUT a directory suffix,
           # because the stack is not an image and no directory builds it. Composed here
           # with the rest so the formula stays in one step, and read back by the second
           # derivation below and by the publish step in `push`.
-          printf 'compose=%s/%s\n' "$NAMESPACE" "$REPOSITORY" >> "$GITHUB_OUTPUT"
-          jq -r --arg ns "$NAMESPACE" --arg repo "$REPOSITORY" \
+          printf 'compose=%s/%s\n' "$DOCKERHUB_NAMESPACE" "$REPOSITORY" >> "$GITHUB_OUTPUT"
+          jq -r --arg ns "$DOCKERHUB_NAMESPACE" --arg repo "$REPOSITORY" \
             '.[] | "\(.) -> \($ns)/\($repo)-\(.)"' /tmp/directories.json
-          echo "compose -> $NAMESPACE/$REPOSITORY"
+          echo "compose -> $DOCKERHUB_NAMESPACE/$REPOSITORY"
 
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta-images
@@ -584,7 +584,7 @@ jobs:
             --with-decryption \
             --query Parameter.Value \
             --output text \
-            | docker login docker.io --username "$NAMESPACE" --password-stdin
+            | docker login docker.io --username "$DOCKERHUB_NAMESPACE" --password-stdin
 
       # Every image is staged and checked BEFORE any is copied, so a malformed or altered
       # archive fails the release with nothing published rather than half of it. No step
