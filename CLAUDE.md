@@ -82,6 +82,11 @@ nobody can bypass it.
   line, and only where the name and signature do not already say it. This governs code, SQL
   and config comments; these files answer to
   [Adding to these files](#adding-to-these-files).
+- **`.github/workflows/` carries under 200 comment lines in all**, however many files it
+  holds, and a comment that wants room past that retires one. It is a budget on the whole
+  directory rather than a rule per file, so the workflows compete for it the way the
+  bullets in these three files do. Nothing checks this, as nothing checks the 200 above;
+  `cat .github/workflows/*.yml | grep -c '^[[:space:]]*#'` is the count.
 - **Pin versions exactly** - `==` in `pixi.toml`, in both its conda tables and
   `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
   Actions by SHA with a version comment.

@@ -1,42 +1,14 @@
 name: Release
 
 # Builds, scans and publishes one image per directory it is given, then publishes
-# compose.yaml as an OCI artifact naming those images by digest. publish.yml is what names
-# the directories and what carries the triggers: this file is CALLED, never triggered, and
-# that file's header says why it keeps the name it has.
-#
-# Publishes to Docker Hub when release-please's GitHub Release is published, and exercises
-# the build half on any pull request that changes what goes into an image or the stack.
-#
-# THE ISOLATION PROPERTY THIS FILE EXISTS TO HOLD. `build` runs repository code - a
-# Dockerfile, `pixi install`, `pnpm install` - and holds the Docker Hub credential at
-# arm's length: neither it nor `compose`, the two jobs that check the repository out, has
-# `id-token: write`, which is what the AWS exchange needs. `push` holds the credential and
-# checks nothing out. So a malicious dependency pulled into either install step lands in
-# the job without that token. CLAUDE.md states this as an invariant.
-#
-# Docker Hub supports no OIDC for personal accounts, so the push credential is a PAT read
-# from AWS SSM Parameter Store through a role assumed with the GitHub OIDC token.
-# oidc-smoke-test.yml exercises that path; README.md, under Releases, documents the AWS
-# objects and how to recreate them.
-#
-# This repository is public, so every line of these logs is world-readable. Nothing here
-# may print the account id or the PAT, and anything added must be masked on the same terms.
-# The role ARN arrives as a SECRET rather than an input for exactly that reason, which the
-# credential step below explains.
-#
-# NOTHING HERE READS `vars` OR NAMES AN AWS OBJECT. Every value belonging to the calling
-# repository arrives through the inputs and the secret below, so this file holds no account,
-# no role, no region and no parameter path of its own. publish.yml fills them all.
+# compose.yaml as an OCI artifact naming those images by digest. CALLED, never triggered.
+# TWO INVARIANTS, both stated in CLAUDE.md: no job that checks the repository out gets
+# `id-token: write`, and nothing here reads `vars` or names an AWS object. The logs are
+# world-readable, so nothing added may print the account id or the PAT either.
+# README.md, under Releases, documents the AWS objects and the whole credential path.
 
-# The caller's triggers reach this file through the `github` context, which in a called
-# workflow is always the CALLER's: `github.event_name`, `github.ref` and
-# `github.event.repository` below all read publish.yml's event.
-#
-# publish.yml carries the concurrency group, because GitHub cancels the caller when caller
-# and called share one. A RELEASE is never cancelled: a run stopped partway through the
-# push job can leave one image published and the other not, which is worse than a slow
-# queue. A pull request has nothing to leave half-done - it never reaches `push`.
+# Every `github.*` reference below is the CALLER's event, which is what a called workflow
+# is given. publish.yml carries the triggers and the concurrency group.
 on:
   workflow_call:
     inputs:
@@ -49,10 +21,6 @@ on:
           directory name - see the `images` step.
         required: true
         type: string
-      # The three below name the value by its role in THIS workflow rather than by which
-      # one the caller uses: there is exactly one region, one parameter and one namespace
-      # here, so a qualifier would only restate the caller's own configuration. What each
-      # value must CONTAIN is therefore the description's job, not the name's.
       aws-region:
         description: >-
           The region the release role is assumed in and the Docker Hub PAT parameter is
@@ -90,33 +58,25 @@ permissions:
   contents: read
 
 env:
-  # The Docker Hub namespace half of every image name, and the account `push` logs in as.
-  # The caller's, so this file carries nothing specific to one account. Step-level `env`
-  # merges onto this rather than replacing it, which is what lets both readers name it.
+  # Step-level `env` merges onto this rather than replacing it, which is what lets every
+  # reader below name it.
   DOCKERHUB_NAMESPACE: ${{ inputs.dockerhub-namespace }}
 
 jobs:
   # Tags and labels derived ONCE, so no image and its metadata can disagree with another's.
-  # Needs no checkout - metadata-action reads the event context, not the working tree.
   meta:
     runs-on: ubuntu-latest
     env:
-      # The tags, declared ONCE for the two derivations below - the images' and the
-      # compose artifact's - so a release cannot tag the stack differently from the images
-      # that stack names. A step's `with:` can read the `env` context, which is what lets
-      # one declaration serve both; a YAML anchor would not, GitHub resolving none.
-      #
-      # The semver patterns resolve only on a tag ref, so a pull_request run yields the
-      # sha tag alone - which is all the build half needs, since it never pushes.
+      # Declared ONCE for both derivations below, so a release cannot tag the stack
+      # differently from the images that stack names. A `with:` reads the `env` context,
+      # which is what lets one declaration serve both; a YAML anchor would not. The semver
+      # patterns resolve only on a tag ref, so a pull_request run yields the sha tag alone.
       TAG_PATTERNS: |
         type=semver,pattern={{version}}
         type=semver,pattern={{major}}.{{minor}}
         type=sha,format=long
         type=raw,value=latest,enable=${{ github.event_name == 'release' }}
     outputs:
-      # Two halves on the same terms, each a pair: what to tag, and where it goes. The
-      # bake overrides have no second half - there is no bake file for an artifact that
-      # nothing builds.
       image-tags: ${{ steps.meta-images.outputs.tags }}
       image-repositories: ${{ steps.images.outputs.map }}
       compose-tags: ${{ steps.meta-compose.outputs.tags }}
@@ -124,17 +84,10 @@ jobs:
       bake-labels: ${{ steps.bake.outputs.labels }}
       bake-annotations: ${{ steps.bake.outputs.annotations }}
     steps:
-      # THE IMAGE NAME IS COMPOSED HERE AND NOWHERE ELSE: <namespace>/<repository>-<dir>.
-      # Both consumers read it back out of this step - metadata-action below from `list`,
-      # the build job from `map` - so the two cannot spell a repository differently.
-      #
-      # `github.event.repository.name` is the CALLER's repository, which is what makes
-      # the image names follow a repository rename. CLAUDE.md records that.
-      #
-      # Two single-line outputs, no heredoc, for the reason the bake step below gives.
-      # `list` is comma-joined: metadata-action splits its `images` input on newlines
-      # only, then CSV-parses each line, and a single line whose fields all lack `=` is
-      # read as plain names. Its log group names what it parsed, so a PR run shows it.
+      # THE IMAGE NAME IS COMPOSED HERE AND NOWHERE ELSE: <namespace>/<repository>-<dir>,
+      # read back from `list` and `map` so no consumer can spell one differently.
+      # `list` is comma-joined because metadata-action splits `images` on newlines only,
+      # then CSV-parses each line. Single-line outputs for the reason the bake step gives.
       - name: Compose the repository each directory publishes to
         id: images
         env:
@@ -142,9 +95,8 @@ jobs:
           REPOSITORY: ${{ github.event.repository.name }}
         run: |
           set -euo pipefail
-          # Checked rather than trusted: `required` is satisfied by a key being present,
-          # and an unset repository variable reaches a called workflow as an empty string,
-          # which would otherwise compose a name `docker login` cannot push to.
+          # `required` is satisfied by a key being present, and an unset variable reaches
+          # a called workflow as an empty string.
           if [[ ! "$DOCKERHUB_NAMESPACE" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
             echo "::error::dockerhub-namespace must be lowercase letters, digits, - or _, got: '$DOCKERHUB_NAMESPACE'"
             exit 1
@@ -162,9 +114,7 @@ jobs:
             'map({key: ., value: "\($ns)/\($repo)-\(.)"}) | from_entries' \
             /tmp/directories.json | sed 's/^/map=/' >> "$GITHUB_OUTPUT"
           # The compose artifact's repository: the same pair WITHOUT a directory suffix,
-          # because the stack is not an image and no directory builds it. Composed here
-          # with the rest so the formula stays in one step, and read back by the second
-          # derivation below and by the publish step in `push`.
+          # composed here so the formula stays in one step.
           printf 'compose=%s/%s\n' "$DOCKERHUB_NAMESPACE" "$REPOSITORY" >> "$GITHUB_OUTPUT"
           jq -r --arg ns "$DOCKERHUB_NAMESPACE" --arg repo "$REPOSITORY" \
             '.[] | "\(.) -> \($ns)/\($repo)-\(.)"' /tmp/directories.json
@@ -173,33 +123,20 @@ jobs:
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta-images
         with:
-          # The target every directory's bake file declares, so the generated overrides
-          # land on it. The action's own default target is `docker-metadata-action`, which
-          # no bake file declares.
+          # The target every directory's bake file declares; the action's own default is
+          # `docker-metadata-action`, which no bake file declares.
           bake-target: image
-          # Every image, so one derivation serves them all; the push job selects the lines
-          # belonging to each by its `<image>:` prefix. Composed above rather than written
-          # here, which is what lets a caller name the directories and nothing else.
+          # Every image, so one derivation serves them all; `push` selects each image's
+          # lines by its `<image>:` prefix.
           images: ${{ steps.images.outputs.list }}
-          # latest=false turns off the implicit "latest on any semver tag", so the moving
-          # tag is declared in TAG_PATTERNS above like every other one rather than
-          # appearing by default. Both derivations need it, for the same reason.
+          # Turns off the implicit "latest on any semver tag", so that tag is declared in
+          # TAG_PATTERNS like every other. Both derivations need it.
           flavor: latest=false
           tags: ${{ env.TAG_PATTERNS }}
 
-      # The compose artifact's tags, derived SEPARATELY rather than by handing the step
-      # above a fourth name. ONE reason, and it is in `push`: before copying anything it
-      # diffs the repositories the image artifacts carry against the repositories the
-      # derived tags name, and the stack has no artifact because nothing builds it - so a
-      # fourth name there fails that check and aborts every release. The copy loop would
-      # skip those refs anyway, iterating artifacts rather than tags.
-      #
-      # `bake-target` is absent below because nothing bakes a compose file, not because
-      # sharing the step would break it: only the label and annotation bake files travel
-      # from here, and neither names an image.
-      #
-      # The patterns are shared, so the two derivations still cannot disagree on a tag.
-      # `flavor` is the one input still restated, and the reason is the same as above's.
+      # Derived SEPARATELY rather than as a fourth name above: `push` diffs the
+      # repositories the image artifacts carry against the ones the derived tags name, and
+      # the stack has no artifact, so a fourth name there would abort every release.
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta-compose
         with:
@@ -207,16 +144,10 @@ jobs:
           flavor: latest=false
           tags: ${{ env.TAG_PATTERNS }}
 
-      # metadata-action writes these bake files into THIS runner's temp directory, so
-      # their paths mean nothing in the build job - the contents travel instead. One
-      # derivation for every image is what this job exists for: it gives them a single
-      # `created` stamp.
-      #
-      # Each file goes onto ONE line, which is what keeps the output off the multi-line
-      # form: that form needs a `<<` delimiter, and GitHub's web UI reads the `<<` as a
-      # heredoc opener and stops highlighting the rest of this file there. JSON ignores
-      # whitespace between tokens and escapes a newline inside a string, so dropping the
-      # newlines cannot change what either file says.
+      # These files land in THIS runner's temp directory, so their contents travel rather
+      # than their paths. Each goes onto ONE line to keep the output off the multi-line
+      # form, whose `<<` delimiter stops GitHub's web UI highlighting the rest of this
+      # file; JSON ignores whitespace between tokens, so nothing either file says changes.
       - name: Carry the bake overrides to the build job
         id: bake
         env:
@@ -240,19 +171,15 @@ jobs:
       # Every image gets scanned even when one fails, so one run lists every finding.
       fail-fast: false
       matrix:
-        # One job per directory the caller named. `strategy` is the one key `env` cannot
-        # reach - it reads `github`, `needs`, `vars` and `inputs` only - which is why the
-        # input is JSON rather than the newline list metadata-action wants.
+        # `strategy` reads `github`, `needs`, `vars` and `inputs` only, never `env`.
         directory: ${{ fromJSON(inputs.directories) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Nothing here talks to git again, and a job holding repository code must not
-          # also hold a credential for the repository.
+          # A job holding repository code must not also hold a credential for it.
           persist-credentials: false
 
-      # The release metadata, written back out as a pair of bake files beside the stack's
-      # own. The build step below loads these FIRST and the stack's file LAST.
+      # The release metadata, written back out as bake files the build step loads FIRST.
       - name: Stage the shared bake overrides
         env:
           LABELS: ${{ needs.meta.outputs.bake-labels }}
@@ -263,64 +190,39 @@ jobs:
           printf '%s\n' "$LABELS" > /tmp/bake/labels.json
           printf '%s\n' "$ANNOTATIONS" > /tmp/bake/annotations.json
 
-      # The docker-container driver, not the default docker one: attestations and the
-      # type=oci exporter are BuildKit features the docker driver does not implement.
+      # For the docker-container driver: attestations and the type=oci exporter are
+      # BuildKit features the default docker driver does not implement.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build the ${{ matrix.directory }} image
         id: build
         uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         with:
-          # The directory the caller named, which is what its bake file's `context` and
-          # `dockerfile` are written against - bake resolves `context` relative to the
-          # working directory and `dockerfile` relative to the context, exactly as
-          # `docker build` does. This is what `poe image` and `pnpm run image` pass too.
+          # What the directory's own bake file is written against, and what `poe image`
+          # and `pnpm run image` pass too.
           source: ${{ matrix.directory }}
-          # ORDER IS LOAD-BEARING, and nothing reports it. bake merges `labels` per key
-          # and appends `annotations`, so the file loaded last wins the keys it names and
-          # inherits the rest: the shared release metadata first, the stack's own
-          # description and title last, which is what puts the stack's pair on the image.
+          # ORDER IS LOAD-BEARING and nothing reports it: the last file wins the keys it
+          # names, so the stack's own file goes last. CLAUDE.md states the pair.
           files: |
             /tmp/bake/labels.json
             /tmp/bake/annotations.json
             docker-bake.hcl
           targets: image
-          # Exported, not pushed. This job must not hold registry credentials, and the
-          # archive is what crosses into the job that does. It is `set` rather than
-          # declared in the bake file: where the artifact lands is this workflow's
-          # decision, not the stack's.
-          #
-          # No platform is declared here, and README.md, under Releases, says what holds
-          # the published architecture to x86-64 instead.
-          #
-          # No `allow` input is needed even though the context leaves the stack directory:
-          # bake-action passes `--allow fs=*` itself for buildx >= 0.18. A local
-          # `docker buildx bake` has to pass `--allow=fs.read=..`, which is why the two
-          # `image` tasks carry it.
+          # Exported, not pushed: the archive is what crosses into the job holding the
+          # registry credential. `set` rather than declared in the bake file, because
+          # where the artifact lands is this workflow's decision, not the stack's.
           set: |
             image.output=type=oci,dest=/tmp/image.oci.tar
-          # `mode=max` spelled out, which is what this records: given `provenance: true`
-          # the action emits `--attest type=provenance,builder-id=...` and leaves
-          # BuildKit's own `mode=min` in force, below what the action defaults to for a
-          # public repository with the input omitted entirely.
-          #
-          # What mode=max ALSO does, found by reading the first run's output rather than
-          # assumed: it records the entire GitHub event payload under
-          # `buildDefinition.internalParameters.github_event_payload` - on a pull request
-          # that is 6 kB of a 52 kB predicate, pull request body included - and that is
-          # published inside the image. It is acceptable here only because this repository
-          # is public, so the payload carries nothing that is not already public.
-          # `mode=min` is the one-line change if that ever stops being true.
+          # Spelled out because `provenance: true` would leave BuildKit's own `mode=min`
+          # in force. This publishes the whole GitHub event payload inside the image, which
+          # README.md, under Releases, records as acceptable only while this repo is public.
           provenance: mode=max
           sbom: true
 
-      # trivy reads an OCI *layout directory* and rejects the archive outright - "stat
-      # image.oci.tar/index.json: not a directory". An OCI archive is a tarred layout, so
-      # unpacking is the whole conversion.
-      #
-      # `tar -xf` rather than `regctl image import`: import writes a layout whose
-      # index.json leads with a referrers index, trivy reads the first entry only, and the
-      # scan then finds nothing and reports SUCCESS. The gate below is what reports that.
+      # trivy reads an OCI layout directory and rejects the archive, which is a tarred
+      # one. `tar -xf` rather than `regctl image import`: import leads index.json with a
+      # referrers index, trivy reads the first entry only, and the scan then reports
+      # SUCCESS having found nothing.
       - name: Unpack the OCI layout
         run: |
           set -euo pipefail
@@ -337,29 +239,20 @@ jobs:
           trivyignores: .trivyignore.yaml
           format: json
           output: /tmp/trivy.json
-          # The gate is the next step, which reads the report: it lists every finding and
-          # checks that this image is what was scanned.
+          # The next step is the gate, reading the report.
           exit-code: 0
 
-      # TWO assertions, because a passing trivy run does not mean THIS image was scanned.
-      # Pointed at a layout whose index.json does not lead to the image, trivy resolves the
-      # empty config `{}`, reports no findings and exits 0 - so the first assertion is
-      # identity: what trivy says it scanned has to be a config present in this layout
-      # that declares a platform. The platform is what it reads rather than an OS family,
-      # so a legitimately clean image passes whatever package database its base carries.
+      # TWO assertions, because a passing trivy run does not mean THIS image was scanned:
+      # identity first, then the findings. README.md, under Releases, covers the gate.
       - name: Gate on the scan
         env:
           DIRECTORY: ${{ matrix.directory }}
         run: |
           set -euo pipefail
 
-          # trivy's own claim, checked against the layout rather than the layout walked to
-          # work out what it should have claimed: the empty config sits in the layout too,
-          # beside the image, as the attestation manifest's, so a walk that could reach it
-          # compares one empty value with another. What tells them apart is the platform:
-          # `{}` declares none, and an image config always declares both halves of one.
-          # The read is empty for a blob that is absent, is not an image config, or
-          # declares neither.
+          # The platform is what tells an image config from the empty `{}` the attestation
+          # manifest also puts in this layout: `{}` declares none. The read is empty for a
+          # blob that is absent, is not an image config, or declares neither half.
           config="$(jq -r '.Metadata.ImageID // ""' /tmp/trivy.json)"
           blob="/tmp/oci/blobs/sha256/${config#sha256:}"
           platform="$(jq -r '[.os, .architecture]
@@ -381,10 +274,8 @@ jobs:
           fi
           echo "no HIGH or CRITICAL findings"
 
-      # The digest travels with the archive so the push job can prove nothing changed in
-      # transit, rather than that being read off two logs by eye. The repository travels
-      # with it for the same reason: so the job that publishes needs no list of its own to
-      # join the archives against.
+      # Both travel with the archive, so `push` needs no list of its own and can prove
+      # nothing changed in transit.
       - name: Stage the archive, its digest and its repository
         env:
           # bake-action reports one entry per target rather than a bare digest.
@@ -407,14 +298,9 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # The stack itself, carried to `push` the only way it can be. `push` holds the Docker
-  # Hub credential and checks nothing out, so something else has to check compose.yaml out
-  # on its behalf - and that makes this the second job running repository code, so it gets
-  # `contents: read` and NO `id-token: write`, the invariant the header states. An
-  # artifact is the handover for the same reason the image archives are.
-  #
-  # It is also the only gate on compose.yaml anywhere: ci.yml never reads that file, so
-  # without this job a file that fails to load would be found by a release.
+  # `push` checks nothing out, so this job checks compose.yaml out on its behalf - which
+  # makes it the second job running repository code, hence no `id-token: write`. It is also
+  # the only gate on compose.yaml anywhere; ci.yml never reads that file.
   compose:
     runs-on: ubuntu-latest
     permissions:
@@ -422,22 +308,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Nothing here talks to git again, and a job holding repository code must not
-          # also hold a credential for the repository.
+          # A job holding repository code must not also hold a credential for it.
           persist-credentials: false
 
       - name: Validate the compose file
         run: |
           set -euo pipefail
           docker compose version
-          # `publish` was an experimental command when it was added, so a runner whose
-          # compose predates it would fail a release at its very last step. Asserted here,
-          # where a pull request reports it, rather than on the tag.
+          # Experimental when it was added, so a runner whose compose predates it would
+          # otherwise fail a release at its very last step.
           docker compose publish --help > /dev/null
-          # Loaded with every variable unset, which is what proves each `${...}` in the
-          # file carries a default: a bare one resolves to an EMPTY bind source, which
-          # compose rejects. Both profiles, because `config` renders only the services a
-          # profile selects and the two loaders are the services with mounts.
+          # Every variable unset, which is what proves each `${...}` carries a default: a
+          # bare one resolves to an empty bind source. Both profiles, because `config`
+          # renders only the services a profile selects.
           docker compose -f compose.yaml config --quiet
           docker compose -f compose.yaml --profile load config --quiet
 
@@ -456,17 +339,14 @@ jobs:
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
-      # A job-level permissions block replaces the workflow-level one outright rather
-      # than merging with it, so contents: read is restated here deliberately - the same
-      # note oidc-smoke-test.yml carries.
+      # A job-level block replaces the workflow-level one rather than merging, so
+      # contents: read is restated deliberately.
       contents: read
       id-token: write
     steps:
-      # FIRST, so a misconfigured caller fails before any credential handling begins.
-      # Checked rather than trusted, on the same terms as the `images` step: `required` is
-      # satisfied by a key being present, and an unset repository variable reaches a called
-      # workflow as an empty string. No message echoes the value it rejected - the ARN's
-      # would print as `***` and tell a reader nothing, so each states the shape instead.
+      # FIRST, so a misconfigured caller fails before any credential handling begins. No
+      # message echoes the value it rejected - the ARN's would print as `***` - so each
+      # states the shape instead.
       - name: Check the release configuration
         env:
           AWS_REGION: ${{ inputs.aws-region }}
@@ -491,13 +371,9 @@ jobs:
           echo "region, role ARN and parameter path all well-formed"
 
       # The claims AWS conditions on, dumped before any AWS call, so a trust-policy
-      # mismatch is diagnosable from this run rather than from a bare "Not authorized to
-      # perform sts:AssumeRoleWithWebIdentity". This is also the only place the
-      # tag-shaped `sub` and `job_workflow_ref` can be observed: the smoke test runs on
-      # workflow_dispatch from a branch, so its claims are branch-shaped.
-      #
-      # Only the payload is decoded. The token itself is a live credential for its few
-      # minutes of life and never reaches the log.
+      # mismatch is diagnosable from this run. The only place the tag-shaped `sub` and
+      # `job_workflow_ref` can be observed. Only the payload is decoded: the token itself
+      # is a live credential and never reaches the log.
       - name: Show the OIDC token claims
         run: |
           set -euo pipefail
@@ -512,70 +388,53 @@ jobs:
           while (( ${#payload} % 4 )); do payload+="="; done
           echo "$payload" | base64 -d | jq .
 
-      # Untrusted bytes, and safe here precisely because nothing in this job executes
-      # them - they are copied to a registry and never run.
+      # Untrusted bytes, safe here because nothing in this job executes them.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: image-*
           path: /tmp/images
 
-      # Published last, downloaded here, and never executed either - compose reads this
-      # file, and the only thing it does with it is upload it again.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: compose
           path: /tmp/compose
 
-      # BEFORE regctl-installer, and that order is load-bearing rather than tidy: the
-      # regctl installer verifies the binary it downloads against regclient's cosign
-      # signature `if [ -x "$(command -v cosign)" ]`, so cosign already being on PATH is
-      # what runs that check. The signing step below needs cosign anyway.
+      # BEFORE regctl-installer, and load-bearing: that installer verifies its download
+      # against regclient's cosign signature only `if [ -x "$(command -v cosign)" ]`.
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - uses: regclient/actions/regctl-installer@dd58ad94f76adb73d8ac1bf75ed25f01545d5b32 # v0.2.0
         with:
-          # Pinned rather than the action's `latest` default: this binary copies images
-          # into a registry while the Docker Hub credential is live in the job.
+          # Pinned, not the action's `latest`: this binary runs while the credential is live.
           release: v0.11.7
 
       - name: Configure AWS credentials
         id: creds
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          # A SECRET, so GitHub masks it. An input would be printed right here: the runner
-          # echoes this `with:` block into the log before the action runs, so the ARN would
-          # reach a world-readable log on EVERY release. `mask-aws-account-id` below cannot
-          # reach that line, and is not redundant either - it masks what STS RETURNS. The
-          # cost is that a wrong ARN logs as `***`, which the check at the top of this job
-          # is what makes diagnosable instead.
+          # A SECRET, because the runner echoes this `with:` block into the log before the
+          # action runs: an input would publish the account id on every release.
           role-to-assume: ${{ secrets.aws-role-arn }}
           aws-region: ${{ inputs.aws-region }}
           role-session-name: expense-tracker-release
-          # Short enough that a leaked credential outlives little, long enough for two
-          # image pushes and their signatures.
           role-duration-seconds: 900
-          # Still needed with the ARN masked: this covers the account id and arn STS
-          # RETURNS, which the input never carried.
+          # Not redundant with the ARN masked: this covers what STS RETURNS.
           mask-aws-account-id: true
-          # The whole point of this pair: the credentials become step outputs and are
-          # NOT written into the job environment, so every later step that needs them
-          # has to name them and the ones that do not never see them.
+          # The credentials become step outputs instead of job environment, so a step that
+          # needs them has to name them and the rest never see them.
           output-credentials: true
           output-env-credentials: false
 
-      # The only step that touches the PAT. It is piped straight from SSM into
-      # `docker login`, so it never occupies a shell variable, a step output or a file,
-      # and every step after this one needs no secret at all - regctl and cosign both
-      # read the credential `docker login` wrote to ~/.docker/config.json.
+      # The only step that touches the PAT, piped straight from SSM into `docker login`,
+      # so it occupies no variable, output or file. regctl and cosign read what that wrote.
       - name: Read the Docker Hub PAT and log in
         env:
           AWS_ACCESS_KEY_ID: ${{ steps.creds.outputs.aws-access-key-id }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.creds.outputs.aws-secret-access-key }}
           AWS_SESSION_TOKEN: ${{ steps.creds.outputs.aws-session-token }}
           AWS_REGION: ${{ inputs.aws-region }}
-          # Through `env` rather than into the command text below, because that command is
-          # a pipeline into `docker login --password-stdin`: a variable is quoted once and
-          # cannot alter the pipeline's shape.
+          # Through `env` rather than the command text, which is a pipeline: a variable is
+          # quoted once and cannot alter its shape.
           AWS_SSM_PARAMETER: ${{ inputs.aws-ssm-parameter }}
         run: |
           set -euo pipefail
@@ -586,10 +445,9 @@ jobs:
             --output text \
             | docker login docker.io --username "$DOCKERHUB_NAMESPACE" --password-stdin
 
-      # Every image is staged and checked BEFORE any is copied, so a malformed or altered
-      # archive fails the release with nothing published rather than half of it. No step
-      # in this job names a directory or a repository: the artifacts are what say which
-      # images exist, and each carries the repository its build job was given.
+      # All of them BEFORE any is copied, so an altered archive fails the release with
+      # nothing published rather than half of it. The artifacts are what say which images
+      # exist; no step in this job names a directory or a repository.
       - name: Stage every image and verify its digest
         env:
           TAGS: ${{ needs.meta.outputs.image-tags }}
@@ -617,11 +475,9 @@ jobs:
             fi
           done
 
-          # The repositories the artifacts carry against the repositories the derived
-          # tags name. Both now come from `meta`'s one composition step, so they cannot
-          # spell a repository differently; what this still catches is a count that does
-          # not match - a build that uploaded nothing, an artifact that reached this job
-          # twice - either of which would otherwise publish a partial release quietly.
+          # Both sides come from `meta`'s one composition step, so what this catches is a
+          # count that disagrees - a build that uploaded nothing, an artifact that arrived
+          # twice - either of which would publish a partial release quietly.
           cat /tmp/images/image-*/repository | sort -u > /tmp/staged-repositories
           printf '%s\n' "$TAGS" | sed -n 's/:[^:/]*$//p' \
             | sort -u > /tmp/tagged-repositories
@@ -631,9 +487,8 @@ jobs:
           fi
 
       # regctl copies the index byte for byte, which is what keeps ONE digest across the
-      # scan, the push, the attestations and the signature, and carries the index's
-      # attestations with it. It reads the local OCI layout staged above, where
-      # `docker buildx imagetools create` reads sources already in a registry.
+      # scan, the push, the attestations and the signature, and it reads a local layout
+      # where `docker buildx imagetools create` reads sources already in a registry.
       - name: Copy every image to Docker Hub
         env:
           TAGS: ${{ needs.meta.outputs.image-tags }}
@@ -654,27 +509,15 @@ jobs:
             echo "$directory: $matched tag(s) published"
           done
 
-      # The stack itself, to <namespace>/<repository> - the image repositories without a
-      # directory suffix. AFTER the copy above, and that order is the whole reason this
-      # step lives in this job rather than one of its own: --resolve-image-digests reads
-      # each digest back OUT of the registry, so the images have to be there already.
-      #
-      # ONE PUBLISH PER TAG, each resolving against that tag's own images, so the
-      # artifact tagged 2.1.0 names the images tagged 2.1.0. Every tag resolves to the
-      # same digests; what differs is only the text the document carries beside them.
-      #
-      # What the artifact holds was measured against a throwaway registry rather than
-      # assumed: compose.yaml BYTE FOR BYTE, comments and all, plus a second layer named
-      # image-digests.yaml restating all five `image:` keys as `<tag>@sha256:...`. That
-      # overlay is merged last, so NEITHER variable below has any effect on a deployment
-      # that loads the artifact - they exist to tell this step what to resolve.
+      # AFTER the copy above, which is why this step lives in this job at all:
+      # --resolve-image-digests reads each digest back OUT of the registry. ONE PUBLISH PER
+      # TAG, each resolving against that tag's own images. README.md, under Releases, says
+      # what the artifact ends up holding.
       - name: Publish the stack to Docker Hub
         id: compose
         env:
           COMPOSE_TAGS: ${{ needs.meta.outputs.compose-tags }}
-          # The prefix compose.yaml's five `image:` keys compose against, which is the
-          # namespace and repository the images themselves carry - read back out of `meta`
-          # rather than recomposed here.
+          # Read back out of `meta` rather than recomposed here.
           EXPENSE_TRACKER_IMAGE_PREFIX: ${{ needs.meta.outputs.compose-repository }}
         run: |
           set -euo pipefail
@@ -689,21 +532,19 @@ jobs:
               --resolve-image-digests --yes
             published=$((published + 1))
           done < /tmp/compose-tags
-          # The same guard the staging step applies to the images: a derivation that
-          # yielded nothing would otherwise leave a release with its images published and
-          # no stack describing them, silently.
+          # A derivation that yielded nothing would otherwise leave the images published
+          # and no stack describing them.
           if [ "$published" -eq 0 ]; then
             echo "::error::no compose tags were derived, so the stack was not published."
             exit 1
           fi
-          # Read back from the registry, because the signature below covers content rather
-          # than a name, and every tag above carries this one digest.
+          # Read back from the registry: the signature below covers content, not a name.
           digest="$(regctl manifest digest "$(head -1 /tmp/compose-tags)")"
           printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
           echo "$published tag(s) published at $digest"
 
-      # Keyless, reusing this job's own OIDC token, so there is no signing key to hold.
-      # The digest is the index's, so one signature covers the image and its attestations.
+      # Keyless, reusing this job's own OIDC token. The digest is the index's, so one
+      # signature covers the image and its attestations.
       - name: Sign every published digest
         env:
           COMPOSE_REPOSITORY: ${{ needs.meta.outputs.compose-repository }}
@@ -713,9 +554,7 @@ jobs:
           for dir in /tmp/images/image-*/; do
             cosign sign --yes "$(cat "$dir/repository")@$(cat "$dir/digest")"
           done
-          # The stack on the images' own terms. cosign signs a digest, so the artifact's
-          # media type - application/vnd.docker.compose.project - is nothing it has to
-          # know about.
+          # cosign signs a digest, so the artifact's media type is nothing it has to know.
           cosign sign --yes "$COMPOSE_REPOSITORY@$COMPOSE_DIGEST"
 
       - name: Log out of Docker Hub

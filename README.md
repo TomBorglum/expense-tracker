@@ -1156,6 +1156,48 @@ The cost is that adding a command means two edits - define it in the stack's man
 then forward it from `pixi.toml`. Put the command body in the stack, never in the
 forwarder.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs every gate in **one job**, which is what lets the
+SonarCloud scan at the end reuse the `coverage.xml` and `lcov.info` the test steps already
+wrote - two workflows would mean building the pixi environment twice and running the suite
+twice to produce the same two files. The job is named `Checks` because the
+`main-protection` ruleset requires that check by name, so the name is a gate and not a
+label.
+
+**Each stack's gates run cheapest first**, then its tests, then anything that builds, so a
+broken change fails on the fastest gate that can catch it and nothing after it - including
+the JDK setup and the scan - runs at all. That rule puts lint near the end of *both* lists
+for different reasons, and the last position in each is the one carrying the weight:
+
+```
+backend    format-check ~0.2s   lint ~0.3s   typecheck ~1.1s
+frontend   format-check ~0.8s   typecheck ~1.8s   lint ~3.2s
+```
+
+- **`backend-lint` is two tools in one task** - ruff over each file, then import-linter
+  over the graph they form - so it costs more than the formatter it follows, but still
+  less than pyright.
+- **`frontend-lint` is type-aware** (`projectService` plus `strictTypeChecked`), so eslint
+  builds the same full TypeScript program `tsc` does and then runs every rule over it,
+  making it the priciest frontend gate at roughly twice the type checker.
+
+Those figures are **cold**, as CI always runs them. Cold matters for `tsc` alone: it caches
+to `node_modules/.tmp`, and `frontend-install` rebuilds that directory every run, so the
+cache is never there to reuse. Warm, it is about a third of the figure above.
+
+`backend-db-init` is the one place the cheapest-first rule yields, and it sits after the
+static gates deliberately: it *provisions* rather than checks, so a lint or type error
+should surface before a cluster is built. GitHub sets `CI=true`, which is what turns a
+database that failed to come up into a failure rather than a silent skip.
+
+**The scan brings its own JRE.** `actions/setup-java` installs Temurin 21 and the scan
+step passes `-Dsonar.scanner.skipJreProvisioning=true`; the two are a pair, and the flag is
+what makes that JDK the one the scan runs on instead of one the scanner downloads from
+SonarCloud's API at runtime - a transient point of failure on an otherwise green build. The
+version therefore tracks the scanner CLI's floor, and the CLI refuses to start on anything
+below 21.
+
 ## Environments
 
 `pixi.toml` declares three, on one solve-group so every shared pin is identical across
@@ -1580,6 +1622,31 @@ It is a release workflow rather than a deployment workflow. Its whole output is 
 Docker Hub, and when such a tag becomes live somewhere is a separate concern, so the
 workflow involves no GitHub Environment and files no deployment records.
 
+### The automation App
+
+Two workflows open pull requests: `release-please.yml`, which maintains the release PR and
+tags `main` on merge, and `update-pixi-dependencies.yml`, which bumps the versions pinned
+in `pixi.toml` weekly because Dependabot carries no pixi ecosystem. **Both authenticate as
+a GitHub App** rather than with the built-in `GITHUB_TOKEN`, and the reason is the same
+for each: a push or a pull request made with `GITHUB_TOKEN` **triggers no workflow**, by
+design, so the release PR would open with no `Checks` run against it and the dependency PR
+would never learn whether the new pins build. An App installation token is a first-class
+actor, so the PRs it opens run the full gate.
+
+The App is installed on this repository alone and granted three permissions, which is
+every one the two workflows between them need:
+
+| Permission | Why |
+| --- | --- |
+| Contents: read and write | push the release branch and `deps/pixi`, and create the tag |
+| Pull requests: read and write | open, update and label both PRs |
+| Issues: read and write | the `autorelease:*` labels release-please tracks state with, which live on the issues API |
+
+Its credentials reach both workflows as the repository secrets
+`AUTOMATION_APP_CLIENT_ID` and `AUTOMATION_APP_PRIVATE_KEY`. Nothing checks that the
+installation still holds those three permissions: a release PR that opens but is never
+labelled, or a tag that is never created, is that pair out of agreement.
+
 ### Why it is four jobs
 
 ```
@@ -1589,10 +1656,12 @@ publish.yml  ->  meta  ->  build (matrix: backend, database, frontend)  -\
                  \_____________________ release.yml _____________________/
 ```
 
-`publish.yml` is the caller and holds the triggers, the concurrency group and both
-inputs: the **directories** to build and the **namespace** to publish under.
-`release.yml` is called, and holds everything about how an image is built, scanned and
-pushed. The filenames look inverted on purpose - the AWS trust policy below pins
+`publish.yml` is the caller and holds the triggers, the concurrency group and every value
+belonging to this repository: the **directories** to build, plus the four under
+[The AWS objects](#the-aws-objects) - `aws-region`, `aws-ssm-parameter`,
+`dockerhub-namespace` and the `aws-role-arn` secret. `release.yml` is called, reads no
+`vars` and names no AWS object, and holds everything about how an image is built, scanned
+and pushed. The filenames look inverted on purpose - the AWS trust policy below pins
 `job_workflow_ref`, which names the **called** workflow, so `release.yml` keeping its
 path is what leaves that policy alone.
 
@@ -1925,7 +1994,14 @@ exists on the tag, so the fix is a `fix:` PR and the patch release it cuts. The
 scans and gates all three images, with the `push` job held back by
 `if: github.event_name == 'release'`, so the change that touches the file runs it. The
 trigger covers every path, keeping what it watches in one place with what the Dockerfiles
-read, and a superseded pull request run is cancelled where a release run runs to the end.
+read.
+
+**A release run is never cancelled**, where a superseded pull request run is. The
+concurrency group lives in `publish.yml` rather than `release.yml`, because GitHub cancels
+the *caller* when caller and called share a group, and `cancel-in-progress` is therefore
+conditioned on the event: a run stopped partway through `push` can leave one image
+published and another not, which is worse than a slow queue, while a pull request has
+nothing to leave half-done - it never reaches `push`.
 
 ## Deployment
 

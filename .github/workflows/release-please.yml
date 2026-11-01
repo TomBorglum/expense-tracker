@@ -1,16 +1,7 @@
 name: Release Please
 
-# Automates releases. On every push to main, release-please opens (or updates) a
-# single "chore(main): release X.Y.Z" PR that bumps CHANGELOG.md and the version
-# manifest from the Conventional Commit messages since the last tag. Merging that
-# PR creates the git tag and the GitHub Release with the generated notes.
-#
-# Authenticates as the expense-tracker-bot GitHub App rather than with GITHUB_TOKEN:
-# events created by GITHUB_TOKEN trigger no further workflow runs, where an App
-# installation token's do, which is what runs the SonarCloud check on the release PR and
-# lets the tag and release reach the workflows downstream of them.
-# The App needs Contents: read/write (branch, tag, release), Pull requests:
-# read/write (the release PR) and Issues: read/write (the autorelease:* labels).
+# Opens and updates the release PR, and tags on merge. What it does, why it authenticates
+# as a GitHub App, and the App's permissions: README.md, under Releases.
 
 on:
   push:
