@@ -146,7 +146,7 @@ jobs:
           # and an unset repository variable reaches a called workflow as an empty string,
           # which would otherwise compose a name `docker login` cannot push to.
           if [[ ! "$DOCKERHUB_NAMESPACE" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
-            echo "::error::namespace must be lowercase letters, digits, - or _, got: '$DOCKERHUB_NAMESPACE'"
+            echo "::error::dockerhub-namespace must be lowercase letters, digits, - or _, got: '$DOCKERHUB_NAMESPACE'"
             exit 1
           fi
           printf '%s' "$DIRECTORIES" > /tmp/directories.json
