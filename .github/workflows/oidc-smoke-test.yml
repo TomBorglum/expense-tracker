@@ -1,16 +1,8 @@
 name: OIDC Smoke Test
 
-# Proves the GitHub Actions -> AWS OIDC path end to end, and nothing else depends on
-# it: mint an OIDC token, exchange it for temporary credentials on
-# gha-expense-tracker-ci, read the Docker Hub PAT from SSM Parameter Store and confirm
-# it came back. The stored value is a dummy placeholder, and it is masked either way.
-#
-# Manual only. Re-run it after any change to that role's trust policy or permissions;
-# it is the cheapest way to find out whether the change was right.
-#
-# This repository is public, so every run's log is world-readable. Nothing this workflow
-# prints may identify the account: both the parameter value and the account id are masked
-# below, and anything added here must be too.
+# Proves the GitHub Actions -> AWS OIDC path end to end; nothing depends on it. Manual
+# only - re-run it after any change to the CI role's trust policy or permissions.
+# README.md, under Releases, documents the role and the parameter it reads.
 
 on:
   workflow_dispatch:
@@ -22,22 +14,14 @@ jobs:
   read-parameter:
     runs-on: ubuntu-latest
     permissions:
-      # A job-level permissions block replaces the workflow-level one outright rather
-      # than merging with it, so contents: read is restated here deliberately.
+      # A job-level block replaces the workflow-level one rather than merging, so
+      # contents: read is restated deliberately.
       contents: read
       id-token: write # mint the OIDC token the next-but-one step exchanges
     steps:
-      # The claims AWS conditions on, dumped before any AWS call is made, so a trust
-      # policy mismatch is diagnosable from this run instead of from a bare "Not
-      # authorized to perform sts:AssumeRoleWithWebIdentity" further down. Confirms
-      # job_workflow_ref in particular, which both trust policies condition on: AWS's
-      # condition-key reference describes it as the path to the *reusable* workflow, and
-      # GitHub populates it on every job, equal to the workflow_ref claim wherever no
-      # reusable workflow is involved. job_workflow_ref is the half AWS maps to a
-      # condition key.
-      #
-      # Only the payload is decoded. The token itself is a live credential for its few
-      # minutes of life and never reaches the log.
+      # The claims AWS conditions on, dumped before any AWS call, so a trust-policy
+      # mismatch is diagnosable from this run. Only the payload is decoded: the token
+      # itself is a live credential and never reaches the log.
       - name: Show the OIDC token claims
         run: |
           set -euo pipefail
@@ -59,11 +43,8 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           role-session-name: oidc-smoke-test
 
-      # sts:GetCallerIdentity needs no IAM permission, so this works on a role whose
-      # only grants are the SSM read and the KMS decrypt. Prints the assumed-role ARN
-      # and session name, which is how you tell the credentials are the federated ones.
-      # The account id is masked first, so the ARN reaches the public log with *** in
-      # place of the twelve digits and still shows the role and session name.
+      # sts:GetCallerIdentity needs no IAM permission, so this works on a role granted
+      # only the SSM read and the KMS decrypt. The account id is masked first.
       - name: Confirm the assumed identity
         run: |
           set -euo pipefail
@@ -71,10 +52,8 @@ jobs:
           echo "::add-mask::$account"
           aws sts get-caller-identity
 
-      # Exercises both halves of the inline policy at once: ssm:GetParameter on the
-      # parameter, and kms:Decrypt on the aws/ssm key via --with-decryption. That flag is
-      # what reaches the KMS grant, the half more likely to be wrong; without it the read
-      # returns ciphertext.
+      # Both halves of the inline policy at once: ssm:GetParameter, and kms:Decrypt via
+      # --with-decryption, the half more likely to be wrong.
       - name: Read the Docker Hub PAT
         run: |
           set -euo pipefail
@@ -83,8 +62,6 @@ jobs:
             --with-decryption \
             --query Parameter.Value \
             --output text)"
-          # Masked before it is echoed, so the log proves the read and the KMS decrypt
-          # both worked without publishing what came back. The stored value is a dummy
-          # today; the mask is what makes that stop mattering.
+          # Masked before it is echoed: the log proves the read without publishing it.
           echo "::add-mask::$value"
           echo "Parameter value: $value"

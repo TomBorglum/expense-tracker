@@ -82,6 +82,12 @@ nobody can bypass it.
   line, and only where the name and signature do not already say it. This governs code, SQL
   and config comments; these files answer to
   [Adding to these files](#adding-to-these-files).
+- **One comment block in a workflow is capped**, blank lines not resetting the run, so
+  padding cannot split a long block into two passing halves. `.github/comment_blocks.py`
+  is the threshold's only declaration. It pins brevity and **not** where rationale lives,
+  and `.github/workflows/*.yml` is all it reads: nothing caps a block in the Dockerfiles,
+  `compose.yaml`, `pixi.toml`, `schema.sql`, Python or TypeScript.
+  Gate: `pixi run workflows-comment-check`.
 - **Pin versions exactly** - `==` in `pixi.toml`, in both its conda tables and
   `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
   Actions by SHA with a version comment.
@@ -95,8 +101,8 @@ nobody can bypass it.
 
 1. **The directory that runs it defines it**, in the manifest that already owns how its
    tools behave: poe tasks in `backend/pyproject.toml`, the `scripts` block in
-   `frontend/package.json`, and `database/pyproject.toml`, which is a poe manifest and
-   nothing else. This is where the command body goes.
+   `frontend/package.json`, and `database/pyproject.toml` and `.github/pyproject.toml`,
+   which are poe manifests and nothing else. This is where the command body goes.
 2. **`pixi.toml` forwards to it**, one prefixed one-liner per command, so `pixi run`
    stays the single entry point spanning every directory.
 
