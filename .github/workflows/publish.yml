@@ -49,11 +49,12 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    # What each value is, and must contain, is its declaration's `description` in
+    # release.yml. Why each is sourced the way it is, README.md records under Releases.
     with:
-      # One entry per image: the directory holding the Dockerfile and docker-bake.hcl.
-      # The image each publishes to is composed from it - see release.yml's `images` step.
       directories: '["backend", "database", "frontend"]'
-      # A repository variable, not a secret: a namespace is public, and it is the account
-      # the PAT in SSM belongs to. Unset, it arrives as an empty string and release.yml's
-      # `images` step fails the run before anything is built.
-      namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
+      aws-region: ${{ vars.AWS_REGION }}
+      aws-ssm-parameter: /expense-tracker/release/dockerhub-pat
+      dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
+    secrets:
+      aws-role-arn: ${{ secrets.AWS_RELEASE_ROLE_ARN }}

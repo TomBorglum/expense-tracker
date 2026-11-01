@@ -22,6 +22,12 @@ name: Release
 #
 # This repository is public, so every line of these logs is world-readable. Nothing here
 # may print the account id or the PAT, and anything added must be masked on the same terms.
+# The role ARN arrives as a SECRET rather than an input for exactly that reason, which the
+# credential step below explains.
+#
+# NOTHING HERE READS `vars` OR NAMES AN AWS OBJECT. Every value belonging to the calling
+# repository arrives through the inputs and the secret below, so this file holds no account,
+# no role, no region and no parameter path of its own. publish.yml fills them all.
 
 # The caller's triggers reach this file through the `github` context, which in a called
 # workflow is always the CALLER's: `github.event_name`, `github.ref` and
@@ -43,13 +49,42 @@ on:
           directory name - see the `images` step.
         required: true
         type: string
-      namespace:
+      # The three below name the value by its role in THIS workflow rather than by which
+      # one the caller uses: there is exactly one region, one parameter and one namespace
+      # here, so a qualifier would only restate the caller's own configuration. What each
+      # value must CONTAIN is therefore the description's job, not the name's.
+      aws-region:
         description: >-
-          The Docker Hub namespace every image publishes under, and the account `push`
-          logs in as. Validated in the `images` step, which is also where it becomes half
-          of each repository name.
+          The region the release role is assumed in and the Docker Hub PAT parameter is
+          read from. Spelled as the `configure-aws-credentials` input it feeds, in `push`.
         required: true
         type: string
+      aws-ssm-parameter:
+        description: >-
+          The SSM Parameter Store path holding the Docker Hub PAT `push` logs in with: a
+          SecureString, read with --with-decryption. The release role's inline policy
+          grants ssm:GetParameter on this one parameter's ARN as a literal rather than a
+          prefix, so a path it does not name is refused - README.md, under Releases,
+          explains why that literal is the whole isolation boundary. Not a secret: a path
+          is an address, and the value it points at never leaves the step that reads it.
+        required: true
+        type: string
+      dockerhub-namespace:
+        description: >-
+          The Docker Hub namespace every image publishes under, and the account `push`
+          logs in as. Must be the account the PAT above belongs to, which nothing checks.
+          Validated in the `images` step, which is also where it becomes half of each
+          repository name.
+        required: true
+        type: string
+    secrets:
+      aws-role-arn:
+        description: >-
+          The IAM role `push` assumes with this workflow's OIDC token, as a full ARN. Its
+          trust policy has to accept this workflow's job_workflow_ref claim and its inline
+          policy has to grant ssm:GetParameter on the parameter above. A SECRET rather than
+          an input so the account id inside it is masked - see the credential step.
+        required: true
 
 permissions:
   contents: read
@@ -58,7 +93,7 @@ env:
   # The Docker Hub namespace half of every image name, and the account `push` logs in as.
   # The caller's, so this file carries nothing specific to one account. Step-level `env`
   # merges onto this rather than replacing it, which is what lets both readers name it.
-  NAMESPACE: ${{ inputs.namespace }}
+  DOCKERHUB_NAMESPACE: ${{ inputs.dockerhub-namespace }}
 
 jobs:
   # Tags and labels derived ONCE, so no image and its metadata can disagree with another's.
@@ -110,8 +145,8 @@ jobs:
           # Checked rather than trusted: `required` is satisfied by a key being present,
           # and an unset repository variable reaches a called workflow as an empty string,
           # which would otherwise compose a name `docker login` cannot push to.
-          if [[ ! "$NAMESPACE" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
-            echo "::error::namespace must be lowercase letters, digits, - or _, got: '$NAMESPACE'"
+          if [[ ! "$DOCKERHUB_NAMESPACE" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+            echo "::error::dockerhub-namespace must be lowercase letters, digits, - or _, got: '$DOCKERHUB_NAMESPACE'"
             exit 1
           fi
           printf '%s' "$DIRECTORIES" > /tmp/directories.json
@@ -120,20 +155,20 @@ jobs:
             echo "::error::directories must be a non-empty JSON array, got: $DIRECTORIES"
             exit 1
           fi
-          jq -r --arg ns "$NAMESPACE" --arg repo "$REPOSITORY" \
+          jq -r --arg ns "$DOCKERHUB_NAMESPACE" --arg repo "$REPOSITORY" \
             '[.[] | "\($ns)/\($repo)-\(.)"] | join(",")' \
             /tmp/directories.json | sed 's/^/list=/' >> "$GITHUB_OUTPUT"
-          jq -c --arg ns "$NAMESPACE" --arg repo "$REPOSITORY" \
+          jq -c --arg ns "$DOCKERHUB_NAMESPACE" --arg repo "$REPOSITORY" \
             'map({key: ., value: "\($ns)/\($repo)-\(.)"}) | from_entries' \
             /tmp/directories.json | sed 's/^/map=/' >> "$GITHUB_OUTPUT"
           # The compose artifact's repository: the same pair WITHOUT a directory suffix,
           # because the stack is not an image and no directory builds it. Composed here
           # with the rest so the formula stays in one step, and read back by the second
           # derivation below and by the publish step in `push`.
-          printf 'compose=%s/%s\n' "$NAMESPACE" "$REPOSITORY" >> "$GITHUB_OUTPUT"
-          jq -r --arg ns "$NAMESPACE" --arg repo "$REPOSITORY" \
+          printf 'compose=%s/%s\n' "$DOCKERHUB_NAMESPACE" "$REPOSITORY" >> "$GITHUB_OUTPUT"
+          jq -r --arg ns "$DOCKERHUB_NAMESPACE" --arg repo "$REPOSITORY" \
             '.[] | "\(.) -> \($ns)/\($repo)-\(.)"' /tmp/directories.json
-          echo "compose -> $NAMESPACE/$REPOSITORY"
+          echo "compose -> $DOCKERHUB_NAMESPACE/$REPOSITORY"
 
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta-images
@@ -427,6 +462,34 @@ jobs:
       contents: read
       id-token: write
     steps:
+      # FIRST, so a misconfigured caller fails before any credential handling begins.
+      # Checked rather than trusted, on the same terms as the `images` step: `required` is
+      # satisfied by a key being present, and an unset repository variable reaches a called
+      # workflow as an empty string. No message echoes the value it rejected - the ARN's
+      # would print as `***` and tell a reader nothing, so each states the shape instead.
+      - name: Check the release configuration
+        env:
+          AWS_REGION: ${{ inputs.aws-region }}
+          AWS_ROLE_ARN: ${{ secrets.aws-role-arn }}
+          AWS_SSM_PARAMETER: ${{ inputs.aws-ssm-parameter }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$AWS_REGION" =~ ^[a-z0-9-]+$ ]]; then
+            echo "::error::aws-region must match ^[a-z0-9-]+$"
+            exit 1
+          fi
+          # The ARN form specifically: configure-aws-credentials accepts a bare role NAME
+          # too, resolving it against the source account, and this rejects that.
+          if [[ ! "$AWS_ROLE_ARN" =~ ^arn:aws:iam::[0-9]{12}:role/.+$ ]]; then
+            echo "::error::aws-role-arn must be an IAM role ARN, not a bare role name"
+            exit 1
+          fi
+          if [[ ! "$AWS_SSM_PARAMETER" =~ ^/[A-Za-z0-9./_-]+$ ]]; then
+            echo "::error::aws-ssm-parameter must be an absolute SSM parameter path"
+            exit 1
+          fi
+          echo "region, role ARN and parameter path all well-formed"
+
       # The claims AWS conditions on, dumped before any AWS call, so a trust-policy
       # mismatch is diagnosable from this run rather than from a bare "Not authorized to
       # perform sts:AssumeRoleWithWebIdentity". This is also the only place the
@@ -479,16 +542,20 @@ jobs:
         id: creds
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          # A repository variable, not a secret: a role ARN is an address, assuming it
-          # needs an OIDC token this trust policy accepts, and keeping it in the log is
-          # what makes a refused exchange diagnosable. The account id inside it is masked
-          # below instead.
-          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          # A SECRET, so GitHub masks it. An input would be printed right here: the runner
+          # echoes this `with:` block into the log before the action runs, so the ARN would
+          # reach a world-readable log on EVERY release. `mask-aws-account-id` below cannot
+          # reach that line, and is not redundant either - it masks what STS RETURNS. The
+          # cost is that a wrong ARN logs as `***`, which the check at the top of this job
+          # is what makes diagnosable instead.
+          role-to-assume: ${{ secrets.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
           role-session-name: expense-tracker-release
           # Short enough that a leaked credential outlives little, long enough for two
           # image pushes and their signatures.
           role-duration-seconds: 900
+          # Still needed with the ARN masked: this covers the account id and arn STS
+          # RETURNS, which the input never carried.
           mask-aws-account-id: true
           # The whole point of this pair: the credentials become step outputs and are
           # NOT written into the job environment, so every later step that needs them
@@ -505,15 +572,19 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ steps.creds.outputs.aws-access-key-id }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.creds.outputs.aws-secret-access-key }}
           AWS_SESSION_TOKEN: ${{ steps.creds.outputs.aws-session-token }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_REGION: ${{ inputs.aws-region }}
+          # Through `env` rather than into the command text below, because that command is
+          # a pipeline into `docker login --password-stdin`: a variable is quoted once and
+          # cannot alter the pipeline's shape.
+          AWS_SSM_PARAMETER: ${{ inputs.aws-ssm-parameter }}
         run: |
           set -euo pipefail
           aws ssm get-parameter \
-            --name /expense-tracker/release/dockerhub-pat \
+            --name "$AWS_SSM_PARAMETER" \
             --with-decryption \
             --query Parameter.Value \
             --output text \
-            | docker login docker.io --username "$NAMESPACE" --password-stdin
+            | docker login docker.io --username "$DOCKERHUB_NAMESPACE" --password-stdin
 
       # Every image is staged and checked BEFORE any is copied, so a malformed or altered
       # archive fails the release with nothing published rather than half of it. No step
