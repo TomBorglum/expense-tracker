@@ -89,7 +89,7 @@ or with what nothing checks. jsdom evaluates no CSS, so appearance rules are by 
   legal in a query and the only escape a category slug holds. `routing.test.tsx`.
 - **`src/routeTree.gen.ts` is committed and never hand-edited**, and eslint covers it
   through `globalIgnores`, beside the three exclusions prettier, coverage and Sonar each
-  declare. Why each holds is in [`README.md`](../README.md#routing) and the root
+  declare. Why each holds is in [`docs/frontend.md`](../docs/frontend.md#routing) and the root
   [`CLAUDE.md`](../CLAUDE.md) table. The one thing neither says: **regenerate it with `pnpm exec vite build`** after a
   route file is added, typecheck running first under `pnpm run build`.
 - **`src/components/` is the router-free layer.** Under file-based routing the route and
@@ -150,7 +150,7 @@ or with what nothing checks. jsdom evaluates no CSS, so appearance rules are by 
 ## Environment and tooling
 
 - **The API origin lives in bare `.env`**, for the reason
-  [`README.md`](../README.md#where-the-api-lives) gives. `envDir` is pinned to `frontend/`
+  [`docs/frontend.md`](../docs/frontend.md#where-the-api-lives) gives. `envDir` is pinned to `frontend/`
   because the `test` block moves vite's `root` to the repo root.
 - **Every linted file needs a tsconfig that owns it.** eslint runs type-aware via
   `parserOptions.projectService`, so a `.ts`/`.tsx` file outside every tsconfig's `include`
@@ -159,10 +159,10 @@ or with what nothing checks. jsdom evaluates no CSS, so appearance rules are by 
 - **`package.json` carries no `packageManager` field**, the pnpm version being pinned in
   `pixi.toml`, and `pnpm-lock.yaml` stays at `lockfileVersion: 9.0`, which is what
   Dependabot reads its pnpm major from. See
-  [`README.md`](../README.md#package-manager).
+  [`docs/frontend.md`](../docs/frontend.md#package-manager).
 - **`pnpm-workspace.yaml` states `minimumReleaseAge`**, and that guard covers every
   package. The value it mirrors and why is in
-  [`README.md`](../README.md#package-manager).
+  [`docs/frontend.md`](../docs/frontend.md#package-manager).
 
 ## Quality gates
 

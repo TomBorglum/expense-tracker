@@ -23,7 +23,7 @@ environment, and `use pixi python` puts the environment's `pytest`, `ruff` and `
 - **The invariants in these three files are deliberate**, and every one names the test or
   linter that pins it, or says that nothing does.
 - **If an invariant blocks the task, say so.**
-- **Rationale lives in these files and in `README.md`, not in the source.** See the
+- **Rationale lives in these files and under `docs/`, not in the source.** See the
   comment policy below.
 
 ## Adding to these files
@@ -35,7 +35,7 @@ A bullet earns its place only if all three hold. Most candidates fail the first.
    truth elsewhere is already shown by the code - ruff's `select` list is in
    `pyproject.toml` and needs no second home.
 3. **It fits in one clause.** Anything longer is a description, and descriptions belong in
-   `README.md`.
+   `README.md` or under `docs/`.
 
 Then state it in one to three lines and end with the test or gate that pins it, or with
 "nothing checks this". **Never restate a value that has a single source of truth
@@ -78,10 +78,15 @@ nobody can bypass it.
   Danish text fine. Nothing checks this; ruff's `RUF001`-`003` cover confusable characters
   in Python source.
 - **Comments say what the code does**, and only where that is not plain from reading it.
-  Rationale lives in these files and in `README.md`. Module and function docstrings are one
+  Rationale lives in these files and under `docs/`. Module and function docstrings are one
   line, and only where the name and signature do not already say it. This governs code, SQL
   and config comments; these files answer to
   [Adding to these files](#adding-to-these-files).
+- **`README.md` carries under 600 lines, and `docs/` under 800 in all**, however many
+  files it holds. README answers what the application is, how to run it, how it is laid
+  out, what the commands are and how to configure it; anything deeper is a `docs/` page.
+  A passage that wants room past either number retires one. Nothing checks either;
+  `wc -l README.md` and `cat docs/*.md | wc -l` are the counts.
 - **`.github/workflows/` carries under 200 comment lines in all**, however many files it
   holds, and a comment that wants room past that retires one. It is a budget on the whole
   directory rather than a rule per file, so the workflows compete for it the way the
@@ -111,7 +116,7 @@ directory also stays runnable on its own terms (`cd backend && poe test`,
 Every task declares its own `cwd` and addresses paths relative to its own manifest, so it
 behaves identically wherever you invoke it. Full table and reasoning in
 [`README.md`](README.md#development-tasks), under
-[Where commands are defined](README.md#where-commands-are-defined).
+[Where commands are defined](docs/development.md#where-commands-are-defined).
 
 **`dev` depends on `db-init`**, so `pixi run backend-dev` is the single command that gets
 a backend developer a working API: the cluster chain behind it is idempotent, runs once
@@ -165,12 +170,12 @@ The two halves are independent, so a change to one stack can only fail that stac
 | What is left of the local database connection | `backend/.env` + `db-create`'s `initdb` flags and `db-init`'s `createdb` | `PGUSER` and `PGHOST` against `--username=expense_tracker`, `--set=listen_addresses=127.0.0.1` and `createdb expense_tracker`. `PGPORT` reaches `db-create` as `--set=port="$PGPORT"` instead. |
 | The deployed database connection | `compose.yaml`'s `database` service + `backend/.env` | `POSTGRES_USER` and `POSTGRES_DB` against `PGUSER` and `PGDATABASE`, which the API and both loaders read under those same four names - so `config.py` serves a container and a checkout unchanged. The base image's entrypoint creates the pair on **first boot only**, so an existing volume ignores a change to either half. A backend that cannot authenticate against a database that is up and healthy is this pair out of agreement. |
 | The pixi version | `.envrc` + the builder image in **both** `backend/Dockerfile` and `frontend/Dockerfile` | `use pixi 0.81.0` against `ghcr.io/prefix-dev/pixi:0.81.0-noble`. Both resolve the same `pixi.lock`, so the three agree on one version and the image installs what a developer and CI install. `.github/dependabot.yml`'s `docker` entry **ignores** that image, so all three move together by hand. |
-| The release workflow's path | `.github/workflows/release.yml` + the `job_workflow_ref` condition on the AWS release role's trust policy | The trust policy pins `TomBorglum/expense-tracker/.github/workflows/release.yml@refs/tags/v*`, and **the other half is in the AWS console**, so this path is a literal in two systems. `job_workflow_ref` names the **called** workflow, which is why `release.yml` keeps that path and `publish.yml` took a new one: **renaming or moving `release.yml` breaks the policy.** A release whose credential step fails with an STS `AccessDenied` is this pair out of agreement. `README.md`, under Releases, records the policy so the pair is written down somewhere. |
+| The release workflow's path | `.github/workflows/release.yml` + the `job_workflow_ref` condition on the AWS release role's trust policy | The trust policy pins `TomBorglum/expense-tracker/.github/workflows/release.yml@refs/tags/v*`, and **the other half is in the AWS console**, so this path is a literal in two systems. `job_workflow_ref` names the **called** workflow, which is why `release.yml` keeps that path and `publish.yml` took a new one: **renaming or moving `release.yml` breaks the policy.** A release whose credential step fails with an STS `AccessDenied` is this pair out of agreement. `docs/releases.md` records the policy so the pair is written down somewhere. |
 | The published image names | `release.yml`'s `images` step + the Docker Hub repositories themselves | Composed as `<namespace>/<github repository name>-<directory>`, reading `github.event.repository.name`, so **renaming this GitHub repository renames what a release publishes to** and `latest` forks silently onto new repositories. Nothing checks this; the `meta` job logs each pair on every pull request. |
 | The image reference formula | `compose.yaml`'s five `image:` keys + the directory list in `.github/workflows/publish.yml` | Each is `${EXPENSE_TRACKER_IMAGE_PREFIX}-<service>:${EXPENSE_TRACKER_VERSION}`, and the `-<service>` half has to spell a **directory** `publish.yml` names, because that is what the published name carries. It is what lets one prefix point the whole stack at a release without any published name being written down in the file. Nothing checks it: a renamed directory leaves `docker compose up` pulling a repository that does not exist. |
 | The stack's interpolation variables | `compose.yaml`'s five `image:` keys + `release.yml`'s publish step in `push` | `EXPENSE_TRACKER_IMAGE_PREFIX` and `EXPENSE_TRACKER_VERSION`, which that step sets to the namespace/repository pair and to each derived tag in turn, so `--resolve-image-digests` has published images to resolve. Renaming either in the file leaves the committed defaults in force, and `expense-tracker-backend:dev` is no repository on Docker Hub. Nothing checks it; the step logs the pair it set per tag. |
 | `release.yml`'s caller-filled configuration | its four `workflow_call` declarations + `publish.yml`'s `with:` and `secrets:` keys | `release.yml` reads **no `vars` and names no AWS object**: `aws-region`, `aws-ssm-parameter`, `dockerhub-namespace` and the `aws-role-arn` **secret** are its whole contract, and `publish.yml` is the only file that fills them - two from repository variables, the ARN from a repository **secret**, the SSM path as a literal. Each input names its role in the workflow, not which one this repository uses, so **what a value must contain is its `description`'s job**. The ARN is secret at both ends because it is the only one carrying the account id: the runner echoes a `with:` block before the action runs, so an input would print it on every release. `push` shape-checks all three AWS values before any credential handling, since `required` only checks that a key is present. |
-| The Docker Hub namespace | `DOCKERHUB_NAMESPACE` + the Docker Hub account the PAT in SSM belongs to | The namespace has to be that account, and **both halves sit outside the repository**. `meta` checks the shape, not the account: a release that composes image names the credential cannot push to is this pair out of agreement. `README.md`, under Releases, records all four. |
+| The Docker Hub namespace | `DOCKERHUB_NAMESPACE` + the Docker Hub account the PAT in SSM belongs to | The namespace has to be that account, and **both halves sit outside the repository**. `meta` checks the shape, not the account: a release that composes image names the credential cannot push to is this pair out of agreement. `docs/releases.md` records all four. |
 | The bake target name | the `docker-bake.hcl` in `backend/`, `database/` and `frontend/` + `release.yml`'s `bake-target`, `targets` and `set:` keys | `image`, which is what lets metadata-action's generated label and annotation files merge onto the target the stack declares. An image published carrying no release metadata is this pair out of agreement, and nothing else reports it. The `files` list is ordered on the same terms - bake merges `labels` per key and the last file wins, so the stack's own file goes last. |
 | The API base URL placeholder | `frontend/Dockerfile` + `frontend/docker/40-api-base-url.sh` | `__EXPENSE_TRACKER_API_BASE_URL__`, written into `.env.production.local` before `vite build` and rewritten across the document root at container start. The script treats a document root holding no placeholder as its normal restart case, so a bundle served with the literal token in it is this pair out of agreement. The builder's `grep -rq` over `dist/` covers the token's presence in a build. |
 | The `@` alias (`frontend/src`) | `frontend/vite.config.ts` + `frontend/tsconfig.app.json` | Each resolves it for its own tool; vite reads tsconfig `paths` for neither. |

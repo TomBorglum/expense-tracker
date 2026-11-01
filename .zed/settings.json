@@ -15,7 +15,7 @@
 //
 // Before concluding a pin is broken: over a remote/WSL backend Zed's Server Info
 // panel shows "Binary: Unknown" for vtsls even when it is working correctly. See
-// "Editor setup (Zed)" in README.md for how to verify properly (use `ps`).
+// "Editor setup (Zed)" in docs/development.md for how to verify (use `ps`).
 //
 // Not set on purpose:
 //   format_on_save   - left to your user settings. Formatting is applied by
@@ -83,7 +83,7 @@
       // That is Zed's behaviour, not a guarantee this repo can make. If your editor
       // ever disagrees with CI about Python, check that first: capture the server's
       // initialize request, or just trust `pixi run backend-typecheck`, the authority.
-      // See "Editor setup (Zed)" in README.md.
+      // See "Editor setup (Zed)" in docs/development.md.
       "binary": {
         // Pinned by pixi.toml, for the same reason as the frontend servers below.
         // Without it Zed resolves basedpyright-langserver off PATH - which is the pixi
@@ -124,7 +124,7 @@
     // (zed#46766). This server is registered only as an available adapter, so it is
     // missing from the first list and present in the second - the identical key in your
     // own settings.json draws no warning. tailwindcss-language-server below escapes it
-    // by also being registered against languages. Confirm with `ps`, per README.
+    // by also being registered against languages. Confirm with `ps`, per the docs.
     "tailwindcss-intellisense-css": {
       "binary": {
         // Drives the "CSS" block above. Added in Zed 1.16.1; on an older Zed the

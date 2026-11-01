@@ -1,7 +1,7 @@
 name: Update pixi dependencies
 
 # Bumps the versions pinned in pixi.toml, Dependabot carrying no pixi ecosystem. Why it
-# authenticates as a GitHub App: README.md, under Releases.
+# authenticates as a GitHub App: docs/releases.md.
 
 on:
   schedule:
