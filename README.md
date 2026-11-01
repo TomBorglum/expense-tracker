@@ -1536,9 +1536,9 @@ tomborglum/expense-tracker            <- the stack, not an image
 
 **No one of those names is written down.** `publish.yml` names the directories, `backend`,
 `database` and `frontend`, and `release.yml`'s `meta` job composes
-`<namespace>/<repository>-<directory>` from them - the namespace an input that
-`publish.yml` fills from the `DOCKERHUB_NAMESPACE` repository variable, the repository
-read from `github.event.repository.name`. **So renaming this GitHub repository renames
+`<namespace>/<repository>-<directory>` from them - the namespace the `dockerhub-namespace`
+input, which `publish.yml` fills from the `DOCKERHUB_NAMESPACE` repository variable, the
+repository read from `github.event.repository.name`. **So renaming this GitHub repository renames
 what a release publishes to**, which `CLAUDE.md` carries as a pair that nothing checks.
 The composition is logged on every pull request run.
 
@@ -1635,8 +1635,14 @@ whose trust policy only accepts this repository's release workflow at a version 
 reads a Docker Hub PAT out of SSM Parameter Store. `oidc-smoke-test.yml` proved that path
 and remains the cheapest way to diagnose a claim mismatch.
 
-Three details carry the weight:
+Four details carry the weight:
 
+- The **role ARN reaches `release.yml` as a secret**, not an input, so GitHub masks it from
+  that workflow's first line. `mask-aws-account-id: true` cannot cover it alone: that input
+  masks what STS *returns*, and only once STS has answered, so a **refused** exchange - the
+  one case worth diagnosing - is the one that would otherwise print the account id into a
+  world-readable log. The cost is that a wrong ARN logs as `***`, which the configuration
+  check at the top of `push` is what makes diagnosable instead.
 - `aws-actions/configure-aws-credentials` runs with `output-credentials: true` and
   **`output-env-credentials: false`**, so the temporary credentials become step outputs
   rather than job environment variables. Steps that need them name them; the rest never
@@ -1827,11 +1833,24 @@ one parameter - so that scoping is where the separation lives.
    rather than a prefix - is what holds this role to its own parameter and away from the
    smoke test's under the same key.
 
-4. **GitHub repository variables.** `AWS_RELEASE_ROLE_ARN`, set to
-   `arn:aws:iam::<account-id>:role/gha-expense-tracker-release`, and
-   `DOCKERHUB_NAMESPACE`, set to `tomborglum` - the namespace `publish.yml` passes to
-   `release.yml`, which has to be the account the PAT above belongs to. `AWS_REGION`
-   already exists for the smoke test.
+4. **GitHub repository variables.** `release.yml` reads none of these: it declares an input
+   or a secret for each, and **`publish.yml` is the only file that names them**, so the
+   variables feed the workflow rather than being read by it.
+
+   - `AWS_RELEASE_ROLE_ARN`, set to
+     `arn:aws:iam::<account-id>:role/gha-expense-tracker-release`, passed as the
+     `aws-role-arn` **secret** so the account id is masked. Note it is one word away from
+     the smoke test's own `AWS_ROLE_ARN`, which names the **CI** role instead.
+   - `DOCKERHUB_NAMESPACE`, set to `tomborglum`, passed as `dockerhub-namespace`. Has to be
+     the account the PAT above belongs to, which nothing checks.
+   - `AWS_REGION`, already present for the smoke test, passed as `aws-region`. It has two
+     consumers: `publish.yml` fills the input from it, and `oidc-smoke-test.yml` - which is
+     dispatched rather than called, so it has no caller to take inputs from - still reads
+     it directly.
+
+   The SSM path is **not** a variable. `publish.yml` passes it as the `aws-ssm-parameter`
+   input, a literal beside the directory list, because a path is an address and this file
+   publishes it verbatim above.
 
 ### The published stack
 

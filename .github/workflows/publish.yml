@@ -49,11 +49,28 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    # EVERY VALUE BELONGING TO THIS REPOSITORY IS NAMED HERE, and release.yml reads none of
+    # its own: no `vars`, no account, no region, no parameter path. That is what makes it a
+    # workflow another caller could use. Unset variables arrive as empty strings, which
+    # release.yml checks for rather than trusting `required` - see its `push` job.
     with:
       # One entry per image: the directory holding the Dockerfile and docker-bake.hcl.
       # The image each publishes to is composed from it - see release.yml's `images` step.
       directories: '["backend", "database", "frontend"]'
+      aws-region: ${{ vars.AWS_REGION }}
+      # A literal rather than a variable: README.md publishes this path verbatim, the
+      # release role's inline policy names it as a literal too, and keeping it here puts it
+      # beside the directory list - the other value a reader comes to this file for.
+      aws-ssm-parameter: /expense-tracker/release/dockerhub-pat
       # A repository variable, not a secret: a namespace is public, and it is the account
-      # the PAT in SSM belongs to. Unset, it arrives as an empty string and release.yml's
-      # `images` step fails the run before anything is built.
-      namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
+      # the PAT in SSM belongs to.
+      dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
+    # The one value passed as a secret, because it is the only one carrying the account id,
+    # and these logs are world-readable. Its stored half stays a repository VARIABLE - a
+    # stored secret's name could not take hyphens anyway - and passing a variable as a
+    # secret costs the build half nothing, since `vars` resolve on pull-request runs.
+    #
+    # AWS_RELEASE_ROLE_ARN, *not* the smoke test's AWS_ROLE_ARN: two variables one word
+    # apart that name two different roles, the release role and the CI role.
+    secrets:
+      aws-role-arn: ${{ vars.AWS_RELEASE_ROLE_ARN }}
