@@ -1637,11 +1637,13 @@ and remains the cheapest way to diagnose a claim mismatch.
 
 Four details carry the weight:
 
-- The **role ARN reaches `release.yml` as a secret**, not an input, so GitHub masks it from
-  that workflow's first line. `mask-aws-account-id: true` cannot cover it alone: that input
-  masks what STS *returns*, and only once STS has answered, so a **refused** exchange - the
-  one case worth diagnosing - is the one that would otherwise print the account id into a
-  world-readable log. The cost is that a wrong ARN logs as `***`, which the configuration
+- The **role ARN is a secret at both ends** - stored as one, and passed to `release.yml` as
+  one - so GitHub masks it everywhere. A plain input would not do, for a reason that has
+  nothing to do with the exchange failing: **the runner echoes a step's `with:` block into
+  the log before the action runs**, so the credential step would print the full ARN on every
+  release. `mask-aws-account-id: true` cannot reach that line, and is not redundant either -
+  it masks the account id and `authenticated-arn` that STS *returns*, which the input never
+  carried. The cost of masking is that a wrong ARN logs as `***`, which the configuration
   check at the top of `push` is what makes diagnosable instead.
 - `aws-actions/configure-aws-credentials` runs with `output-credentials: true` and
   **`output-env-credentials: false`**, so the temporary credentials become step outputs
@@ -1833,14 +1835,19 @@ one parameter - so that scoping is where the separation lives.
    rather than a prefix - is what holds this role to its own parameter and away from the
    smoke test's under the same key.
 
-4. **GitHub repository variables.** `release.yml` reads none of these: it declares an input
-   or a secret for each, and **`publish.yml` is the only file that names them**, so the
-   variables feed the workflow rather than being read by it.
+4. **GitHub repository variables and one secret.** `release.yml` reads none of these: it
+   declares an input or a secret for each, and **`publish.yml` is the only file that names
+   them**, so they feed the workflow rather than being read by it.
 
-   - `AWS_RELEASE_ROLE_ARN`, set to
+   - **Secret** `AWS_RELEASE_ROLE_ARN`, set to
      `arn:aws:iam::<account-id>:role/gha-expense-tracker-release`, passed as the
-     `aws-role-arn` **secret** so the account id is masked. Note it is one word away from
-     the smoke test's own `AWS_ROLE_ARN`, which names the **CI** role instead.
+     `aws-role-arn` secret. A secret and not a variable because it is the only one of these
+     carrying the account id, and these logs are world-readable: the runner echoes a step's
+     `with:` block before the action runs, so a plain input would print the ARN on every
+     release, where `mask-aws-account-id` cannot reach it. A fork's pull request gets no
+     secrets, so it arrives empty there and nothing reads it - `push` runs on the release
+     event alone. Note the name is one word away from the smoke test's own `AWS_ROLE_ARN`,
+     a **variable** naming the **CI** role instead.
    - `DOCKERHUB_NAMESPACE`, set to `tomborglum`, passed as `dockerhub-namespace`. Has to be
      the account the PAT above belongs to, which nothing checks.
    - `AWS_REGION`, already present for the smoke test, passed as `aws-region`. It has two
@@ -1848,9 +1855,9 @@ one parameter - so that scoping is where the separation lives.
      dispatched rather than called, so it has no caller to take inputs from - still reads
      it directly.
 
-   The SSM path is **not** a variable. `publish.yml` passes it as the `aws-ssm-parameter`
-   input, a literal beside the directory list, because a path is an address and this file
-   publishes it verbatim above.
+   The SSM path is neither. `publish.yml` passes it as the `aws-ssm-parameter` input, a
+   literal beside the directory list, because a path is an address and this file publishes
+   it verbatim above.
 
 ### The published stack
 

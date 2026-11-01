@@ -542,12 +542,12 @@ jobs:
         id: creds
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          # A SECRET, so GitHub masks it from this workflow's first line whatever happens.
-          # `mask-aws-account-id` below cannot cover the ARN on its own: it masks what STS
-          # RETURNS, and only once STS has answered, so a REFUSED exchange - the one case
-          # worth diagnosing - is the one that would print the account id into a
-          # world-readable log. The cost is that a wrong ARN logs as `***`, which the
-          # configuration check at the top of this job is what makes diagnosable instead.
+          # A SECRET, so GitHub masks it. An input would be printed right here: the runner
+          # echoes this `with:` block into the log before the action runs, so the ARN would
+          # reach a world-readable log on EVERY release. `mask-aws-account-id` below cannot
+          # reach that line, and is not redundant either - it masks what STS RETURNS. The
+          # cost is that a wrong ARN logs as `***`, which the check at the top of this job
+          # is what makes diagnosable instead.
           role-to-assume: ${{ secrets.aws-role-arn }}
           aws-region: ${{ inputs.aws-region }}
           role-session-name: expense-tracker-release

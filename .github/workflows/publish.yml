@@ -51,8 +51,8 @@ jobs:
       id-token: write
     # EVERY VALUE BELONGING TO THIS REPOSITORY IS NAMED HERE, and release.yml reads none of
     # its own: no `vars`, no account, no region, no parameter path. That is what makes it a
-    # workflow another caller could use. Unset variables arrive as empty strings, which
-    # release.yml checks for rather than trusting `required` - see its `push` job.
+    # workflow another caller could use. An unset variable or secret arrives as an empty
+    # string, which release.yml checks for rather than trusting `required` - see `push`.
     with:
       # One entry per image: the directory holding the Dockerfile and docker-bake.hcl.
       # The image each publishes to is composed from it - see release.yml's `images` step.
@@ -65,12 +65,18 @@ jobs:
       # A repository variable, not a secret: a namespace is public, and it is the account
       # the PAT in SSM belongs to.
       dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
-    # The one value passed as a secret, because it is the only one carrying the account id,
-    # and these logs are world-readable. Its stored half stays a repository VARIABLE - a
-    # stored secret's name could not take hyphens anyway - and passing a variable as a
-    # secret costs the build half nothing, since `vars` resolve on pull-request runs.
+    # A SECRET at both ends, because it is the only value carrying the account id and these
+    # logs are world-readable. A plain input would not do: the runner echoes a step's `with:`
+    # block before the action runs, so release.yml's credential step would print the ARN on
+    # every release, which `mask-aws-account-id` cannot reach - it masks what STS RETURNS.
     #
-    # AWS_RELEASE_ROLE_ARN, *not* the smoke test's AWS_ROLE_ARN: two variables one word
-    # apart that name two different roles, the release role and the CI role.
+    # The stored name takes no hyphen because a secret's cannot, which is why it does not
+    # read `aws-role-arn`. AWS_RELEASE_ROLE_ARN, *not* the smoke test's AWS_ROLE_ARN: two
+    # names one word apart for two different roles, the release role and the CI role.
+    #
+    # A fork's pull request gets no secrets, so this arrives EMPTY there - and `required`
+    # does not object, since it checks only that the key was passed. Nothing reads it: the
+    # `push` job is gated on the release event, which is also why release.yml checks the
+    # shape there and not in `meta`.
     secrets:
-      aws-role-arn: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+      aws-role-arn: ${{ secrets.AWS_RELEASE_ROLE_ARN }}
