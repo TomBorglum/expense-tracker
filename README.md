@@ -1165,14 +1165,6 @@ twice to produce the same two files. The job is named `Checks` because the
 `main-protection` ruleset requires that check by name, so the name is a gate and not a
 label.
 
-The first step belongs to neither stack: `pixi run workflows-comment-check` caps how long
-one comment block in `.github/workflows/*.yml` may be. It exists because
-[`CLAUDE.md`](CLAUDE.md)'s comment policy - rationale lives in `CLAUDE.md` and in this
-file, not in the source - had nothing enforcing it, and the workflows had accumulated
-blocks of 36, 30 and 25 lines restating what these sections already say. The gate pins
-**brevity only**: it cannot tell whether a short comment is in the right place, and it
-reads the workflows alone, so no other file in the repository is capped.
-
 **Each stack's gates run cheapest first**, then its tests, then anything that builds, so a
 broken change fails on the fastest gate that can catch it and nothing after it - including
 the JDK setup and the scan - runs at all. That rule puts lint near the end of *both* lists
