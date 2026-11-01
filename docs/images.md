@@ -5,10 +5,9 @@ How the three images are built.
 ## Keeping the bases current
 
 All three Dockerfiles pin their runtime base as `tag@sha256:...`, the tag naming the
-version a reader sees and the digest deciding what is pulled, and the `docker` entry in
-`.github/dependabot.yml` moves that pair weekly across all three. Its commits are prefixed
-**`deps`**, so a base bump lands in `CHANGELOG.md` under Dependencies and cuts a patch
-release - and that release is what republishes the image.
+version a reader sees and the digest deciding what is pulled, and `.github/dependabot.yml`
+moves that pair weekly across all three. Its commits are prefixed **`deps`**, so a base
+bump cuts a patch release - and that release is what republishes the image.
 
 Three properties of the entry live outside the configuration:
 
@@ -77,7 +76,6 @@ reports CVEs against, so keeping them out keeps the release gate reading only on
 the application loads. glibc is also what fixes the family: conda-forge publishes glibc
 builds, and `gcompat` over musl does not cover what a CPython prefix asks of libc.
 
-The image is about 396 MB, nearly all of it the prefix.
 
 ## The SPA image
 
@@ -153,7 +151,7 @@ The build context is the repository root here too, and `backend/pyproject.toml` 
 backend file the build reads: pixi validates the lock against the **whole** workspace, so
 that file has to be there even though this environment holds no python. Only its metadata
 is read - `backend/src` stays out of the build - which keeps a backend source change from
-invalidating any layer here. The image is about 92 MB, nearly all of it the base.
+invalidating any layer here.
 
 ## The database image
 
@@ -196,6 +194,6 @@ once with `gosu: not found`, rather than starting degraded.
 declares - which is the whole `/var/lib/postgresql` directory rather than the pre-18 `data/`
 beneath it. **That is the path to mount.**
 
-The image is about 433 MB, effectively all of it the base. The reason for alpine is the gate
-rather than the size: 62 HIGH/CRITICAL in `postgres:18.6` with a fix available for **none**
-of them, against the 2 here, both already covered by `.trivyignore.yaml`.
+The reason for alpine is the gate rather than the size: 62 HIGH/CRITICAL in
+`postgres:18.6` with a fix available for **none** of them, against the 2 here, both already
+covered by `.trivyignore.yaml`.

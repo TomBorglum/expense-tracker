@@ -20,8 +20,8 @@ the file holds no `DKK DKK 1.000000` row.
 | `?currency=euro` | `{"detail": "currency must be an ISO 4217 code"}` |
 
 A lowercase code is refused, matching the loaders. **One unconvertible expense refuses the
-whole request**, so every amount in a list stands in one currency. A pair loaded twice is
-refused the same way, and only when that pair is actually needed.
+whole request**, so every amount in a list stands in one currency, as does a pair loaded
+twice - and only when that pair is actually needed.
 
 ## Asking for a range of dates
 
@@ -63,9 +63,8 @@ both lists is everything but one subtree with a branch of that subtree kept.
 
 A value is matched the way the loader stored the slug - **stripped level by level, then
 verbatim** - so `?category=%20food` is `food`, and every slug is lower case. The case is
-the client's to send, as a currency code is.
-
-**A category nobody has spent in is `200 {"items": []}`**, on the terms an empty table is.
+the client's to send, as a currency code is. **A category nobody has spent in is
+`200 {"items": []}`**, on the terms an empty table is.
 
 `GET /api/expenses/categories` is the category list: every category at the levels asked
 for, **once each and in path order**, as `{"items": [{"category": "Settlement:Alice",
@@ -106,8 +105,7 @@ the `expense_category_is_a_path` CHECK in `schema.sql` that refuses an empty lev
 CHECK is what keeps **the separator out of every level**, so splitting a path or joining
 one back up is lossless and **the levels need no escaping** anywhere. Matching is by level
 rather than by characters, which is why `food` covers `food:dining` and leaves
-`foodstuffs` alone. PostgreSQL's `ltree` models the same shape and stays the upgrade path
-if the table ever outgrows the scan.
+`foodstuffs` alone.
 
 ### Category slugs
 

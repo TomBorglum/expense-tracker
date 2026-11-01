@@ -4,8 +4,8 @@ How a release is cut, signed, scanned and published.
 
 `.github/workflows/publish.yml` publishes all three images to Docker Hub when
 release-please's GitHub Release is published, calling `.github/workflows/release.yml` to do
-it. Four tags per image, derived once by `docker/metadata-action` so they cannot disagree:
-`1.1.0`, `1.1`, `sha-<full commit>` and `latest`.
+it. Four tags per image, derived once by `docker/metadata-action`: `1.1.0`, `1.1`,
+`sha-<full commit>` and `latest`.
 
 ```
 tomborglum/expense-tracker-backend
@@ -22,31 +22,31 @@ fourth repository is the same pair **without** a directory suffix, holding `comp
 as an OCI artifact - see [The published stack](#the-published-stack).
 
 The same job derives eight `org.opencontainers.image.*` values, carried twice over as
-labels in the image config and as annotations on the manifest, so a registry client can
-read `source` and `revision` without pulling the image. Two are not metadata-action's,
-which reads from the **repository** and so hands every image the same answer - which had
-the SPA image advertising the REST API: **`title` and `description` are the image's own**,
-declared in its `docker-bake.hcl`.
+labels in the image config and annotations on the manifest, so a registry client reads
+`source` and `revision` without pulling the image. Two are not metadata-action's, which
+reads from the **repository** and so hands every image the same answer - which had the SPA
+image advertising the REST API: **`title` and `description` are the image's own**, declared
+in its `docker-bake.hcl`.
 
-Merging those with the shared set is why `build` uses `docker buildx bake` rather than a
-plain build. metadata-action writes its labels and annotations out as bake files, and bake
-merges a list of files onto one target: `labels` merges per key, so **the stack's own file
-is loaded last** and its two values win. The target is spelled `image` in five places -
-all three bake files, metadata-action's `bake-target`, and the build step's `targets` and
-`set:` keys - and nothing reports a mismatch, which is why `CLAUDE.md` carries that pair.
+Merging those with the shared set is why `build` uses `docker buildx bake`. metadata-action
+writes its labels and annotations out as bake files, and bake merges a list of files onto
+one target, `labels` merging per key, so **the stack's own file is loaded last** and its two
+values win. The target is spelled `image` in five places - all three bake files,
+metadata-action's `bake-target`, and the build step's `targets` and `set:` keys - and
+nothing reports a mismatch, which is why `CLAUDE.md` carries that pair.
 
-It is a release workflow rather than a deployment one. Its whole output is a tag on Docker
-Hub, so it involves no GitHub Environment and files no deployment records.
+Its whole output is a tag on Docker Hub, so it involves no GitHub Environment and files no
+deployment records.
 
 ## The automation App
 
 Two workflows open pull requests: `release-please.yml`, and `update-pixi-dependencies.yml`,
 which bumps the versions pinned in `pixi.toml` weekly because Dependabot carries no pixi
 ecosystem. **Both authenticate as a GitHub App** rather than with the built-in
-`GITHUB_TOKEN`, for the same reason each: a push or a pull request made with
-`GITHUB_TOKEN` **triggers no workflow**, by design, so the release PR would open with no
-`Checks` run against it and the dependency PR would never learn whether the new pins
-build. An App installation token is a first-class actor, so its PRs run the full gate.
+`GITHUB_TOKEN`, for the same reason each: a push or pull request made with `GITHUB_TOKEN`
+**triggers no workflow**, by design, so the release PR would open with no `Checks` run and
+the dependency PR would never learn whether the new pins build. An App installation token
+is a first-class actor, so its PRs run the full gate.
 
 The App is installed on this repository alone, with every permission the two workflows need
 between them:
@@ -93,10 +93,10 @@ copies them to a registry. **`push` re-derives the digest after staging and fail
 moved**, so "what was scanned" and "what was published" are provably the same bytes.
 
 Each artifact also carries **the repository its image publishes to**, which is why no step
-in `push` names a directory: it iterates the artifacts it was handed, and both consumers
-read that name back out of `meta`'s `images` step. Before anything is copied, `push`
-compares the two sets, which catches a build that uploaded nothing or an artifact that
-arrived twice - either would otherwise publish a partial release quietly.
+in `push` names a directory: it iterates the artifacts it was handed, both consumers
+reading that name out of `meta`'s `images` step. Before copying, `push` compares the two
+sets, catching a build that uploaded nothing or an artifact that arrived twice - either
+would otherwise publish a partial release quietly.
 
 `compose` is the fourth job because of that same split, not because the work is heavy: it
 checks out `compose.yaml`, loads it with every variable unset, and uploads it. **That load
@@ -161,14 +161,14 @@ form Trivy walks: it rejects an OCI archive outright, and a layout written by
 `regctl image import` leads with a referrers index, which Trivy reads first, resolves
 nothing from, and then reports zero vulnerabilities and success.
 
-So the gate makes **two** assertions, and the first is about identity: the `ImageID` Trivy
-reports has to name a config present in the layout just scanned **and** declaring a
-platform. That is what tells a clean scan from a scan that examined nothing. The direction
-matters - pointed at a layout it cannot walk, Trivy resolves the empty config `{}`,
-reports no findings and exits 0, and that blob **is** in the layout as the attestation
-manifest's own config. So the check reads Trivy's claim against the layout, where `{}`
-declares no platform, rather than walking the layout to derive what Trivy should have
-reported, which can land on that same empty value from both sides and agree with itself.
+So the gate makes **two** assertions, the first about identity: the `ImageID` Trivy reports
+has to name a config present in the layout just scanned **and** declaring a platform, which
+is what tells a clean scan from a scan that examined nothing. The direction matters -
+pointed at a layout it cannot walk, Trivy resolves the empty config `{}`, reports no
+findings and exits 0, and that blob **is** in the layout as the attestation manifest's own
+config. So the check reads Trivy's claim against the layout, where `{}` declares no
+platform, rather than deriving what Trivy should have reported, which can land on that same
+empty value from both sides and agree with itself.
 
 Suppressions live in **`.trivyignore.yaml`**, and every entry carries an `expired_at`
 date, so a suppression cannot outlive its reason by being forgotten. The two entries today
@@ -189,10 +189,9 @@ Created once, by hand, in region `eu-north-1`. `<account-id>` below is the 12-di
 account id, which never appears in this repository - the ARN carrying it is a repository
 **secret**, for the reason above.
 
-Everything here sits inside AWS's **always-free** tier, which is a standing constraint on
-what gets created: IAM, STS, the OIDC provider, a standard-tier SSM parameter and the
-AWS-managed `aws/ssm` key carry no monthly charge, and one `kms:Decrypt` per release sits
-far inside the free 20,000 a month.
+Everything here sits inside AWS's **always-free** tier, a standing constraint on what gets
+created: IAM, STS, the OIDC provider, a standard-tier SSM parameter and the AWS-managed
+`aws/ssm` key carry no monthly charge.
 
 1. **Docker Hub.** Both repositories created explicitly, so their visibility is set before
    the first push, and both **public**. Then a personal access token with **Read & Write**
@@ -245,15 +244,13 @@ far inside the free 20,000 a month.
    naming no condition, with every other part of the exchange correct - which is what
    `workflow_ref` as a key name looks like. AWS describes `job_workflow_ref` as the
    *reusable* workflow's path; GitHub populates it on every job. **`release.yml` is a called
-   workflow**, so `job_workflow_ref` is its path rather than the caller's, which is why the
-   split needed no change here. **Moving or renaming `release.yml` is what would move this
-   condition.**
+   workflow**, so it is its path rather than the caller's, which is why the split needed no
+   change here. **Moving or renaming `release.yml` is what would move this condition.**
 
-   **IAM Access Analyzer warns** that the `*` in `sub` "can allow requests from more
-   sources than you intended" and recommends naming a branch. The check fires on a
-   wildcard's presence; this one sits after the owner, the repository, the `ref:` claim
-   type, `refs/tags/` and the `v`, so all it admits is which version number. Save through
-   it.
+   **IAM Access Analyzer warns** that the `*` in `sub` "can allow requests from more sources
+   than you intended" and recommends naming a branch. The check fires on a wildcard's
+   presence; this one sits after the owner, the repository, the `ref:` claim type,
+   `refs/tags/` and the `v`, so all it admits is which version number. Save through it.
 
    Then one inline policy, so the role reads that parameter and lists nothing under
    `/expense-tracker/`:
@@ -324,12 +321,10 @@ documentation:
 The overlay is merged last, so `EXPENSE_TRACKER_IMAGE_PREFIX` and `EXPENSE_TRACKER_VERSION`
 **have no effect on a deployment that loads the artifact**. They exist for a checkout, and
 for telling the publish step which images to resolve - which is why the artifact is
-published **once per tag**, each resolving against that tag's own images. Every tag
-resolves to the same digests; only the text beside them differs.
-
-The published digest is then signed by `cosign`, keyless, on exactly the terms the images
-are. Only the bind mount *declarations* travel - the two `source:` paths as the file spells
-them. **No directory contents are published.**
+published **once per tag**, each resolving against that tag's own images. Every tag resolves
+to the same digests; only the text beside them differs. The published digest is then signed
+by `cosign`, keyless, on the terms the images are. Only the bind mount *declarations*
+travel: **no directory contents are published.**
 
 ## Verifying a release
 
@@ -350,14 +345,11 @@ docker compose -f oci://docker.io/tomborglum/expense-tracker:2.0.0 config
 `cosign verify` is the only view of the signature from outside. `cosign-installer`'s
 default is cosign 3, which attaches the signature as an **OCI 1.1 referrer** instead of
 writing a `sha256-<digest>.sig` tag, so a tag listing shows the four published tags and
-nothing more. The sign step's log is terse for the same reason: the v3 bundle carries the
-Rekor entry, so no tlog index is printed. That version is the installer's, not this
-repository's.
+nothing more. That version is the installer's, not this repository's.
 
 The `push` job's log is the other half: the claim dump shows the `sub` and
-`job_workflow_ref` the trust policy was written against, and it is the only place the
-tag-shaped claims can be observed, the smoke test running from a branch and so seeing
-branch-shaped ones.
+`job_workflow_ref` the trust policy was written against, and is the only place the
+tag-shaped claims can be observed, the smoke test running from a branch.
 
 **If the exchange is refused**, read the claim dump, correct the trust policy in the
 console and re-run the failed job: the AWS side lives outside the tag, so that loop is
@@ -369,7 +361,6 @@ scans and gates all three images, with `push` held back by
 
 **A release run is never cancelled**, where a superseded pull request run is. The
 concurrency group lives in `publish.yml` rather than `release.yml`, because GitHub cancels
-the *caller* when caller and called share a group, and `cancel-in-progress` is therefore
-conditioned on the event: a run stopped partway through `push` can leave one image
-published and another not, which is worse than a slow queue, while a pull request has
-nothing to leave half-done.
+the *caller* when caller and called share a group, and `cancel-in-progress` is conditioned
+on the event: a run stopped partway through `push` can leave one image published and
+another not, where a pull request has nothing to leave half-done.

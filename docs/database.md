@@ -53,8 +53,8 @@ fixtures and no task points at them. To fill a database from them anyway:
 cd backend && EXPENSE_DATA_DIR=tests/data/expenses poe load-expenses
 ```
 
-They carry the `sample-` prefix for a reason: `loaded_expense_file.filename` is unique on
-the bare name, and the prefix keeps a fixture clear of a real `nykredit-2026-01.yaml`.
+They carry the `sample-` prefix because `loaded_expense_file.filename` is unique on the
+bare name, which keeps a fixture clear of a real `nykredit-2026-01.yaml`.
 
 Files are named `<bank>-YYYY-MM.yaml`, one per bank and calendar month, holding the bank's
 own export header and then every record it exported - the raw line as evidence, and beside

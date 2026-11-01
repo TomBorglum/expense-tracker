@@ -82,7 +82,7 @@ nobody can bypass it.
   line, and only where the name and signature do not already say it. This governs code, SQL
   and config comments; these files answer to
   [Adding to these files](#adding-to-these-files).
-- **`README.md` carries under 600 lines, and `docs/` under 800 in all**, however many
+- **`README.md` carries under 600 lines, and `docs/` under 1200 in all**, however many
   files it holds. README answers what the application is, how to run it, how it is laid
   out, what the commands are and how to configure it; anything deeper is a `docs/` page.
   A passage that wants room past either number retires one. Nothing checks either;

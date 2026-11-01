@@ -18,8 +18,7 @@ manifest that already owns how its tools behave:
 The two layers buy both properties at once: `pixi run` is a single discoverable index
 across two ecosystems, and each directory stays a standalone project you can run natively
 (`cd backend && poe test`, `cd frontend && pnpm test`; either with no task lists that
-stack's own). The cost is that adding a command means two edits. **Put the command body in
-the stack, never in the forwarder.**
+stack's own). **Put the command body in the stack, never in the forwarder.**
 
 ## Continuous integration
 
@@ -88,7 +87,6 @@ always runs from there, that server being Zed's own with only the module it load
 
 Two things read as faults and are ordinary: over a remote/WSL backend, Server Info reports
 `Binary: Unknown` for `vtsls` however healthy it is, and Zed underlines
-`tailwindcss-intellisense-css` as not allowed while applying it - an upstream schema bug
-(zed#46766) for opt-in servers. `ps` is the check that settles both. Where your editor
-disagrees with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are the
-authority.
+`tailwindcss-intellisense-css` as not allowed while applying it (zed#46766). `ps` settles
+both. Where your editor disagrees with CI, `pixi run backend-typecheck` and
+`pixi run frontend-lint` are the authority.
