@@ -470,8 +470,8 @@ jobs:
       - name: Check the release configuration
         env:
           AWS_REGION: ${{ inputs.aws-region }}
-          ROLE_ARN: ${{ secrets.aws-role-arn }}
-          SSM_PARAMETER: ${{ inputs.aws-ssm-parameter }}
+          AWS_ROLE_ARN: ${{ secrets.aws-role-arn }}
+          AWS_SSM_PARAMETER: ${{ inputs.aws-ssm-parameter }}
         run: |
           set -euo pipefail
           if [[ ! "$AWS_REGION" =~ ^[a-z0-9-]+$ ]]; then
@@ -480,11 +480,11 @@ jobs:
           fi
           # The ARN form specifically: configure-aws-credentials accepts a bare role NAME
           # too, resolving it against the source account, and this rejects that.
-          if [[ ! "$ROLE_ARN" =~ ^arn:aws:iam::[0-9]{12}:role/.+$ ]]; then
+          if [[ ! "$AWS_ROLE_ARN" =~ ^arn:aws:iam::[0-9]{12}:role/.+$ ]]; then
             echo "::error::aws-role-arn must be an IAM role ARN, not a bare role name"
             exit 1
           fi
-          if [[ ! "$SSM_PARAMETER" =~ ^/[A-Za-z0-9./_-]+$ ]]; then
+          if [[ ! "$AWS_SSM_PARAMETER" =~ ^/[A-Za-z0-9./_-]+$ ]]; then
             echo "::error::aws-ssm-parameter must be an absolute SSM parameter path"
             exit 1
           fi
@@ -576,11 +576,11 @@ jobs:
           # Through `env` rather than into the command text below, because that command is
           # a pipeline into `docker login --password-stdin`: a variable is quoted once and
           # cannot alter the pipeline's shape.
-          SSM_PARAMETER: ${{ inputs.aws-ssm-parameter }}
+          AWS_SSM_PARAMETER: ${{ inputs.aws-ssm-parameter }}
         run: |
           set -euo pipefail
           aws ssm get-parameter \
-            --name "$SSM_PARAMETER" \
+            --name "$AWS_SSM_PARAMETER" \
             --with-decryption \
             --query Parameter.Value \
             --output text \
