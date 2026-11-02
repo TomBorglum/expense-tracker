@@ -1,7 +1,7 @@
 # The API
 
-Every query parameter the four routes take. The route table itself is in
-[README.md](../README.md#routes).
+The route table is in [README.md](../README.md#routes). Every query parameter those four
+routes take is below.
 
 ## Asking for one currency
 
@@ -20,8 +20,8 @@ the file holds no `DKK DKK 1.000000` row.
 | `?currency=euro` | `currency must be an ISO 4217 code` |
 
 A lowercase code is refused, matching the loaders. **One unconvertible expense refuses the
-whole request**, so every amount in a list stands in one currency, as does a pair loaded
-twice - and only when that pair is actually needed.
+whole request**, so every amount in a list stands in one currency. A pair loaded twice is
+refused on the same terms, and only when that pair is needed.
 
 ## Asking for a range of dates
 
@@ -41,7 +41,7 @@ rate. Dates are read as `YYYY-MM-DD`, the form the payload's own `date` field us
 
 ## Asking for one or more categories
 
-**Every value is a slug, never a category path** - see [Category slugs](#category-slugs).
+**Every value is a slug, never a category path.** See [Category slugs](#category-slugs).
 
 `?category=` narrows the list to the expenses in the category whose slug it names. **The
 key repeats once per value**, so `?category=food&category=housing` is every expense in
@@ -53,16 +53,16 @@ with every node below it**: `?category=settlement` is every settlement,
 states **where the selection changes**: the root has a sign, each value flips a subtree,
 and **the longest slug over a row decides**. So `?not_category=settlement` is everything
 else, and `?category=settlement&not_category=settlement:alice` is the settlements except
-hers. A slug in both lists is refused - two flips of the same length over one node.
+hers. A slug in both lists is refused, being two flips of the same length over one node.
 
 `?category_default=` is the root's own sign, `all` or `none`. **Absent, it is `all` unless
 `?category=` names a slug, in which case it is `none`**, which is what keeps a request
-naming categories meaning those and no others. It carries weight in two places:
+naming categories meaning those and no others. It changes the answer in two cases:
 `?category_default=none` alone selects **nothing**, and `?category_default=all` beside
 both lists is everything but one subtree with a branch of that subtree kept.
 
-A value is matched the way the loader stored the slug - **stripped level by level, then
-verbatim** - so `?category=%20food` is `food`, and every slug is lower case. The case is
+A value is matched the way the loader stored the slug, **stripped level by level, then
+verbatim**, so `?category=%20food` is `food`, and every slug is lower case. The case is
 the client's to send, as a currency code is. **A category nobody has spent in is `200
 {"items": []}`**, on the terms an empty table is.
 
@@ -77,8 +77,8 @@ slug above it, so a client keys its own tree on the pair it sends and shows `nam
 `?from_level=` and `?to_level=` choose the depths, both inclusive. **Absent, they are the
 top level alone**, and an absent `to_level` is whatever `from_level` is, so
 `?from_level=2` is exactly depth 2 while `?to_level=3` is depths 1 through 3. **An
-ancestor nobody filed anything directly under is still listed** - `Settlement` appears
-even when every settlement is `Settlement:<someone>` - which is what makes the node
+ancestor nobody filed anything directly under is still listed**, so `Settlement` appears
+even when every settlement is `Settlement:<someone>`, which is what makes the node
 selectable. `MAX_LEVEL` in `backend/src/expense_tracker/level_range.py` bounds how many
 levels a client can name. The cluster is `initdb --locale=C`, so name order is byte order:
 `Zoo` before `apple`.
@@ -97,7 +97,7 @@ levels a client can name. The cluster is `initdb --locale=C`, so name order is b
 
 ### Category paths
 
-A category is one `text` column holding a `:`-separated path - `Groceries`, or
+A category is one `text` column holding a `:`-separated path, `Groceries` or
 `Settlement:Alice`. **Depth is unbounded and a third level needs no API change.**
 
 The separator is declared twice and only twice: `SEPARATOR` in `category_filter.py`, and
@@ -109,10 +109,10 @@ rather than by characters, which is why `food` covers `food:dining` and leaves
 
 ### Category slugs
 
-A category path is what a file said, and a URL carries a spelling of its own: `Going
-Out:Jalsa+pool` percent-encodes to `Going%20Out%3AJalsa%2Bpool`, and `+` already spells a
-space in `application/x-www-form-urlencoded`. So every category also has a **slug**, and
-the slug is what the API takes and what the frontend puts in the URL.
+Every category also has a **slug**, and the slug is what the API takes and what the
+frontend puts in the URL. A path is what a file said, and a URL carries a spelling of its
+own: `Going Out:Jalsa+pool` percent-encodes to `Going%20Out%3AJalsa%2Bpool`, and `+`
+already spells a space in `application/x-www-form-urlencoded`.
 
 A slug holds `a-z`, `0-9`, `-` within a level and `:` between levels. The one character a
 query escapes is the colon, which `frontend/src/router.ts` puts back, so a category URL is
@@ -128,14 +128,14 @@ a real `Going Out 1` beside them keeps `going-out-1` and pushes the collision to
 `going-out-2`. The numbering is **per sibling group**. Which sibling gets the bare slug is
 decided by **order of first appearance in file-name order, then by path within a file**,
 which makes the assignment a function of the loaded files and nothing else. Two invariants
-follow, and both are checked rather than assumed:
+follow, both checked rather than assumed:
 
 - **The same files give the same slugs**, however they were loaded, so a link survives a
   `backend-db-reset` and a reload.
 - **Loading a new file never changes a slug already assigned.** A later month sorts last
   and can only append.
 
-**Backfilling** is the case the second is enforced against - loading `2024-01.yaml` after
+**Backfilling** is the case the second is enforced against: loading `2024-01.yaml` after
 `2026-*.yaml`, where the earlier name sorts ahead of the slugs already assigned. The
 loader recomputes every slug on every file, compares them with the stored ones, and
 **refuses the file** if any would move, naming the category and both slugs. The fix is a
@@ -168,8 +168,8 @@ rows under a period still add to what the same request returns ungrouped.
 The response is a **dense calendar**: one row per period from the oldest matching expense
 to the newest, whether or not anything was spent in it. `period`, `from_date` and
 `to_date` are on every row; `amount`, `currency` and `category` are present with a value
-or **absent altogether**. That absence carries meaning, and credits are why - a credit is
-a negative expense, so a period can hold rows that cancel out:
+or **absent altogether**. That absence carries meaning, because a credit is a negative
+expense and a period can hold rows that cancel out:
 
 | Period | Rows in it | What comes back |
 | --- | --- | --- |
@@ -179,15 +179,15 @@ a negative expense, so a period can hold rows that cancel out:
 
 An absent `amount` says "none recorded"; `"0.00"` says "these cancelled out".
 
-**The conversion runs before the summing**, and the order is the point: `?currency=`
-quantizes each amount to cents, and converting then adding is what makes a total equal
-what a reader adds up from `/api/expenses?currency=EUR`.
+**The conversion runs before the summing.** `?currency=` quantizes each amount to cents,
+so converting and then adding is what makes a total equal what a reader adds up from
+`/api/expenses?currency=EUR`.
 
 ## The range average
 
 **The body carries a `summary` beside `items`**: one entry per currency, each naming that
 currency and `average`, the mean of its period totals over the whole calendar the rows
-span. It answers "what does a month cost" across the range.
+span. It is what one period costs on average across the range.
 
 ```json
 {
@@ -199,10 +199,10 @@ span. It answers "what does a month cost" across the range.
 **Both keys are always present**, and an entry exists only for a currency that has
 expenses.
 
-**The divisor is the same calendar the rows walk** - first matching expense to last, with
-interior gaps counted - so a month nobody spent in pulls the figure down. A range filtered
-wider than the data divides by the data, which is why the number can differ from what the
-requested bounds suggest.
+**The divisor is the same calendar the rows walk**, first matching expense to last, with
+interior gaps counted, so a month nobody spent in pulls the figure down. A range filtered
+wider than the data divides by the data, so the number can differ from what the requested
+bounds suggest.
 
 **It is the same whether or not `?group_by=` was sent.** Grouping re-keys the rows without
 changing which expenses they sum, so a client can read the summary from either body. The
