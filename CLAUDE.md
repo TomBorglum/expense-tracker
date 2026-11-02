@@ -7,8 +7,8 @@ Guidance for Claude Code when working in this repository.
 [`frontend/CLAUDE.md`](frontend/CLAUDE.md). Read the one whose tree you are about to
 touch; this file is what applies wherever you are working.
 
-**Each of the three stays under 200 lines.** What earns a place in any of them is under
-[Adding to these files](#adding-to-these-files).
+**Each of the three stays under 200 lines**, no line past 90 characters. What earns a
+place in any of them is under [Adding to these files](#adding-to-these-files).
 
 ## Prerequisites
 
@@ -21,10 +21,9 @@ environment, and `use pixi python` puts the environment's `pytest`, `ruff` and `
 ## Working here
 
 - **The invariants in these three files are deliberate**, and every one names the test or
-  linter that pins it, or says that nothing does.
+  linter that pins it, or says that nothing does. **Rationale lives in these files and
+  under `docs/`, not in the source**, per the comment policy below.
 - **If an invariant blocks the task, say so.**
-- **Rationale lives in these files and under `docs/`, not in the source.** See the
-  comment policy below.
 
 ## Adding to these files
 
@@ -43,9 +42,8 @@ elsewhere** - name the file instead. A bullet that wants room past 200 lines ret
 
 ## Branch, merge and release rules
 
-The rationale is in [`CONTRIBUTING.md`](CONTRIBUTING.md), which maps each rule to the
-ruleset rule that pins it. The `main-protection` ruleset enforces every one of them and
-nobody can bypass it.
+Rationale, and the `main-protection` ruleset rule pinning each of these, is in
+[`CONTRIBUTING.md`](CONTRIBUTING.md). Nobody can bypass that ruleset.
 
 - **Never push directly to `main`.** Every change goes on a branch, through a PR.
 - **The PR title must be a valid Conventional Commit.** It becomes the squashed commit
@@ -59,12 +57,9 @@ nobody can bypass it.
   (`.github/workflows/release-please.yml`). **Never hand-edit versions, git tags, or
   `CHANGELOG.md`.**
 - **A job that checks out the repository never gets `id-token: write`.** Checked-out code
-  is code that runs - a Dockerfile, `pixi install`, `pnpm install` - and that token is
-  what buys the Docker Hub credential out of AWS. `release.yml` is split into `build` and
-  `push` for this reason. `publish.yml` grants both permissions, but a caller's are only a
-  ceiling a called job can lower, and `build` lowers them. Nothing checks this: `ci.yml`
-  and `release.yml`'s `build` and `compose` jobs are the only jobs that check out, and
-  none asks for the token today.
+  is code that runs, and that token buys the Docker Hub credential out of AWS, which is
+  why `release.yml` splits `build` from `push`. Nothing checks this;
+  [`docs/releases.md`](docs/releases.md) has the reasoning.
 
 ## Source conventions
 
@@ -79,14 +74,18 @@ nobody can bypass it.
   in Python source.
 - **Comments say what the code does**, and only where that is not plain from reading it.
   Rationale lives in these files and under `docs/`. Module and function docstrings are one
-  line, and only where the name and signature do not already say it. This governs code, SQL
-  and config comments; these files answer to
+  line, and only where the name and signature do not already say it. This governs code,
+  SQL and config comments; these files answer to
   [Adding to these files](#adding-to-these-files).
 - **`README.md` carries under 600 lines, and `docs/` under 1200 in all**, however many
   files it holds. README answers what the application is, how to run it, how it is laid
   out, what the commands are and how to configure it; anything deeper is a `docs/` page.
   A passage that wants room past either number retires one. Nothing checks either;
   `wc -l README.md` and `cat docs/*.md | wc -l` are the counts.
+- **No line in a file one of these budgets governs passes 90 characters**, so a budget is
+  met by retiring prose and never by widening it. It binds every `.md` file the two
+  bullets above and the 200 above them count. Nothing checks this;
+  `awk 'length > 90' <file>` is the count.
 - **`.github/workflows/` carries under 200 comment lines in all**, however many files it
   holds, and a comment that wants room past that retires one. It is a budget on the whole
   directory rather than a rule per file, so the workflows compete for it the way the
@@ -101,37 +100,29 @@ nobody can bypass it.
 
 ## Commands
 
-**Commands live in two layers, and adding one means editing both.**
-
-1. **The directory that runs it defines it**, in the manifest that already owns how its
-   tools behave: poe tasks in `backend/pyproject.toml`, the `scripts` block in
-   `frontend/package.json`, and `database/pyproject.toml`, which is a poe manifest and
-   nothing else. This is where the command body goes.
-2. **`pixi.toml` forwards to it**, one prefixed one-liner per command, so `pixi run`
-   stays the single entry point spanning every directory.
-
-**The delegation is uniform - every task in `pixi.toml` forwards, none defines.** Each
-directory also stays runnable on its own terms (`cd backend && poe test`,
-`cd frontend && pnpm build`), which is what keeps it a standalone project.
-Every task declares its own `cwd` and addresses paths relative to its own manifest, so it
-behaves identically wherever you invoke it. Full table and reasoning in
-[`README.md`](README.md#development-tasks), under
+**Commands live in two layers, and adding one means editing both.** The directory that
+runs a command defines it, in the manifest that owns its tools - poe tasks in
+`backend/pyproject.toml`, `scripts` in `frontend/package.json`, and
+`database/pyproject.toml`, a poe manifest and nothing else. **`pixi.toml` only forwards**,
+one prefixed one-liner per command, so `pixi run` is the single entry point spanning every
+directory and no command body lives there. Each task declares its own `cwd` and addresses
+paths relative to its own manifest, which keeps every directory runnable on its own terms
+(`cd backend && poe test`). Full table in [`README.md`](README.md#development-tasks),
+reasoning under
 [Where commands are defined](docs/development.md#where-commands-are-defined).
 
-**`dev` depends on `db-init`**, so `pixi run backend-dev` is the single command that gets
-a backend developer a working API: the cluster chain behind it is idempotent, runs once
-before uvicorn, and leaves the cluster up afterwards. The chain is `db-init` alone - an
-empty `expense` or `currency_rate` table is a legitimate `200`, and the HTTP suite runs
+**`dev` depends on `db-init`**, so `pixi run backend-dev` alone gets a backend developer a
+working API: the chain is idempotent, runs once before uvicorn, and leaves the cluster up.
+An empty `expense` or `currency_rate` table is a legitimate `200`, and the HTTP suite runs
 without PostgreSQL, as [`backend/CLAUDE.md`](backend/CLAUDE.md) states.
 
-**A warning fails the build like an error in both stacks.** The mechanism is in each
-stack's file.
+**A warning fails the build like an error in both stacks**, by the mechanism each stack's
+file gives.
 
 ## Fast inner loop
 
-`pixi run <task>` is what CI calls, and the full gate below is what you run before opening
-a PR. While iterating, run the one tool that covers what you changed. A blessed shell has
-both on `PATH` already:
+`pixi run <task>` is what CI calls. While iterating, run the one tool that covers what you
+changed; a blessed shell has it on `PATH` already:
 
 ```sh
 cd backend  && pytest tests/test_conversion.py -k half_cent
@@ -157,29 +148,50 @@ The two halves are independent, so a change to one stack can only fail that stac
 
 ## Declared twice - change both halves together
 
-**Nothing checks the agreement.**
+Each bullet names two halves and the property they hold; **nothing checks any of them**.
+The five payload pairs share a backend half, `backend/src/expense_tracker/__init__.py`.
 
-| What | The halves | What the pair holds |
-|---|---|---|
-| The collection envelope | `backend/src/expense_tracker/__init__.py` + `frontend/src/api/fetchList.ts` | `_collection` builds `{"items": [...]}`, plus a `summary` the totals route alone passes; `fetchList` unwraps `items` for the three list endpoints and `fetchCollection` validates both halves for totals. The frontend proves its half against its own mocks, in `tests/msw/handlers.ts`. |
-| The expenses payload and path | `backend/src/expense_tracker/__init__.py` + `frontend/src/api/expenses.ts` | Every expense field is a string on the wire, `amount` included, and the frontend's guard rejects a number. `key` is the bank's own text for the row, **mandatory and never empty**, so it is always a present string. The **query** half is the same pair on the same terms - `currency`, `from_date`, `to_date` and the three category keys in the route signature and in `ExpensesQuery`. `category` and `not_category` are the repeated keys two `list[str]` read, appended once per value and absent when the list is empty; `category_default` is the root's own sign, spelled `all` or `none` on both sides, and sent wherever that sign has to be explicit. Both lists carry **slugs**. The frontend states a selection in `src/categorySelection.ts` and the backend in `category_filter.py`, and **each states it independently of the other**. |
-| The rates payload and path | the same backend file + `frontend/src/api/currencies.ts` | `CurrencyPayload` against the `CurrencyRate` interface, `exchange_rate` a string the guard rejects as a number. `BASE_CURRENCY` is the frontend's alone, which is what makes `DKK` selectable against an empty rate table. |
-| The totals payload and path | the same backend file + `frontend/src/api/totals.ts` | `PeriodTotalPayload` against `PeriodTotal`, every field a string - `category` holding the path the summed rows carry, the same one `/api/expenses` shows, which `?group_by=` switches on. `amount`, `currency` and `category` are **absent keys when they have no value**, and the guard rejects both a number and a null, which is what keeps a period holding nothing apart from one that netted to `0.00`; such a period carries the span alone. Beside the rows, `SummaryPayload` fills a `summary` - one entry per currency, `average` a string, **both keys always present**, an entry existing only for a currency that has expenses - and it is **identical grouped or not**, which is what lets one request serve both halves of the view. The **query** half adds `period`, always sent, `group_by`, sent when grouping, and the three category keys on the expenses row's terms. |
-| The categories payload and path | the same backend file + `frontend/src/api/categories.ts` | `CategoryPayload` against the `Category` interface, five string fields: `category` is the whole `:`-separated path, `name` its last level, `slug` the path's URL spelling, and `parent`/`parent_slug` the pair above it, **absent on a depth-1 row**, the mirror of the totals row's rule above. The slug is the loader's: it assigns it and `slug` carries it. The separator is `category_filter.SEPARATOR`, its only declaration, which the four other fields exist to keep true and which lets the picker build its tree from `parent_slug` alone. The **query** half is `to_level` alone against `CategoriesQuery`, always sent, the tree the picker shows being bounded; `from_level` is the backend's own. The list is what the picker offers, and a URL slug outside it is still sent. |
-| The four tables | `backend/schema.sql` + the `LoadedExpenseFile`, `Expense` and `Category` models in `expense_repository.py` and `CurrencyRate` in `currency_repository.py` | The models read the tables. `category.slug`'s CHECK is the shape `category_filter.SLUG_PATH` states in Python, so that pair moves together too. |
-| What is left of the local database connection | `backend/.env` + `db-create`'s `initdb` flags and `db-init`'s `createdb` | `PGUSER` and `PGHOST` against `--username=expense_tracker`, `--set=listen_addresses=127.0.0.1` and `createdb expense_tracker`. `PGPORT` reaches `db-create` as `--set=port="$PGPORT"` instead. |
-| The deployed database connection | `compose.yaml`'s `database` service + `backend/.env` | `POSTGRES_USER` and `POSTGRES_DB` against `PGUSER` and `PGDATABASE`, which the API and both loaders read under those same four names - so `config.py` serves a container and a checkout unchanged. The base image's entrypoint creates the pair on **first boot only**, so an existing volume ignores a change to either half. A backend that cannot authenticate against a database that is up and healthy is this pair out of agreement. |
-| The pixi version | `.envrc` + the builder image in **both** `backend/Dockerfile` and `frontend/Dockerfile` | `use pixi 0.81.0` against `ghcr.io/prefix-dev/pixi:0.81.0-noble`. Both resolve the same `pixi.lock`, so the three agree on one version and the image installs what a developer and CI install. `.github/dependabot.yml`'s `docker` entry **ignores** that image, so all three move together by hand. |
-| The release workflow's path | `.github/workflows/release.yml` + the `job_workflow_ref` condition on the AWS release role's trust policy | The trust policy pins `TomBorglum/expense-tracker/.github/workflows/release.yml@refs/tags/v*`, and **the other half is in the AWS console**, so this path is a literal in two systems. `job_workflow_ref` names the **called** workflow, which is why `release.yml` keeps that path and `publish.yml` took a new one: **renaming or moving `release.yml` breaks the policy.** A release whose credential step fails with an STS `AccessDenied` is this pair out of agreement. `docs/releases.md` records the policy so the pair is written down somewhere. |
-| The published image names | `release.yml`'s `images` step + the Docker Hub repositories themselves | Composed as `<namespace>/<github repository name>-<directory>`, reading `github.event.repository.name`, so **renaming this GitHub repository renames what a release publishes to** and `latest` forks silently onto new repositories. Nothing checks this; the `meta` job logs each pair on every pull request. |
-| The image reference formula | `compose.yaml`'s five `image:` keys + the directory list in `.github/workflows/publish.yml` | Each is `${EXPENSE_TRACKER_IMAGE_PREFIX}-<service>:${EXPENSE_TRACKER_VERSION}`, and the `-<service>` half has to spell a **directory** `publish.yml` names, because that is what the published name carries. It is what lets one prefix point the whole stack at a release without any published name being written down in the file. Nothing checks it: a renamed directory leaves `docker compose up` pulling a repository that does not exist. |
-| The stack's interpolation variables | `compose.yaml`'s five `image:` keys + `release.yml`'s publish step in `push` | `EXPENSE_TRACKER_IMAGE_PREFIX` and `EXPENSE_TRACKER_VERSION`, which that step sets to the namespace/repository pair and to each derived tag in turn, so `--resolve-image-digests` has published images to resolve. Renaming either in the file leaves the committed defaults in force, and `expense-tracker-backend:dev` is no repository on Docker Hub. Nothing checks it; the step logs the pair it set per tag. |
-| `release.yml`'s caller-filled configuration | its four `workflow_call` declarations + `publish.yml`'s `with:` and `secrets:` keys | `release.yml` reads **no `vars` and names no AWS object**: `aws-region`, `aws-ssm-parameter`, `dockerhub-namespace` and the `aws-role-arn` **secret** are its whole contract, and `publish.yml` is the only file that fills them - two from repository variables, the ARN from a repository **secret**, the SSM path as a literal. Each input names its role in the workflow, not which one this repository uses, so **what a value must contain is its `description`'s job**. The ARN is secret at both ends because it is the only one carrying the account id: the runner echoes a `with:` block before the action runs, so an input would print it on every release. `push` shape-checks all three AWS values before any credential handling, since `required` only checks that a key is present. |
-| The Docker Hub namespace | `DOCKERHUB_NAMESPACE` + the Docker Hub account the PAT in SSM belongs to | The namespace has to be that account, and **both halves sit outside the repository**. `meta` checks the shape, not the account: a release that composes image names the credential cannot push to is this pair out of agreement. `docs/releases.md` records all four. |
-| The bake target name | the `docker-bake.hcl` in `backend/`, `database/` and `frontend/` + `release.yml`'s `bake-target`, `targets` and `set:` keys | `image`, which is what lets metadata-action's generated label and annotation files merge onto the target the stack declares. An image published carrying no release metadata is this pair out of agreement, and nothing else reports it. The `files` list is ordered on the same terms - bake merges `labels` per key and the last file wins, so the stack's own file goes last. |
-| The API base URL placeholder | `frontend/Dockerfile` + `frontend/docker/40-api-base-url.sh` | `__EXPENSE_TRACKER_API_BASE_URL__`, written into `.env.production.local` before `vite build` and rewritten across the document root at container start. The script treats a document root holding no placeholder as its normal restart case, so a bundle served with the literal token in it is this pair out of agreement. The builder's `grep -rq` over `dist/` covers the token's presence in a build. |
-| The `@` alias (`frontend/src`) | `frontend/vite.config.ts` + `frontend/tsconfig.app.json` | Each resolves it for its own tool; vite reads tsconfig `paths` for neither. |
-| The `frontend/src/main.tsx` coverage exclusion | `frontend/vite.config.ts` + `sonar-project.properties` | One exclusion, two tools that each have to name it. |
-| The `frontend/src/routeTree.gen.ts` exclusion | declared three times: `frontend/.prettierignore`, `coverage.exclude` in `frontend/vite.config.ts`, `sonar.exclusions` in `sonar-project.properties` | The file is generated, so each tool names it to keep its report to hand-written code. The prettier one is the half with a gate behind it: `frontend-format-check` goes red on the `printWidth` mismatch. **eslint covers it through `globalIgnores` instead**; why, in [`frontend/CLAUDE.md`](frontend/CLAUDE.md). |
-| `VITE_API_BASE_URL` | `frontend/.env` + `frontend/src/vite-env.d.ts` | Set in the first, typed in the second. |
-| daisyUI's `@plugin` descriptors | `frontend/src/styles/app.css` + the `plugin` override in `frontend/eslint.config.ts` | `tailwind-csstree` models core Tailwind's blockless `@plugin`, and the override names the descriptors this repo uses. |
+- **The collection envelope** + `frontend/src/api/fetchList.ts`: `_collection` builds
+  `{"items": [...]}`, the totals route alone adding a `summary` beside it.
+- **The expenses payload and query** + `frontend/src/api/expenses.ts`: every field a
+  string, `amount` included, `key` mandatory and never empty, both category lists slugs.
+- **The rates payload and path** + `frontend/src/api/currencies.ts`: `CurrencyPayload`
+  vs `CurrencyRate`, `exchange_rate` a string; `BASE_CURRENCY` is the frontend's alone.
+- **The totals payload and query** + `frontend/src/api/totals.ts`: `PeriodTotalPayload`
+  against `PeriodTotal`, `amount`/`currency`/`category` absent keys when they have none.
+- **The categories payload and query** + `frontend/src/api/categories.ts`: five string
+  fields, `parent`/`parent_slug` absent at depth 1, separator `category_filter.SEPARATOR`.
+- **The four tables** - `backend/schema.sql` + the models in `expense_repository.py` and
+  `currency_repository.py`; `category.slug`'s CHECK matches `category_filter.SLUG_PATH`.
+- **The local database connection** - `backend/.env` + `db-create`'s `initdb` flags and
+  `db-init`'s `createdb`; `PGPORT` reaches `db-create` as `--set=port="$PGPORT"`.
+- **The deployed database connection** - `compose.yaml`'s `database` service +
+  `backend/.env`; the pair is created on **first boot only**, so a volume ignores edits.
+- **The pixi version** - `.envrc` + the builder image in both Dockerfiles; dependabot
+  ignores that image, so all three move by hand.
+- **The release workflow's path** - `.github/workflows/release.yml` + the AWS release
+  role's `job_workflow_ref` condition, **in the console**: moving the file breaks it.
+- **The published image names** - `release.yml`'s `images` step + the Docker Hub
+  repositories: renaming this GitHub repository renames what a release publishes to.
+- **The image reference formula** - `compose.yaml`'s five `image:` keys +
+  `publish.yml`'s `image-directories`: `-<service>` must spell a directory it names.
+- **The stack's interpolation variables** - the same `image:` keys + `release.yml`'s
+  publish step: `EXPENSE_TRACKER_IMAGE_PREFIX` and `EXPENSE_TRACKER_VERSION`.
+- **`release.yml`'s caller-filled configuration** - its `workflow_call` declarations +
+  `publish.yml`'s `with:`/`secrets:`; the `aws-role-arn` **secret** holds the account id.
+- **The Docker Hub namespace** - `DOCKERHUB_NAMESPACE` + the account the PAT in SSM
+  belongs to, **both outside this repository**.
+- **The bake target name** - the three `docker-bake.hcl` files + `release.yml`'s
+  `bake-target`, `targets` and `set:`: `image`, which is what merges the label files.
+- **The API base URL placeholder** - `frontend/Dockerfile` +
+  `frontend/docker/40-api-base-url.sh`: `__EXPENSE_TRACKER_API_BASE_URL__`.
+- **The `@` alias (`frontend/src`)** - `frontend/vite.config.ts` +
+  `frontend/tsconfig.app.json`, each resolving it for its own tool.
+- **The `frontend/src/main.tsx` coverage exclusion** - `frontend/vite.config.ts` +
+  `sonar-project.properties`: one exclusion, two tools that each name it.
+- **The `frontend/src/routeTree.gen.ts` exclusion** - `frontend/.prettierignore` +
+  `frontend/vite.config.ts` + `sonar-project.properties`; prettier's half has the gate.
+- **`VITE_API_BASE_URL`** - `frontend/.env` + `frontend/src/vite-env.d.ts`: set in the
+  first, typed in the second.
+- **daisyUI's `@plugin` descriptors** - `frontend/src/styles/app.css` + the `plugin`
+  override in `frontend/eslint.config.ts`, which names the descriptors this repo uses.

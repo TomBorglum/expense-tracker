@@ -13,9 +13,9 @@ refuses is passed through and answered with a 422, which reaches the page as its
 ## Choosing a currency
 
 A select beside the heading picks the currency the expenses are presented in, and the
-choice is the `?currency=` the table asks for. **The conversion stays the backend's.**
-The default is `DKK`, the ledger's own currency and the one code that needs no rate, and
-the parameter is always sent - an **empty** `?currency=` is a malformed code.
+choice is the `?currency=` the table asks for. **The conversion stays the backend's.** The
+default is `DKK`, the ledger's own currency and the one code that needs no rate, and the
+parameter is always sent - an **empty** `?currency=` is a malformed code.
 
 The options come from `GET /api/currencies` and are **the targets the rate table can
 reach**: the `to_currency` of a pair whose `from_currency` is the base. A rate list that
@@ -25,11 +25,11 @@ table below renders - two independent requests.
 ## Choosing a date range
 
 A calendar picks the days the expenses are drawn from, as `?from_date=` and `?to_date=`.
-**The filtering stays the backend's** - see
-[Asking for a range of dates](api.md#asking-for-a-range-of-dates). An absent bound is
-filled with the first or last day of the current year, from one reading of the clock, the
-same default on both views. Both are always sent, an **empty** `?from_date=` being
-malformed, so the way to see more is to pick earlier or later days.
+**The filtering stays the backend's** - see [Asking for a range of
+dates](api.md#asking-for-a-range-of-dates). An absent bound is filled with the first or
+last day of the current year, from one reading of the clock, the same default on both
+views. Both are always sent, an **empty** `?from_date=` being malformed, so the way to see
+more is to pick earlier or later days.
 
 The control is [DayPicker](https://daypicker.dev) in `mode="range"`, which renders an
 ordinary `<table role="grid">` of buttons - every query in `frontend/tests/` goes by role
@@ -45,16 +45,16 @@ discarded, so the control and the URL agree.
 ## Choosing categories
 
 A **Categories** control narrows both views, as the `?category=`, `?not_category=` and
-`?category_default=` described under
-[Asking for one or more categories](api.md#asking-for-one-or-more-categories). The totals
-view hands the same selection to its subtotal and its breakdown, so a period is summed
-over the expenses it is split by.
+`?category_default=` described under [Asking for one or more
+categories](api.md#asking-for-one-or-more-categories). The totals view hands the same
+selection to its subtotal and its breakdown, so a period is summed over the expenses it is
+split by.
 
 The nodes come from `GET /api/expenses/categories` at `?to_level=3`, so **the whole
 bounded tree arrives in one request**. **The panel is a tree, indented, and each box reads
-as its own level** - `Alice` under `Settlement`, not `Settlement:Alice` - which is what the
-payload's `name` and `parent_slug` are for. The tree is built from `parent_slug`, which
-makes it independent of the order the list arrived in.
+as its own level** - `Alice` under `Settlement`, not `Settlement:Alice` - which is what
+the payload's `name` and `parent_slug` are for. The tree is built from `parent_slug`,
+which makes it independent of the order the list arrived in.
 
 **Every box starts ticked**, because the default is every category. **Unticking a box
 unticks its whole subtree**, and a node whose subtree disagrees with it carries a dash
@@ -93,9 +93,9 @@ file fails `frontend-typecheck`, because `createFileRoute("/new")` is not assign
 against a stale tree; a rename, a deletion or a changed path typechecks fine and is caught
 instead by the `git diff --exit-code` step `ci.yml` runs after `frontend-build`, the one
 gate that regenerates. The file is excluded from prettier, coverage and Sonar, with eslint
-covered by its own `/* eslint-disable */` header. **Prettier's exclusion is load-bearing**:
-the generator formats with prettier's own defaults, so the file lands at `printWidth` 80
-against a check at 88.
+covered by its own `/* eslint-disable */` header. **Prettier's exclusion is
+load-bearing**: the generator formats with prettier's own defaults, so the file lands at
+`printWidth` 80 against a check at 88.
 
 The route owns its search schema, so `index.tsx` holds `validateSearch` and the page
 together. **The router-free layer is `frontend/src/components/`**: `ExpensesTable` and
@@ -108,9 +108,8 @@ nginx config does it in production.
 Tests use vitest, live in `frontend/tests/`, and reach into the app through the `@` alias,
 which is **declared twice** - `resolve.alias` in `frontend/vite.config.ts` and `paths` in
 `frontend/tsconfig.app.json`, each tool reading its own. Imports *within* `src/` stay
-relative. The backend is stubbed with [MSW](https://mswjs.io);
-`frontend/tests/setup.ts` sets `onUnhandledRequest: "error"`, so an unstubbed request
-fails the test.
+relative. The backend is stubbed with [MSW](https://mswjs.io); `frontend/tests/setup.ts`
+sets `onUnhandledRequest: "error"`, so an unstubbed request fails the test.
 
 `frontend/vite.config.ts` pins vitest's root back up to the repo root, even though vite's
 own root is `frontend/`, which is what makes the lcov report record repo-relative paths
@@ -156,8 +155,8 @@ Node. Three deliberate choices:
   Writing it down at all is for Dependabot, which runs pnpm 10, where the setting defaults
   to 0; implicit, it let a transitive package five hours old reach `pnpm-lock.yaml` and
   fail CI in PR #48. Dependabot disables the guard for **security** updates, so such a PR
-  can carry a too-young entry - re-run the job once that version clears the window
-  (`gh run rerun <run-id> --failed`), as the check recomputes the cutoff at install time.
+  can carry a too-young entry - re-run the job once that version clears the window (`gh
+  run rerun <run-id> --failed`), as the check recomputes the cutoff at install time.
 - **Install scripts are answered explicitly.** pnpm 11 exits non-zero while a dependency's
   install script is neither allowed nor denied, so `pixi run frontend-install` depends on
   the answer being there. It lives in `frontend/pnpm-workspace.yaml` under `allowBuilds`,

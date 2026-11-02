@@ -6,8 +6,8 @@ applications.
 `backend/` and `frontend/` are siblings, each owning its own tooling, tests and build.
 Neither can see the other: the backend serves JSON and ships no frontend assets, the
 frontend builds to its own `dist/` and reaches the API cross-origin over CORS. Either can
-be built, tested and linted with the other's directory missing entirely, and the root holds
-only what spans both. Locally that means two processes.
+be built, tested and linted with the other's directory missing entirely, and the root
+holds only what spans both. Locally that means two processes.
 
 ```
 expense-tracker/
@@ -46,17 +46,17 @@ expense-tracker/
 - [Configuration](#configuration)
 - [Contributing](#contributing)
 
-Reference documentation lives under `docs/`: [the API](docs/api.md),
-[the database](docs/database.md), [the frontend](docs/frontend.md),
-[the images](docs/images.md), [releases](docs/releases.md) and
-[developing here](docs/development.md).
+Reference documentation lives under `docs/`: [the API](docs/api.md), [the
+database](docs/database.md), [the frontend](docs/frontend.md), [the
+images](docs/images.md), [releases](docs/releases.md) and [developing
+here](docs/development.md).
 
 ## Prerequisites
 
-[direnv](https://direnv.net) and [pixi](https://pixi.sh). The committed `.envrc` runs
-`use pixi python`, so entering the directory provisions Python, Node and every
-dependency from `pixi.toml`, and re-provisions whenever `pixi.toml` changes. Run
-`direnv allow` once after cloning, which covers installation.
+[direnv](https://direnv.net) and [pixi](https://pixi.sh). The committed `.envrc` runs `use
+pixi python`, so entering the directory provisions Python, Node and every dependency from
+`pixi.toml`, and re-provisions whenever `pixi.toml` changes. Run `direnv allow` once after
+cloning, which covers installation.
 
 That includes PostgreSQL: the server is a conda-forge package like everything else, so it
 arrives with the rest of the environment. See [Database](#database).
@@ -74,8 +74,8 @@ installs its own copy and activates this same `.envrc`. Where that library is ab
 
 Its last line is `dotenv_if_exists`, which puts the database connection settings and the
 port the API serves on into the environment. That is stock direnv, and the **only** thing
-that puts them there, so `direnv allow` is what makes the database reachable.
-See [Configuration](#configuration).
+that puts them there, so `direnv allow` is what makes the database reachable. See
+[Configuration](#configuration).
 
 ## Quickstart
 
@@ -101,44 +101,42 @@ legitimate state the API answers `200` with an empty `items` array.
 
 Visit http://localhost:5173 and you should see the **Expenses** table, fetched from
 `http://localhost:8000/api/expenses` - a genuine cross-origin request, which works only
-because the API allows it (see [CORS](#cors)). Until you run the loader it says
-`No expenses match the selected criteria.`, which is the empty state.
+because the API allows it (see [CORS](#cors)). Until you run the loader it says `No
+expenses match the selected criteria.`, which is the empty state.
 
-The API alone is enough for backend work; the SPA renders its error state until
-something answers on 8000.
+The API alone is enough for backend work; the SPA renders its error state until something
+answers on 8000.
 
 ## Routes
 
 | Route | What it serves |
 | --- | --- |
-| `GET /api/expenses` | `[{"amount", "currency", "date", "category", "key"}, ...]` - the `ExpensePayload` model |
+| `GET /api/expenses` | The `ExpensePayload` model, one object per expense |
 | `GET /api/expenses?currency=EUR` | The same, restated in one currency |
-| `GET /api/expenses?from_date=2026-01-01&to_date=2026-01-31` | Only the expenses dated within that range |
-| `GET /api/expenses?category=food&category=housing` | Only the expenses in either category, or under it - each value a category **slug** |
-| `GET /api/expenses?not_category=food` | Every expense except the ones in `food`, or under it; `category_default` names the root's own sign |
-| `GET /api/expenses/categories` | `[{"category", "name", "slug", "parent", "parent_slug"}, ...]` - the `CategoryPayload` model, every category at the levels asked for, once each, in path order; takes `from_level` and `to_level` |
-| `GET /api/expenses/totals?period=month` | `[{"period", "from_date", "to_date", "amount", "currency", "category"}, ...]` - the `PeriodTotalPayload` model, taking `group_by`, `currency`, `from_date`, `to_date` and the three category parameters too; its body carries a `summary` beside `items` |
-| `GET /api/currencies` | `[{"from_currency", "to_currency", "exchange_rate"}, ...]` - the `CurrencyPayload` model |
+| `GET /api/expenses?from_date=&to_date=` | Only the expenses within that range |
+| `GET /api/expenses?category=<slug>` | Only that category and what is under it |
+| `GET /api/expenses?not_category=<slug>` | Every expense but that subtree |
+| `GET /api/expenses/categories` | `CategoryPayload`, each category once, in path order |
+| `GET /api/expenses/totals?period=month` | `PeriodTotalPayload`, plus a `summary` |
+| `GET /api/currencies` | The `CurrencyPayload` model, one object per rate |
 
-**Every body is an object holding `items`**, so each shape above is what fills that array -
-`GET /api/currencies` answers
-`{"items": [{"from_currency", "to_currency", "exchange_rate"}, ...]}`. An object is what
-lets a response gain a field later without breaking a client, and totals is the one
-endpoint that has taken that room, with
-[the range average](docs/api.md#the-range-average) beside its rows. One key across all
-four keeps `fetchList` free of per-endpoint knowledge. A refusal body is the plain
-`{"detail": "..."}` object.
+**Every body is an object holding `items`**, so each shape above is what fills that array
+- `GET /api/currencies` answers `{"items": [{"from_currency", "to_currency",
+"exchange_rate"}, ...]}`. An object is what lets a response gain a field later without
+breaking a client, and totals is the one endpoint that has taken that room, with [the
+range average](docs/api.md#the-range-average) beside its rows. One key across all four
+keeps `fetchList` free of per-endpoint knowledge. A refusal body is the plain `{"detail":
+"..."}` object.
 
 All four send `Cache-Control: no-store`.
 
 Expenses come back **oldest first**, and `amount` is a **string**, not a number: the
 column is `numeric(12, 2)`, JSON has no decimal type, and a decimal has no exact binary
 form, so a float round trip is how a total drifts by a cent. That shape is declared once,
-as the `ExpensePayload` pydantic model in `backend/src/expense_tracker/__init__.py`;
-the tests parse responses back into it. An unreachable database answers
-`503 {"detail": "expenses unavailable"}`, and an **empty table answers
-`200 {"items": []}`** - a database nobody has run the loader against yet is a legitimate
-state.
+as the `ExpensePayload` pydantic model in `backend/src/expense_tracker/__init__.py`; the
+tests parse responses back into it. An unreachable database answers `503 {"detail":
+"expenses unavailable"}`, and an **empty table answers `200 {"items": []}`** - a database
+nobody has run the loader against yet is a legitimate state.
 
 Exchange rates come back **by pair**, `from_currency` then `to_currency`, and
 `exchange_rate` is a **string** for the same reason `amount` is: the column is
@@ -151,8 +149,8 @@ categories, totals and the range average - are in [docs/api.md](docs/api.md).
 
 ## CORS
 
-`create_app()` adds `CORSMiddleware` with `allow_origins=["*"]`, because the SPA is
-served from its own origin and every call it makes is cross-origin.
+`create_app()` adds `CORSMiddleware` with `allow_origins=["*"]`, because the SPA is served
+from its own origin and every call it makes is cross-origin.
 
 `allow_credentials` is **`False`**, which is the pairing the CORS spec allows beside a
 wildcard origin and the one browsers accept. This API sends no cookies and reads no
@@ -165,12 +163,13 @@ outermost of the two. That is what lets it answer a preflight `OPTIONS` itself.
 
 PostgreSQL, holding four tables: `loaded_expense_file`, `expense` and `category`, which
 together are a view of the files in `$EXPENSE_DATA_DIR`, and `currency_rate`, which is a
-view of `backend/data/currencies/`. See [Loading expenses](docs/database.md#loading-expenses) and
-[Loading exchange rates](docs/database.md#loading-exchange-rates).
+view of `backend/data/currencies/`. See [Loading
+expenses](docs/database.md#loading-expenses) and [Loading exchange
+rates](docs/database.md#loading-exchange-rates).
 
 The server is a **pixi dependency**. `postgresql` is pinned in `pixi.toml` beside python
-and node, so `direnv allow` provisions it and the `db-*` tasks drive it. CI runs
-`pixi run backend-db-init`, exactly what a developer runs.
+and node, so `direnv allow` provisions it and the `db-*` tasks drive it. CI runs `pixi run
+backend-db-init`, exactly what a developer runs.
 
 ### The cluster
 
@@ -180,7 +179,7 @@ the only code that talks to it. Three settings are baked into the generated
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `port` | `$PGPORT`, `5432` by default | PostgreSQL's own default, so a client that falls back to it finds this cluster |
+| `port` | `$PGPORT`, default `5432` | PostgreSQL's default; a fallback client hits it |
 | `listen_addresses` | `127.0.0.1` | Loopback only |
 | `unix_socket_directories` | `/tmp` | The DSN is TCP |
 
@@ -195,8 +194,8 @@ this is a throwaway cluster holding public text, rebuildable at any moment from
 `backend/schema.sql`.
 
 All five tasks are idempotent, and the chain is `dev` -> `db-init` -> `db-start` ->
-`db-create`, so `pixi run backend-dev` brings the cluster up on its way to the API.
-`pixi run backend-db-init` is the one to reach for when you want the database up without a
+`db-create`, so `pixi run backend-dev` brings the cluster up on its way to the API. `pixi
+run backend-db-init` is the one to reach for when you want the database up without a
 server: the `postgres`-marked tests need it, and so do the two loaders. `db-reset` throws
 the cluster away, which is how a change to an existing table lands.
 
@@ -208,29 +207,29 @@ The schema, the access it grants, and how the two loaders read their files are i
 A React 19 SPA built by vite and styled with Tailwind CSS v4, configured in CSS via
 `frontend/src/styles/app.css`.
 
-The palette and the component classes come from [daisyUI](https://daisyui.com), enabled
-as a `@plugin` in that same stylesheet. One theme is named: `dim --default`, which daisyUI
+The palette and the component classes come from [daisyUI](https://daisyui.com), enabled as
+a `@plugin` in that same stylesheet. One theme is named: `dim --default`, which daisyUI
 binds at `:where(:root)` so it applies whatever the operating system asks for. Colours are
 written by role (`bg-base-100`, `text-base-content`, `alert-error`) and the theme points
 them at its own palette.
 
 The app is **dark-only by choice**, and `dim` is the soft end of what daisyUI ships. The
 theme declares `color-scheme: dark` itself, which keeps browser-painted UI - scrollbars,
-native `<select>` popups, form controls - in step, and `index.html` repeats it as
-`<meta name="color-scheme" content="dark">` so the first paint carries it. Swapping the
-theme means checking all of that still holds.
+native `<select>` popups, form controls - in step, and `index.html` repeats it as `<meta
+name="color-scheme" content="dark">` so the first paint carries it. Swapping the theme
+means checking all of that still holds.
 
 `pixi run frontend-build` writes to `frontend/dist/`, vite's default, which is
 **gitignored**; CI runs the build as a gate over the bundler and keeps nothing from it.
 
-`GET /api/expenses` is the app's main read, fetched with
-[TanStack Query](https://tanstack.com/query) and rendered by
+`GET /api/expenses` is the app's main read, fetched with [TanStack
+Query](https://tanstack.com/query) and rendered by
 `frontend/src/components/ExpensesTable.tsx` as one table of date, category, amount and
 currency - the category cell holding the path and then the row's `key`, dimmed in
 parentheses. **The payload shape is written out by hand on both sides and the two must be
 changed together**; a mismatch shows up as a 404 or a failed shape guard at runtime. Every
-field is a string on the wire, so the guard rejects a numeric amount. A negative amount - a
-credit - is shown as `+` in green, the sign rewritten on the string alone. Rows keep the
+field is a string on the wire, so the guard rejects a numeric amount. A negative amount -
+a credit - is shown as `+` in green, the sign rewritten on the string alone. Rows keep the
 order the API sends them in, and an empty ledger shows as a row.
 
 How the three pickers, the router and the API base URL work is in
@@ -238,47 +237,47 @@ How the three pickers, the router and the API base URL work is in
 
 ## Development tasks
 
-`pixi run <task>` is the entry point, and the same command CI runs.
+`pixi run <task>` is the entry point, and the same command CI runs; a `backend-*` task
+forwards to `poe <name>`, a `frontend-*` task to `pnpm run <name>`.
 
-| Command | Delegates to | What it does |
-| --- | --- | --- |
-| `pixi run backend-db-init` | `poe db-init` | Create, start and apply the schema to the local database, without a server in front of it |
-| `pixi run backend-db-create` | `poe db-create` | `initdb` a cluster into `backend/.pgdata/`, if there is not one |
-| `pixi run backend-db-start` | `poe db-start` | Start the cluster on `$PGHOST:$PGPORT`, if it is not running |
-| `pixi run backend-db-stop` | `poe db-stop` | Stop the cluster; succeeds if it is already stopped |
-| `pixi run backend-db-reset` | `poe db-reset` | Stop the cluster and delete `backend/.pgdata/` entirely |
-| `pixi run backend-dev` | `poe dev` | Start the database if it is not up, then run the API on uvicorn, port `$UVICORN_PORT` (with reloader) |
-| `pixi run backend-test` | `poe test` | Run the test suite with coverage |
-| `pixi run backend-lint` | `poe lint` | Lint with ruff, then check the import graph with import-linter |
-| `pixi run backend-lint-fix` | `poe lint-fix` | Auto-fix lint issues (ruff only) |
-| `pixi run backend-load-expenses` | `poe load-expenses` | Read `$EXPENSE_DATA_DIR/*.yaml` into the database, or nothing if that directory is absent |
-| `pixi run backend-load-currencies` | `poe load-currencies` | Replace the exchange rates with `backend/data/currencies/*.tsv` |
-| `pixi run backend-format` | `poe format` | Format with ruff |
-| `pixi run backend-format-check` | `poe format-check` | Check formatting without writing changes |
-| `pixi run backend-typecheck` | `poe typecheck` | Type-check with basedpyright (recommended) |
-| `pixi run backend-image` | `poe image` | Build the API container image from the `backend` environment |
-| `pixi run database-image` | `poe image` | Build the database container image: the PostgreSQL base plus `backend/schema.sql` |
-| `pixi run frontend-install` | `pnpm install` | Install frontend dependencies (`--frozen-lockfile`) |
-| `pixi run frontend-dev` | `pnpm run dev` | Run vite's dev server on port 5173 (hot reload) |
-| `pixi run frontend-build` | `pnpm run build` | Build the frontend into `frontend/dist/` |
-| `pixi run frontend-typecheck` | `pnpm run typecheck` | Type-check the frontend with tsc |
-| `pixi run frontend-lint` | `pnpm run lint` | Lint the frontend with eslint (type-aware, plus CSS, `--max-warnings 0`) |
-| `pixi run frontend-lint-fix` | `pnpm run lint-fix` | Auto-fix frontend lint issues |
-| `pixi run frontend-test` | `pnpm run test` | Run the frontend tests (vitest) with coverage |
-| `pixi run frontend-format` | `pnpm run format` | Format the frontend with prettier |
-| `pixi run frontend-format-check` | `pnpm run format-check` | Check frontend formatting without writing changes |
-| `pixi run frontend-image` | `pnpm run image` | Build the SPA container image from the `frontend` environment |
+| Task | What it does |
+| --- | --- |
+| `backend-db-init` | Create, start and schema-load the local database |
+| `backend-db-create` | `initdb` a cluster into `backend/.pgdata/`, if absent |
+| `backend-db-start` | Start the cluster on `$PGHOST:$PGPORT`, if it is down |
+| `backend-db-stop` | Stop the cluster; succeeds if already stopped |
+| `backend-db-reset` | Stop the cluster and delete `backend/.pgdata/` |
+| `backend-dev` | Start the database if down, then the API on uvicorn |
+| `backend-test` | Run the test suite with coverage |
+| `backend-lint` | ruff, then the import graph with import-linter |
+| `backend-lint-fix` | Auto-fix lint issues (ruff only) |
+| `backend-load-expenses` | Read `$EXPENSE_DATA_DIR/*.yaml` into the database |
+| `backend-load-currencies` | Replace the rates from `backend/data/currencies/*.tsv` |
+| `backend-format` | Format with ruff |
+| `backend-format-check` | Check formatting without writing changes |
+| `backend-typecheck` | Type-check with basedpyright |
+| `backend-image` | Build the API image from the `backend` environment |
+| `database-image` | Build the database image: PostgreSQL plus `schema.sql` |
+| `frontend-install` | Install dependencies (`--frozen-lockfile`) |
+| `frontend-dev` | Run vite's dev server on port 5173 (hot reload) |
+| `frontend-build` | Build the frontend into `frontend/dist/` |
+| `frontend-typecheck` | Type-check with tsc |
+| `frontend-lint` | eslint, type-aware, plus CSS, `--max-warnings 0` |
+| `frontend-lint-fix` | Auto-fix lint issues |
+| `frontend-test` | Run the tests (vitest) with coverage |
+| `frontend-format` | Format with prettier |
+| `frontend-format-check` | Check formatting without writing changes |
+| `frontend-image` | Build the SPA image from the `frontend` environment |
 
-Every task sets its own working directory in `pixi.toml` (`backend/`, `database/` or
-`frontend/`), so `pixi run <task>` behaves the same wherever you invoke it from. Each task
-stays inside its own directory, and every one of them - the five `backend-db-*` included -
-addresses its files by a plain relative path.
+Every task sets its own working directory in `pixi.toml`, so `pixi run <task>` behaves the
+same wherever you invoke it from, and each addresses its files by a plain relative path -
+the five `backend-db-*` included.
 
 That holds when you skip the forwarder too: poe runs a task from the directory of the
 `pyproject.toml` it loaded, so `poe -C backend db-start` resolves `backend/.pgdata/`
 exactly as `cd backend && poe db-start` does. The *path* travels; the environment does not
 - run it from inside the worktree, where direnv has loaded, so the `${PGPORT:?}` guard
-finds the port `.env` names. `pixi task list` prints this table's first column.
+  finds the port `.env` names. `pixi task list` prints this table's first column.
 
 CI runs every gate above on each pull request, then the SonarCloud scan. It leaves out the
 two `dev` tasks, the two `-fix` variants, `backend-format`, the three `*-image` tasks, the
@@ -297,9 +296,9 @@ between `default` and `frontend`:
 
 | Environment | Contains | Used by |
 | --- | --- | --- |
-| `default` | runtime libraries, test tooling, node, PostgreSQL, and the app **editable** | the editor, local dev, CI, every task |
-| `backend` | runtime libraries and the app as a **wheel** | what the API image is built from |
-| `frontend` | node and pnpm, and nothing else | what the SPA image is built from |
+| `default` | all tooling, the app **editable** | editor, local dev, CI, every task |
+| `backend` | runtime libraries, the app a **wheel** | the API image |
+| `frontend` | node and pnpm, nothing else | the SPA image |
 
 **The install mode is the difference that matters.** An editable install is a redirect to
 `backend/src`: nothing is copied, which is what gives a developer edit, re-run, no
@@ -312,9 +311,9 @@ misconfigured process refuses to start in both.
 `no-default-feature = true`, which is what holds it to node and pnpm. That leanness lets
 the SPA image build from a context with no backend source in it, which keeps a backend
 commit from invalidating its layer cache. `pixi run frontend-build` from a blessed shell
-resolves through `default`, which is what the editor and CI use;
-`pixi run -e frontend frontend-build` is the same build in the lean environment, and the
-two produce byte-identical output.
+resolves through `default`, which is what the editor and CI use; `pixi run -e frontend
+frontend-build` is the same build in the lean environment, and the two produce
+byte-identical output.
 
 ## Container images
 
@@ -346,29 +345,30 @@ laptop - and `docker compose up` is the whole operation.
 Every service names an `image:` and none a `build:`. That is a hard rule rather than a
 preference: `docker compose publish` refuses a service carrying `build` without `image`,
 and a release publishes this file as an OCI artifact to be loaded on a machine holding no
-checkout. **That is the deployment the file is for**; this checkout is the development case.
+checkout. **That is the deployment the file is for**; this checkout is the development
+case.
 
 ### The services
 
 | Service | Port | What it is |
 |---|---|---|
-| `database` | none | The database image, which carries `schema.sql` and applies it on an empty data directory. Trust auth, reachable on the compose network alone. |
+| `database` | none | Carries `schema.sql` and applies it to an empty data dir |
 | `backend` | `8000` | The API. Published because the **browser** calls it. |
-| `frontend` | `8080` | The SPA, nginx serving the bundle, with the API origin substituted at container start. |
-| `load-currencies` | - | `profiles: ["load"]`. One shot, over the API image, reading `/currencies`. |
-| `load-expenses` | - | `profiles: ["load"]`. One shot, over the API image, reading `/expenses`. |
+| `frontend` | `8080` | nginx serving the bundle, API origin substituted at start |
+| `load-currencies` | - | `profiles: ["load"]`. One shot, API image, `/currencies` |
+| `load-expenses` | - | `profiles: ["load"]`. One shot, API image, `/expenses` |
 
 The database publishes **no port**, which is what makes trust auth safe - the same bargain
 `db-create` strikes with `--set=listen_addresses=127.0.0.1` locally. **Adding a `ports:`
 entry to that service would publish an unauthenticated superuser to the host.**
 
 `backend` waits on `database` being **healthy**, not merely started: the API answers `200`
-with an empty `items` array against an empty table, so a database still applying its schema
-would serve plausible, wrong, empty answers rather than failing loudly. The healthcheck is
-`pg_isready -h 127.0.0.1`, and **the `-h` is load-bearing** - without it `pg_isready` uses
-the unix socket, which the entrypoint's init-phase temporary server answers while the
-schema is still being applied. That server is socket-only, so over TCP readiness and init
-completing are the same moment.
+with an empty `items` array against an empty table, so a database still applying its
+schema would serve plausible, wrong, empty answers rather than failing loudly. The
+healthcheck is `pg_isready -h 127.0.0.1`, and **the `-h` is load-bearing** - without it
+`pg_isready` uses the unix socket, which the entrypoint's init-phase temporary server
+answers while the schema is still being applied. That server is socket-only, so over TCP
+readiness and init completing are the same moment.
 
 Neither `backend` nor `frontend` declares a healthcheck: the API image is distroless and
 holds no shell, curl or wget to probe itself with.
@@ -405,8 +405,8 @@ of them is guessable from the compose documentation and all three were measured:
   start rather than an empty mount.
 - **Loading an `oci://` file prompts** for the interpolation variables and the sources
   they resolved from, every time. `up` takes `-y` for it. **`run` has no such flag**, so
-  it wants a `y` typed - or `printf 'y\n' |` ahead of it with `-T`, which is what a
-  script needs and what the commands above use.
+  it wants a `y` typed - or `printf 'y\n' |` ahead of it with `-T`, which is what a script
+  needs and what the commands above use.
 - **`COMPOSE_FILE` cannot carry an `oci://` reference.** Compose splits that variable on
   `:`, so the value becomes three nonexistent paths. Pass `-f oci://...` instead, or set
   `COMPOSE_PATH_SEPARATOR=,` first.
@@ -453,8 +453,8 @@ docker compose run --rm load-currencies
 docker compose run --rm load-expenses
 ```
 
-`docker compose --profile load up -d` is the other form, and brings the whole stack up with
-both loaders alongside it.
+`docker compose --profile load up -d` is the other form, and brings the whole stack up
+with both loaders alongside it.
 
 The loaders keep the differing reload shapes
 [docs/database.md](docs/database.md#loading-expenses) describes: currencies replace the
@@ -469,10 +469,10 @@ docker compose run --rm load-currencies
 docker compose run --rm load-expenses
 ```
 
-`down -v` drops the one named volume, the image's `initdb.d` re-applies `schema.sql` on the
-empty data directory it leaves behind, and both loaders start from nothing. **No backend
-code exists for that sequence and none is needed** - the whole reason the schema travels in
-the image.
+`down -v` drops the one named volume, the image's `initdb.d` re-applies `schema.sql` on
+the empty data directory it leaves behind, and both loaders start from nothing. **No
+backend code exists for that sequence and none is needed** - the whole reason the schema
+travels in the image.
 
 ### The two directories it mounts
 
@@ -485,14 +485,14 @@ Both are mounted read-only, and both must be readable by **uid 65532**, which is
 API image runs as.
 
 `EXPENSE_DATA_DIR` is the name `backend/.env` already carries, so **a blessed shell points
-`load-expenses` at the private expense repository with no further setting** - the committed
-fixture default applies only where that variable is unset.
+`load-expenses` at the private expense repository with no further setting** - the
+committed fixture default applies only where that variable is unset.
 
-Both mounts carry **`create_host_path: false`**, and that is the one setting here with data
-loss behind it. Compose creates a missing bind source by default, and the currency loader
-replaces the whole rate table from whatever it finds, so an empty directory **deletes every
-rate** and reports `0 files read` with exit 0. Refusing to create the path turns a mistyped
-directory into a container that does not start:
+Both mounts carry **`create_host_path: false`**, and that is the one setting here with
+data loss behind it. Compose creates a missing bind source by default, and the currency
+loader replaces the whole rate table from whatever it finds, so an empty directory
+**deletes every rate** and reports `0 files read` with exit 0. Refusing to create the path
+turns a mistyped directory into a container that does not start:
 
 ```
 Error response from daemon: invalid mount config for type "bind":
@@ -519,10 +519,10 @@ UVICORN_PORT=8000
 EXPENSE_DATA_DIR=$HOME/projects/expense-data/data
 ```
 
-`EXPENSE_DATA_DIR` is the odd one out: the only value here that is a fact about a *machine*
-rather than the project, pointing outside the checkout at a clone of the private data
-repository. direnv expands `$HOME` as it loads the file, so the committed default is a real
-path wherever that clone sits beside this one; anywhere else, set it in
+`EXPENSE_DATA_DIR` is the odd one out: the only value here that is a fact about a
+*machine* rather than the project, pointing outside the checkout at a clone of the private
+data repository. direnv expands `$HOME` as it loads the file, so the committed default is
+a real path wherever that clone sits beside this one; anywhere else, set it in
 **`backend/.env.local`**, which `.envrc` loads afterwards and which is gitignored. Unset
 and set-but-absent differ - unset aborts on the guard, set-but-absent loads nothing and
 succeeds - which is what tells a machine without the data repository from one whose shell
@@ -560,7 +560,7 @@ One loader covers everything, including what no task wraps:
 ```sh
 psql                                              # the local cluster, no flags
 pytest tests/test_expense_postgres.py -k truncate --pdb
-python -m expense_tracker.expense_loader ~/exports # a directory other than the configured one
+python -m expense_tracker.expense_loader ~/exports # any directory, not the configured one
 ```
 
 `PGHOST`, `PGPORT`, `PGUSER` and `PGDATABASE` are the variables libpq itself reads, so
@@ -578,21 +578,21 @@ supplies its own. `database_url()` returns a `sqlalchemy.URL` rather than a `str
 the environment, the process refuses to start and names every missing one.
 
 To move either port off something else has taken, edit **`backend/.env`** itself. `PGPORT`
-is baked into the cluster at `initdb` time, so follow that edit with
-`pixi run backend-db-reset && pixi run backend-db-init`; `UVICORN_PORT` takes effect on
-the next `pixi run backend-dev`. That leaves the file as a committed default you edit in
-place, which shows up as a dirty working tree - `backend/.env.local` is where a value that
-names one machine goes. `.gitignore` ignores **every** `.env` variant and names back only
-the two committed defaults.
+is baked into the cluster at `initdb` time, so follow that edit with `pixi run
+backend-db-reset && pixi run backend-db-init`; `UVICORN_PORT` takes effect on the next
+`pixi run backend-dev`. That leaves the file as a committed default you edit in place,
+which shows up as a dirty working tree - `backend/.env.local` is where a value that names
+one machine goes. `.gitignore` ignores **every** `.env` variant and names back only the
+two committed defaults.
 
-The frontend has exactly one variable of its own, `VITE_API_BASE_URL` - see
-[Where the API lives](docs/frontend.md#where-the-api-lives).
+The frontend has exactly one variable of its own, `VITE_API_BASE_URL` - see [Where the API
+lives](docs/frontend.md#where-the-api-lives).
 
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for branch naming, Conventional Commit, and
-squash-merge rules. To report a security issue, see
-[`SECURITY.md`](SECURITY.md) - please do not open a public issue for one.
+squash-merge rules. To report a security issue, see [`SECURITY.md`](SECURITY.md) - please
+do not open a public issue for one.
 
 ## License
 

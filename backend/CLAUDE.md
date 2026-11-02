@@ -2,8 +2,8 @@
 
 Invariants for the backend stack. Repo-wide rules and [what earns a place
 here](../CLAUDE.md#adding-to-these-files) are in the root [`CLAUDE.md`](../CLAUDE.md).
-**This file stays under 200 lines.** Each bullet ends with the test or gate that pins it,
-or with what nothing checks.
+**This file stays under 200 lines**, no line past 90 characters. Each bullet ends with the
+test or gate that pins it, or with what nothing checks.
 
 ## The HTTP surface
 
@@ -27,17 +27,17 @@ or with what nothing checks.
 ## Module layering
 
 - **Only the HTTP layer knows about HTTP.** `__init__.py` and `deps.py` are that layer;
-  every other module imports no fastapi and no starlette. A failed read leaves a repository
-  raising `ExpensesUnavailableError` or `CurrenciesUnavailableError`, which the
+  every other module imports no fastapi and no starlette. A failed read leaves a
+  repository raising `ExpensesUnavailableError` or `CurrenciesUnavailableError`, which the
   `create_app()` handlers turn into a 503. Pinned by the import-linter contracts, not by a
   test.
 - **A new module goes in three lists:** the `layers` contract, where `exhaustive = true`
-  fails the gate by itself, and the `source_modules` of *both* `forbidden` contracts, which
-  have no `exhaustive` option. The layer order lives in `[tool.importlinter]`; read it
-  there.
+  fails the gate by itself, and the `source_modules` of *both* `forbidden` contracts,
+  which have no `exhaustive` option. The layer order lives in `[tool.importlinter]`; read
+  it there.
 - **Every refusal is a plain-string `detail`, and the module raising it knows no status
-  code.** `ConversionError`, `DateRangeError` and `AggregationError` each become a 422 in a
-  `create_app()` handler, as the repository errors become 503s, which is why the query
+  code.** `ConversionError`, `DateRangeError` and `AggregationError` each become a 422 in
+  a `create_app()` handler, as the repository errors become 503s, which is why the query
   parameters are typed `str`: every refusal then carries one plain-string detail of the
   module's own. Only the 422 handlers read their exception.
 - **`db.py` holds `Base` and nothing else.** A shared `DeclarativeBase` in its own module
@@ -57,8 +57,8 @@ or with what nothing checks.
   and replaces the whole `currency_rate` table every run, a rate being a current fact
   rather than an event, so editing `rates.tsv` and reloading is supported; it parses every
   file before deleting anything, in one transaction. The `category` table is the third:
-  derived state the expense loader extends and verifies inside each file's own transaction.
-  Pinned by `test_an_edited_rate_replaces_the_old_one` and
+  derived state the expense loader extends and verifies inside each file's own
+  transaction. Pinned by `test_an_edited_rate_replaces_the_old_one` and
   `test_an_edited_file_is_refused_by_name_and_load_date`.
 - **The loader assigns the slugs, and the two invariants are checked, not assumed.**
   `assign_slugs` orders nodes by `(first filename, path)`, so a reset and a reload
@@ -72,10 +72,10 @@ or with what nothing checks.
 - **`?currency=` converts in `conversion.py`, and four refusals are part of that
   behaviour.** A rate is used **only** in the direction `rates.tsv` states it, never
   inverted, never composed through a third currency; a pair loaded twice is refused, and
-  only when needed; one unconvertible expense refuses the **whole** request; a code outside
-  `\A[A-Z]{3}\Z` is refused. Pinned by the refusal tests in `test_conversion.py`.
-- **The identity needs no rate:** `record.currency == target` returns the record before any
-  lookup, so `rates.tsv` holds no `DKK DKK 1.000000` row. Pinned by
+  only when needed; one unconvertible expense refuses the **whole** request; a code
+  outside `\A[A-Z]{3}\Z` is refused. Pinned by the refusal tests in `test_conversion.py`.
+- **The identity needs no rate:** `record.currency == target` returns the record before
+  any lookup, so `rates.tsv` holds no `DKK DKK 1.000000` row. Pinned by
   `test_an_expense_already_in_the_target_currency_is_untouched`.
 - **`ROUND_HALF_UP` is spelled out because `Decimal` rounds half to even by default**, in
   `aggregation.py` as well as here - they are `|`-joined siblings, so neither may import
@@ -83,12 +83,12 @@ or with what nothing checks.
 
 ## Aggregation
 
-- **`GET /api/expenses/totals` sums the rows `/api/expenses` lists**, grouped by
-  `(period, currency, category)` and taking the same four query parameters. It reads
+- **`GET /api/expenses/totals` sums the rows `/api/expenses` lists**, grouped by `(period,
+  currency, category)` and taking the same four query parameters. It reads
   `list_expenses`. Pinned by `test_two_currencies_in_one_month_stay_two_totals`.
 - **A row sums under its own path, so a total names what an expense names.** `?category=`
-  filters and chooses no grain, so `aggregate` never sees it, and the grain is the row's own
-  path. `test_totals_name_the_same_paths_the_list_endpoint_shows`.
+  filters and chooses no grain, so `aggregate` never sees it, and the grain is the row's
+  own path. `test_totals_name_the_same_paths_the_list_endpoint_shows`.
 - **The conversion runs before the summing**, which is what puts the summing in Python, on
   the terms [`docs/api.md`](../docs/api.md#asking-for-totals) states. Pinned by
   `test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows`.
@@ -102,10 +102,10 @@ or with what nothing checks.
   `test_a_month_nobody_spent_in_is_still_a_row` and its bare-row twin.
 - **A requested bound narrows a period only when it falls inside it**, which keeps
   `?from_date=2026-01-01` honoured as the 1st even when nothing was spent until the 7th.
-  The fake filters nothing, so a March period can arrive carrying a January range, and this
-  rule is what keeps its span in order. A period's `to_date` is inclusive, from
-  `calendar.monthrange`. Pinned by `test_a_range_that_cannot_touch_a_period_leaves_it_whole`
-  and its leap-February twin.
+  The fake filters nothing, so a March period can arrive carrying a January range, and
+  this rule is what keeps its span in order. A period's `to_date` is inclusive, from
+  `calendar.monthrange`. Pinned by
+  `test_a_range_that_cannot_touch_a_period_leaves_it_whole` and its leap-February twin.
 - **The `summary` beside `items` is the same grouped or not**: one entry per currency
   holding the mean of its period totals over the same calendar, which grouping re-keys the
   rows of without changing. **Both keys are always present.** Pinned by
@@ -116,23 +116,23 @@ or with what nothing checks.
 
 ## The date range and the category filter
 
-- **The dates and the categories filter in SQL, not in the route.** The `DateRange` and the
-  `CategorySelection` go to `list_expenses`, which adds one `>=`, one `<=` and one `CASE` -
-  `= slug OR LIKE slug || ':%'` per arm over a join to `category`, `autoescape` because a
-  **query** value is unvalidated. Both bounds are **inclusive** and open on their own;
-  `everything()` adds no clause and so no join, and nothing selected is a bare `false()`,
-  so the empty selection returns an empty table. Postgres suite.
+- **The dates and the categories filter in SQL, not in the route.** The `DateRange` and
+  the `CategorySelection` go to `list_expenses`, which adds one `>=`, one `<=` and one
+  `CASE` - `= slug OR LIKE slug || ':%'` per arm over a join to `category`, `autoescape`
+  because a **query** value is unvalidated. Both bounds are **inclusive** and open on
+  their own; `everything()` adds no clause and so no join, and nothing selected is a bare
+  `false()`, so the empty selection returns an empty table. Postgres suite.
 - **A selection states where it changes.** The root carries a sign - `?category_default=`,
-  `all` unless `?category=` names a slug, which keeps every request written before anything
-  could be deselected meaning what it meant, and which is why `all` is sendable - and each
-  value flips a subtree, **the longest slug over a row deciding**. `flips()` owns that
-  order, longest first and by **levels** rather than characters.
+  `all` unless `?category=` names a slug, which keeps every request written before
+  anything could be deselected meaning what it meant, and which is why `all` is sendable -
+  and each value flips a subtree, **the longest slug over a row deciding**. `flips()` owns
+  that order, longest first and by **levels** rather than characters.
   `test_flips_are_ordered_longest_path_first` and the flag's own twin.
 - **All three types validate in `__post_init__`, so the repository does not.** `DateRange`
   refuses `start > end`, `LevelRange` a level outside `1..MAX_LEVEL`, and
-  `CategorySelection` a blank value and a slug flipped both ways, at **every** construction,
-  so validation lives in one place and `list_expenses` stops trusting its caller. An
-  **empty** pair of lists is legal, being the default.
+  `CategorySelection` a blank value and a slug flipped both ways, at **every**
+  construction, so validation lives in one place and `list_expenses` stops trusting its
+  caller. An **empty** pair of lists is legal, being the default.
   `test_the_type_refuses_an_inverted_range_however_it_is_built`.
 - **`date_range._DATE` is the accepted date form, and the only one.** `date.fromisoformat`
   also takes `20260102` and `2026-W01-1`, so the pattern is what holds the API to
@@ -141,10 +141,11 @@ or with what nothing checks.
   `test_a_malformed_bound_is_refused_before_the_two_are_compared`.
 - **A category is a `:`-separated path, the filter matches the slug beside it, and either
   names a node and every node below it.** `category_filter.SEPARATOR` spells both and is
-  its only declaration in Python; `schema.sql`'s CHECKs keep a level free of it. Matching is
-  by **level**, which `_under`'s two legs implement, so `food` covers `food:dining` and
-  leaves `foodstuffs` alone. Each **level** is stripped, so `Settlement : Alice` merges with
-  `Settlement:Alice`. `test_a_category_matches_its_descendants_as_well` and the strip twin.
+  its only declaration in Python; `schema.sql`'s CHECKs keep a level free of it. Matching
+  is by **level**, which `_under`'s two legs implement, so `food` covers `food:dining` and
+  leaves `foodstuffs` alone. Each **level** is stripped, so `Settlement : Alice` merges
+  with `Settlement:Alice`. `test_a_category_matches_its_descendants_as_well` and the strip
+  twin.
 - **`GET /api/expenses/categories` is `list_categories` over the `category` table, ordered
   in SQL**, and `?from_level=`/`?to_level=` is one `WHERE level IN (...)` over the stored
   depth. An ancestor nothing is filed under **is** listed, the loader having written that
@@ -153,12 +154,13 @@ or with what nothing checks.
 
 ## Database and configuration
 
-- **The HTTP suite runs without PostgreSQL.** `conftest.py` fakes both repositories, so
-  a new test hitting an endpoint takes the `client` fixture; only the two `*_postgres.py`
+- **The HTTP suite runs without PostgreSQL.** `conftest.py` fakes both repositories, so a
+  new test hitting an endpoint takes the `client` fixture; only the two `*_postgres.py`
   modules connect, on the terms
-  [`docs/database.md`](../docs/database.md#schema-and-access) states, and they TRUNCATE what they read.
-- **`schema.sql` is the only DDL, and `IF NOT EXISTS` never alters.** Changing a table -
-  a constraint included - means `backend-db-reset` and a reload, a live cluster skipping the
+  [`docs/database.md`](../docs/database.md#schema-and-access) states, and they TRUNCATE
+  what they read.
+- **`schema.sql` is the only DDL, and `IF NOT EXISTS` never alters.** Changing a table - a
+  constraint included - means `backend-db-reset` and a reload, a live cluster skipping the
   whole statement. It has **two** readers on those same terms: `db-init`, and
   `database/Dockerfile`, which copies it into the image's `initdb.d`, where an empty data
   directory is what re-runs it. The rest of the rule is in
@@ -168,9 +170,9 @@ or with what nothing checks.
   wheel-installed package needs no project directory of its own. What `.env` and
   `DATABASE_URL` each own is in [`README.md`](../README.md#configuration). Pinned by
   `test_missing_database_settings_are_refused_at_startup`.
-- **Any new task reaching a server without an explicit `--port` takes the
-  `: "${PGPORT:?...}"` guard.** initdb, psql and createdb each fall back to 5432 and the
-  OS username on their own, and `.env` names 5432 as well - so the fallback finds the right
+- **Any new task reaching a server without an explicit `--port` takes the `:
+  "${PGPORT:?...}"` guard.** initdb, psql and createdb each fall back to 5432 and the OS
+  username on their own, and `.env` names 5432 as well - so the fallback finds the right
   server as the wrong user, and the guard is what aborts an unblessed shell rather than
   letting it connect. `dev` is the exception and needs none: uvicorn *binds* its port
   rather than reaching a server. `test_a_non_numeric_port_is_refused`.
@@ -178,7 +180,8 @@ or with what nothing checks.
 ## Quality gates
 
 - **basedpyright's `recommended` mode sets `failOnWarnings`**, which is what makes a
-  warning fail the build like an error. It and ruff are configured in `pyproject.toml` only.
+  warning fail the build like an error. It and ruff are configured in `pyproject.toml`
+  only.
 - **In a layer list, `|` joins siblings that may *not* import each other and `:` joins
   siblings that *may***, and the contract enforces the first. `lint-fix` is ruff alone:
   where a new module belongs in the order is a design decision, and ruff builds no
