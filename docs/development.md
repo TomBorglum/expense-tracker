@@ -9,84 +9,39 @@ manifest that already owns how its tools behave:
   basedpyright config they invoke, with [poethepoet](https://poethepoet.natn.io) as the
   task runner.
 - **Database:** `[tool.poe.tasks]` in `database/pyproject.toml`, which is a poe manifest
-  and nothing else, with no `[project]` table and no Python package. The one command that
-  directory runs has to be defined there for the rule above to hold.
+  and nothing else, with no `[project]` table and no Python package.
 - **Frontend:** the `scripts` block in `frontend/package.json`.
 
-The two layers buy both properties at once: `pixi run` is a single discoverable index
-across two ecosystems, and each directory stays a standalone project runnable natively
-(`cd backend && poe test`, `cd frontend && pnpm test`, either with no task lists that
-stack's own). **Put the command body in the stack, never in the forwarder.**
+The two layers buy both properties at once: `pixi run` is a single index across two
+ecosystems, and each directory stays runnable natively (`cd backend && poe test`, `cd
+frontend && pnpm test`). **Put the command body in the stack, never in the forwarder.**
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs every gate in **one job**, which is what lets the
-SonarCloud scan at the end reuse the `coverage.xml` and `lcov.info` the test steps already
-wrote. Two workflows would mean building the pixi environment twice and running the suite
-twice for the same two files. The job is named `Checks` because the `main-protection`
-ruleset requires that check **by name**, so the name is a gate rather than a label.
+`.github/workflows/ci.yml` runs every gate in **one job**, which lets the SonarCloud scan
+at the end reuse the `coverage.xml` and `lcov.info` the test steps already wrote. The job
+is named `Checks` because the `main-protection` ruleset requires that check **by name**.
 
-**Each stack's gates run cheapest first**, then its tests, then anything that builds, so a
-broken change fails on the fastest gate that can catch it and nothing after it runs at
-all. That rule puts lint near the end of *both* lists for different reasons:
+**Each stack's gates run cheapest first**, then its tests, then anything that builds. That
+puts lint near the end of both lists: `backend-lint` is ruff plus import-linter over the
+graph, and `frontend-lint` is type-aware (`projectService` plus `strictTypeChecked`), so
+eslint builds the same full TypeScript program `tsc` does.
 
-```
-backend    format-check ~0.2s   lint ~0.3s   typecheck ~1.1s
-frontend   format-check ~0.8s   typecheck ~1.8s   lint ~3.2s
-```
-
-- **`backend-lint` is two tools in one task**, ruff over each file and then import-linter
-  over the graph they form, so it costs more than the formatter and still less than
-  pyright.
-- **`frontend-lint` is type-aware** (`projectService` plus `strictTypeChecked`), so eslint
-  builds the same full TypeScript program `tsc` does and then runs every rule over it,
-  making it the priciest frontend gate at roughly twice the type checker.
-
-Those figures are **cold**, as CI always runs them. Cold matters for `tsc` alone: it
-caches to `node_modules/.tmp`, which `frontend-install` rebuilds every run, so the cache
-is never there to reuse. Warm, it is about a third of the figure.
-
-`backend-db-init` is the one place the cheapest-first rule yields, sitting after the
-static gates deliberately: it *provisions* rather than checks. GitHub sets `CI=true`,
-which turns a database that failed to come up into a failure rather than a silent skip.
+`backend-db-init` is the one place that rule yields, sitting after the static gates
+because it provisions rather than checks. GitHub sets `CI=true`, which turns a database
+that failed to come up into a failure rather than a silent skip.
 
 **The scan brings its own JRE.** `actions/setup-java` installs Temurin 21 and the scan
 step passes `-Dsonar.scanner.skipJreProvisioning=true`. The two are a pair, and the flag
-is what keeps the scan off a JRE downloaded from SonarCloud's API at runtime, a transient
-point of failure on an otherwise green build. The version tracks the scanner CLI's floor,
-which refuses to start below 21.
+keeps the scan off a JRE downloaded from SonarCloud's API at runtime. The version tracks
+the scanner CLI's floor, which refuses to start below 21.
 
 ## Editor setup (Zed)
 
-`.zed/settings.json` exists to make Zed **report** what CI enforces. Every entry does one
-job: pin a language server to the version this repo pins. The linter and type-checker
-settings stay in each stack's own config file, the single source for both. The file itself
-carries the per-server reasoning.
-
-Preconditions: `direnv allow` (for the basedpyright path under `.pixi/`) and `pixi run
-frontend-install` (for the servers under `frontend/node_modules/`), so those paths exist
-for the servers to start from. `direnv allow` is also what puts the database settings into
-the environment, so a test runner launched from inside the editor reaches the local
-cluster. `format_on_save` is left to Zed's own settings.
-
-To confirm the declared pins match what is installed:
-
-```sh
-cd frontend && pnpm ls @tailwindcss/language-server @vtsls/language-server \
-  typescript tailwindcss prettier eslint
-```
-
-One nested entry belongs there: `@vtsls/language-server` bundles its own typescript, which
-the `tsdk` setting redirects to the pinned top-level copy. To confirm Zed is using them,
-open a `.tsx` file **and** `frontend/src/styles/app.css` first, then `ps -eo pid,args |
-grep -E '[v]tsls|[c]ss-language-server|[e]slintServer'`. Expect four processes:
-`@tailwindcss/language-server` ships **two** binaries and this repo runs both, the CSS one
-needing Zed **1.16.1 or newer**. Paths under `frontend/node_modules/` mean the pins took
-effect; paths under `~/.local/share/zed/` mean they did not. `eslintServer.js` always runs
-from there, that server being Zed's own with only the module it loads pinned.
-
-Two things read as faults and are ordinary: over a remote/WSL backend, Server Info reports
-`Binary: Unknown` for `vtsls` however healthy it is, and Zed underlines
-`tailwindcss-intellisense-css` as not allowed while applying it (zed#46766). `ps` settles
-both. Where an editor disagrees with CI, `pixi run backend-typecheck` and `pixi run
-frontend-lint` are the authority.
+`.zed/settings.json` pins each language server to the version this repo pins, and nothing
+else; linter and type-checker settings stay in each stack's own config. The file carries
+the per-server reasoning. It needs `direnv allow`, for the basedpyright path under
+`.pixi/` and for the database settings a test runner launched from the editor reaches, and
+`pixi run frontend-install`, for the servers under `frontend/node_modules/`. Where an
+editor disagrees with CI, `pixi run backend-typecheck` and `pixi run frontend-lint` are
+the authority.

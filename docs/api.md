@@ -6,22 +6,21 @@ routes take is below.
 ## Asking for one currency
 
 `?currency=` restates every expense in the code given, **replacing** `amount` and
-`currency`, so the payload is the same shape either way. `1250.00 DKK` at `0.134048` comes
-back as `"167.56" EUR`: `Decimal` arithmetic throughout, quantized to two places with
-`ROUND_HALF_UP`, and still a string on the wire.
+`currency`. `1250.00 DKK` at `0.134048` comes back as `"167.56" EUR`: `Decimal` arithmetic
+throughout, quantized to two places with `ROUND_HALF_UP`, and still a string on the wire.
 
-Only what `data/currencies/rates.tsv` states in that direction is used, each rate as the
-file writes it. An expense already in the requested currency passes through untouched, so
-the file holds no `DKK DKK 1.000000` row.
+Only what `data/currencies/rates.tsv` states in that direction is used. An expense already
+in the requested currency passes through untouched, so the file holds no `DKK DKK
+1.000000` row.
 
 | Request | `detail` |
 | --- | --- |
 | `?currency=CHF` | `no exchange rate from DKK to CHF` |
 | `?currency=euro` | `currency must be an ISO 4217 code` |
 
-A lowercase code is refused, matching the loaders. **One unconvertible expense refuses the
-whole request**, so every amount in a list stands in one currency. A pair loaded twice is
-refused on the same terms, and only when that pair is needed.
+A lowercase code is refused, matching the loaders. **One unconvertible expense refuses
+the whole request**, so every amount in a list stands in one currency. A pair loaded twice
+is refused on the same terms, and only when that pair is needed.
 
 ## Asking for a range of dates
 
@@ -30,8 +29,8 @@ bounds are inclusive**, and **each is optional on its own**: give only `from_dat
 range runs to the newest expense there is, give only `to_date` and it runs from the
 oldest.
 
-The range is applied **before** `?currency=`, so an expense outside it needs no exchange
-rate. Dates are read as `YYYY-MM-DD`, the form the payload's own `date` field uses.
+The range is applied **before** `?currency=`. Dates are read as `YYYY-MM-DD`, the form
+the payload's own `date` field uses.
 
 | Request | `detail` |
 | --- | --- |
@@ -102,17 +101,14 @@ A category is one `text` column holding a `:`-separated path, `Groceries` or
 
 The separator is declared twice and only twice: `SEPARATOR` in `category_filter.py`, and
 the `expense_category_is_a_path` CHECK in `schema.sql` that refuses an empty level. That
-CHECK is what keeps **the separator out of every level**, so splitting a path or joining
-one back up is lossless and **the levels need no escaping** anywhere. Matching is by level
-rather than by characters, which is why `food` covers `food:dining` and leaves
-`foodstuffs` alone.
+CHECK keeps **the separator out of every level**, so **the levels need no escaping**.
+Matching is by level rather than by characters, which is why `food` covers `food:dining`
+and leaves `foodstuffs` alone.
 
 ### Category slugs
 
 Every category also has a **slug**, and the slug is what the API takes and what the
-frontend puts in the URL. A path is what a file said, and a URL carries a spelling of its
-own: `Going Out:Jalsa+pool` percent-encodes to `Going%20Out%3AJalsa%2Bpool`, and `+`
-already spells a space in `application/x-www-form-urlencoded`.
+frontend puts in the URL.
 
 A slug holds `a-z`, `0-9`, `-` within a level and `:` between levels. The one character a
 query escapes is the colon, which `frontend/src/router.ts` puts back, so a category URL is
@@ -122,13 +118,12 @@ diacritic, then collapsing each run of anything left to a single `-` and trimmin
 ends: `Jalsa & pool` is `jalsa-pool`, `100%` is `100`. **A level that comes out empty is
 refused while loading**, so every slug names one category.
 
-Two siblings can want one slug, and the **second is numbered rather than refused**: `Going
-Out` is `going-out` and `Going-Out` is `going-out-1`, with the next free number taken, so
-a real `Going Out 1` beside them keeps `going-out-1` and pushes the collision to
+Two siblings can want one slug, and the **second is numbered rather than refused**:
+`Going Out` is `going-out` and `Going-Out` is `going-out-1`, with the next free number
+taken, so a real `Going Out 1` beside them keeps `going-out-1` and pushes the collision to
 `going-out-2`. The numbering is **per sibling group**. Which sibling gets the bare slug is
-decided by **order of first appearance in file-name order, then by path within a file**,
-which makes the assignment a function of the loaded files and nothing else. Two invariants
-follow, both checked rather than assumed:
+decided by **order of first appearance in file-name order, then by path within a file**.
+Two invariants follow, both checked rather than assumed:
 
 - **The same files give the same slugs**, however they were loaded, so a link survives a
   `backend-db-reset` and a reload.
@@ -139,7 +134,7 @@ follow, both checked rather than assumed:
 `2026-*.yaml`, where the earlier name sorts ahead of the slugs already assigned. The
 loader recomputes every slug on every file, compares them with the stored ones, and
 **refuses the file** if any would move, naming the category and both slugs. The fix is a
-rebuild, the ordinary path here anyway.
+rebuild.
 
 ## Asking for totals
 
@@ -152,9 +147,9 @@ so the payload field is the grain-neutral `period`. Rows are keyed by `(period,
 currency)`, and `?group_by=category` adds a third part to that key. **`currency` stays in
 the key whatever was asked for**, so every sum is in one currency.
 
-**`?group_by=` is only a toggle: a row sums under the path its expenses carry.** A totals
-row names exactly what an expenses row names, and `?category=` narrows which rows arrive
-and chooses no grain. Say Alice's settlement is 150 and Bob's is 25:
+**`?group_by=` is only a toggle: a row sums under the path its expenses carry.** A
+totals row names exactly what an expenses row names, and `?category=` narrows which rows
+arrive and chooses no grain. Say Alice's settlement is 150 and Bob's is 25:
 
 | Selection | Rows |
 | --- | --- |
@@ -179,15 +174,14 @@ expense and a period can hold rows that cancel out:
 
 An absent `amount` says "none recorded"; `"0.00"` says "these cancelled out".
 
-**The conversion runs before the summing.** `?currency=` quantizes each amount to cents,
-so converting and then adding is what makes a total equal what a reader adds up from
-`/api/expenses?currency=EUR`.
+**The conversion runs before the summing**, `?currency=` quantizing each amount to
+cents, so a total equals what a reader adds up from `/api/expenses?currency=EUR`.
 
 ## The range average
 
-**The body carries a `summary` beside `items`**: one entry per currency, each naming that
-currency and `average`, the mean of its period totals over the whole calendar the rows
-span. It is what one period costs on average across the range.
+**The body carries a `summary` beside `items`**: one entry per currency, each naming
+that currency and `average`, the mean of its period totals over the whole calendar the
+rows span.
 
 ```json
 {
@@ -199,16 +193,13 @@ span. It is what one period costs on average across the range.
 **Both keys are always present**, and an entry exists only for a currency that has
 expenses.
 
-**The divisor is the same calendar the rows walk**, first matching expense to last, with
-interior gaps counted, so a month nobody spent in pulls the figure down. A range filtered
-wider than the data divides by the data, so the number can differ from what the requested
-bounds suggest.
+**The divisor is the same calendar the rows walk**, first matching expense to last,
+with interior gaps counted, so a month nobody spent in pulls the figure down. A range
+filtered wider than the data divides by the data.
 
-**It is the same whether or not `?group_by=` was sent.** Grouping re-keys the rows without
-changing which expenses they sum, so a client can read the summary from either body. The
-quantization is a conversion's: `ROUND_HALF_UP` to cents, and a cumulative credit too
-small to show at that scale is normalised from `-0.00` to `0.00`. **No expenses means an
-empty summary.**
+**It is the same whether or not `?group_by=` was sent.** The quantization is a
+conversion's: `ROUND_HALF_UP` to cents, and a cumulative credit too small to show at that
+scale is normalised from `-0.00` to `0.00`. **No expenses means an empty summary.**
 
 Those four routes are the whole surface, all read-only: rows arrive through `pixi run
 backend-load-expenses` and `pixi run backend-load-currencies`, and the API publishes no
