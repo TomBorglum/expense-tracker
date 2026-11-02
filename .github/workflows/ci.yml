@@ -1,7 +1,7 @@
 name: CI
 
 # All PR/push gates plus the SonarCloud scan, in one job so the scan reuses the coverage
-# the test steps wrote. README.md, under Continuous integration, records why.
+# the test steps wrote. docs/development.md records why.
 
 on:
   push:
@@ -31,7 +31,7 @@ jobs:
       - uses: TomBorglum/actions/direnv/setup@8bb5c662cb67237681564ec96cbb7ed84bc4aed8 # v3.0.0
       # Each stack's gates run cheapest first, then its tests, then anything that builds.
       # The two stacks order lint differently; the measurements behind that are in
-      # README.md, under Continuous integration.
+      # docs/development.md, under Continuous integration.
       - run: pixi run backend-format-check
       - run: pixi run backend-lint
       - run: pixi run backend-typecheck
@@ -51,7 +51,7 @@ jobs:
       # was added, renamed or removed without committing the generated tree.
       - run: git diff --exit-code -- frontend/src/routeTree.gen.ts
       # Paired with skipJreProvisioning below, which is what makes this JDK the one the
-      # scan runs on. README.md, under Continuous integration, records the version floor.
+      # scan runs on. docs/development.md records the version floor.
       - name: Set up JDK
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:

@@ -90,7 +90,7 @@ or with what nothing checks.
   filters and chooses no grain, so `aggregate` never sees it, and the grain is the row's own
   path. `test_totals_name_the_same_paths_the_list_endpoint_shows`.
 - **The conversion runs before the summing**, which is what puts the summing in Python, on
-  the terms [`README.md`](../README.md#asking-for-totals) states. Pinned by
+  the terms [`docs/api.md`](../docs/api.md#asking-for-totals) states. Pinned by
   `test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows`.
 - **A row's optional keys are absent when they have no value.** `exclude_none=True` on the
   route dump is the whole rule: `_total_payload` sets all six fields, and
@@ -156,13 +156,13 @@ or with what nothing checks.
 - **The HTTP suite runs without PostgreSQL.** `conftest.py` fakes both repositories, so
   a new test hitting an endpoint takes the `client` fixture; only the two `*_postgres.py`
   modules connect, on the terms
-  [`README.md`](../README.md#schema-and-access) states, and they TRUNCATE what they read.
+  [`docs/database.md`](../docs/database.md#schema-and-access) states, and they TRUNCATE what they read.
 - **`schema.sql` is the only DDL, and `IF NOT EXISTS` never alters.** Changing a table -
   a constraint included - means `backend-db-reset` and a reload, a live cluster skipping the
   whole statement. It has **two** readers on those same terms: `db-init`, and
   `database/Dockerfile`, which copies it into the image's `initdb.d`, where an empty data
   directory is what re-runs it. The rest of the rule is in
-  [`README.md`](../README.md#schema-and-access). Nothing checks this.
+  [`docs/database.md`](../docs/database.md#schema-and-access). Nothing checks this.
 - **The app reads the environment; loading `.env` is a launcher's job.** `config.py` opens
   no file and resolves no path, and `[tool.poe]` declares no `envfile`, so a
   wheel-installed package needs no project directory of its own. What `.env` and

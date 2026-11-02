@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 # Declared here rather than in release.yml: GitHub cancels the caller when the two share a
-# group. A RELEASE is never cancelled - README.md, under Releases, says why.
+# group. A RELEASE is never cancelled - docs/releases.md says why.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -32,7 +32,7 @@ jobs:
       contents: read
       id-token: write
     # What each value is, and must contain, is its declaration's `description` in
-    # release.yml. Why each is sourced the way it is, README.md records under Releases.
+    # release.yml. Why each is sourced the way it is, docs/releases.md records.
     with:
       directories: '["backend", "database", "frontend"]'
       aws-region: ${{ vars.AWS_REGION }}

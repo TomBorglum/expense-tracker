@@ -5,7 +5,7 @@ name: Release
 # TWO INVARIANTS, both stated in CLAUDE.md: no job that checks the repository out gets
 # `id-token: write`, and nothing here reads `vars` or names an AWS object. The logs are
 # world-readable, so nothing added may print the account id or the PAT either.
-# README.md, under Releases, documents the AWS objects and the whole credential path.
+# docs/releases.md documents the AWS objects and the whole credential path.
 
 # Every `github.*` reference below is the CALLER's event, which is what a called workflow
 # is given. publish.yml carries the triggers and the concurrency group.
@@ -32,7 +32,7 @@ on:
           The SSM Parameter Store path holding the Docker Hub PAT `push` logs in with: a
           SecureString, read with --with-decryption. The release role's inline policy
           grants ssm:GetParameter on this one parameter's ARN as a literal rather than a
-          prefix, so a path it does not name is refused - README.md, under Releases,
+          prefix, so a path it does not name is refused - docs/releases.md
           explains why that literal is the whole isolation boundary. Not a secret: a path
           is an address, and the value it points at never leaves the step that reads it.
         required: true
@@ -215,7 +215,7 @@ jobs:
             image.output=type=oci,dest=/tmp/image.oci.tar
           # Spelled out because `provenance: true` would leave BuildKit's own `mode=min`
           # in force. This publishes the whole GitHub event payload inside the image, which
-          # README.md, under Releases, records as acceptable only while this repo is public.
+          # docs/releases.md records as acceptable only while this repo is public.
           provenance: mode=max
           sbom: true
 
@@ -243,7 +243,7 @@ jobs:
           exit-code: 0
 
       # TWO assertions, because a passing trivy run does not mean THIS image was scanned:
-      # identity first, then the findings. README.md, under Releases, covers the gate.
+      # identity first, then the findings. docs/releases.md covers the gate.
       - name: Gate on the scan
         env:
           DIRECTORY: ${{ matrix.directory }}
@@ -511,7 +511,7 @@ jobs:
 
       # AFTER the copy above, which is why this step lives in this job at all:
       # --resolve-image-digests reads each digest back OUT of the registry. ONE PUBLISH PER
-      # TAG, each resolving against that tag's own images. README.md, under Releases, says
+      # TAG, each resolving against that tag's own images. docs/releases.md says
       # what the artifact ends up holding.
       - name: Publish the stack to Docker Hub
         id: compose

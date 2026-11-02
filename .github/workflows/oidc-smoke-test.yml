@@ -2,7 +2,7 @@ name: OIDC Smoke Test
 
 # Proves the GitHub Actions -> AWS OIDC path end to end; nothing depends on it. Manual
 # only - re-run it after any change to the CI role's trust policy or permissions.
-# README.md, under Releases, documents the role and the parameter it reads.
+# docs/releases.md documents the role and the parameter it reads.
 
 on:
   workflow_dispatch:

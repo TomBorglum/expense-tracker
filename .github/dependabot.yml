@@ -29,7 +29,7 @@ updates:
       interval: "weekly"
     # default-days must stay equal to minimumReleaseAge in
     # frontend/pnpm-workspace.yaml, and no tier may sit below it. Both files carry the
-    # constraint; the mechanism is in README.md under "Package manager".
+    # constraint; the mechanism is in docs/frontend.md under "Package manager".
     cooldown:
       default-days: 3
       semver-major-days: 30

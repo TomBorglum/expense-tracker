@@ -254,4 +254,4 @@ include = ["src", "tests"]
 extraPaths = ["src"]
 # Authoritative for editors too: Zed sends this directory as the LSP workspace folder, and
 # basedpyright ignores a developer's personal typeCheckingMode whenever it finds a project
-# config. See "Editor setup (Zed)" in README.md.
+# config. See "Editor setup (Zed)" in docs/development.md.
