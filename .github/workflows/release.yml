@@ -416,7 +416,7 @@ jobs:
           # action runs: an input would publish the account id on every release.
           role-to-assume: ${{ secrets.aws-role-arn }}
           aws-region: ${{ inputs.aws-region }}
-          role-session-name: expense-tracker-release
+          role-session-name: ${{ github.run_id }}-${{ github.run_attempt }}
           role-duration-seconds: 900
           # Not redundant with the ARN masked: this covers what STS RETURNS.
           mask-aws-account-id: true
