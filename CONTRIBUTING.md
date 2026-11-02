@@ -1,21 +1,20 @@
 # Contributing
 
-Releases are automated with [release-please](https://github.com/googleapis/release-please).
-It reads the commit history on `main`, decides the next version, and maintains a
-"chore(main): release X.Y.Z" pull request that updates `CHANGELOG.md` and the version.
-Merging that PR tags the version and publishes the GitHub Release. release-please
-creates `CHANGELOG.md` itself, in the first release PR it opens.
+Releases are automated with [release-please][rp]. It reads the commit history on
+`main`, decides the next version, and maintains a "chore(main): release X.Y.Z" pull
+request that updates `CHANGELOG.md` and the version. Merging that PR tags the version
+and publishes the GitHub Release. release-please creates `CHANGELOG.md` itself, in the
+first release PR it opens.
 
-For that to work, commits must follow
-[Conventional Commits](https://www.conventionalcommits.org/). This document is the
-guard rail for naming commits and branches so the automation does the right thing.
+For that to work, commits must follow [Conventional Commits][cc].
+
+[rp]: https://github.com/googleapis/release-please
+[cc]: https://www.conventionalcommits.org/
 
 ## Branch protection
 
-These rules are **enforced** by the `main-protection` repository ruleset. Rulesets
-are available on the GitHub free plan for public repositories, which is what this
-one is; the sibling repo `wsl-cloud-init` carries the same ruleset. Nobody can
-bypass it - `bypass_actors` is empty, the owner included.
+These rules are **enforced** by the `main-protection` repository ruleset. Nobody can
+bypass it: `bypass_actors` is empty, the owner included.
 
 Each rule below names the ruleset rule that blocks it:
 
@@ -24,7 +23,7 @@ Each rule below names the ruleset rule that blocks it:
   force-pushing the branch.)
 - **Squash-merge or rebase; never a merge commit.**
   (`required_linear_history`, and `allowed_merge_methods: [squash, rebase]`.)
-- **The PR title must be a valid Conventional Commit** - it becomes the commit
+- **The PR title must be a valid Conventional Commit.** It becomes the commit
   subject on `main`, because `squash_merge_commit_title` is `PR_TITLE`.
 - **Let the SonarCloud check pass before merging.** (`required_status_checks`,
   which also requires the `Checks` job in `ci.yml`.)
@@ -56,44 +55,40 @@ ideally under ~72 characters.
 
 These are the types configured in
 [`release-please-config.json`](release-please-config.json). A type selects the
-changelog section, and - because release-please treats any commit in a **visible**
-section as a releasable unit - decides whether the change can cut a release on its
-own. Only `feat`, `fix` and `deps` are visible.
+changelog section. Because release-please treats any commit in a **visible** section
+as a releasable unit, the type also decides whether the change can cut a release on
+its own. Only `feat`, `fix` and `deps` are visible, and `deps` is visible
+deliberately.
 
 | Type | Example | Changelog section | Cuts a release? |
 | --- | --- | --- | --- |
-| `feat` | `feat: add monthly budget report` | Features | yes - **minor** (1.1.0) |
-| `fix` | `fix: correct currency rounding` | Bug Fixes | yes - **patch** (1.0.1) |
-| `deps` | `deps: bump python to 3.14.7` | Dependencies | yes - **patch** (1.0.1) |
-| `perf` | `perf: cache the category lookup` | *(hidden)* | no - rides along |
-| `revert` | `revert: undo the schema change` | *(hidden)* | no - rides along |
-| `docs` | `docs: expand the README` | *(hidden)* | no - rides along |
-| `chore` | `chore: tidy config comments` | *(hidden)* | no - rides along |
-| `ci` | `ci: pin actions by sha` | *(hidden)* | no - rides along |
-| `build` `refactor` `style` `test` | `refactor: extract a helper` | *(hidden)* | no - rides along |
+| `feat` | `feat: add monthly budget report` | Features | yes, **minor** (1.1.0) |
+| `fix` | `fix: correct currency rounding` | Bug Fixes | yes, **patch** (1.0.1) |
+| `deps` | `deps: bump python to 3.14.7` | Dependencies | yes, **patch** (1.0.1) |
+| `perf` | `perf: cache the category lookup` | *(hidden)* | no, rides along |
+| `revert` | `revert: undo the schema change` | *(hidden)* | no, rides along |
+| `docs` | `docs: expand the README` | *(hidden)* | no, rides along |
+| `chore` | `chore: tidy config comments` | *(hidden)* | no, rides along |
+| `ci` | `ci: pin actions by sha` | *(hidden)* | no, rides along |
+| `build` `refactor` `style` `test` | `refactor: extract a helper` | *(hidden)* | no, rides along |
 
 A hidden type neither triggers a release nor appears in the notes. A PR containing
 only hidden types will not open a release PR until a `feat`/`fix`/`deps` lands.
-
-> **Visibility = releasability.** A section's visibility in
-> `release-please-config.json` is what decides whether commits of that type cut a
-> release. `deps` is visible deliberately.
 
 ### `deps:` vs `ci:`
 
 **If the change alters what a user receives when they run the application, it is
 `deps:` (or `feat`/`fix`); if it only touches the build or CI, it is `ci:`/`chore:`.**
 That is why Dependabot's GitHub Actions bumps use `ci:`, and why its container base
-bumps use `deps:` - a base ships inside the published image, and the patch release that
+bumps use `deps:`: a base ships inside the published image, and the patch release that
 `deps:` cuts is what republishes it.
 
-`update-pixi-dependencies.yml` is the one standing exception, and a deliberate one. The
-reusable workflow it calls commits a single `deps: update pixi dependencies` whatever
-moved, so a run that bumped only `ruff` or `pnpm` lands as `deps:` and cuts a patch
-release exactly as a `python` or `sqlalchemy` bump does. That subject is fixed rather than
-an input, and a single `pixi upgrade` moves runtime libraries and dev tooling in the same
-solve, so one type covers every run and a shipped dependency change always reaches the
-changelog.
+`update-pixi-dependencies.yml` is the one standing exception. The reusable workflow it
+calls commits a single `deps: update pixi dependencies` whatever moved, so a run that
+bumped only `ruff` or `pnpm` lands as `deps:` and cuts a patch release exactly as a
+`python` or `sqlalchemy` bump does. That subject is fixed rather than an input, and a
+single `pixi upgrade` moves runtime libraries and dev tooling in the same solve, so one
+type covers every run and a shipped dependency change always reaches the changelog.
 
 ## Breaking changes
 
@@ -114,9 +109,10 @@ BREAKING CHANGE: pre-1.0 CSV imports are no longer accepted.
 
 Pull requests are **squash-merged**: the branch collapses into one commit on `main`
 whose subject is the **PR title** and whose body is the branch's own commit
-messages. So the PR title must be a valid Conventional Commit - release-please parses
-that subject, and one like `Update budget code` parses as no type. That holds however
-many commits the branch has, because `squash_merge_commit_title` is `PR_TITLE`.
+messages. The PR title must therefore be a valid Conventional Commit. release-please
+parses that subject, and one like `Update budget code` parses as no type. That holds
+however many commits the branch has, because `squash_merge_commit_title` is
+`PR_TITLE`.
 
 The one thing release-please still reads from a squash commit's body is a
 `BREAKING CHANGE:` footer. The body comes from the branch's own commit messages
@@ -129,8 +125,8 @@ PRs, `required_linear_history` holding each PR to its single parsed subject.
 
 ## Version selection
 
-release-please aggregates **every commit merged since the last release** (across all
-PRs, not just one branch) and applies the highest-impact bump:
+release-please aggregates **every commit merged since the last release**, across all
+PRs rather than one branch, and applies the highest-impact bump:
 
 ```
 any  feat! / BREAKING CHANGE       ->  MAJOR
@@ -142,7 +138,7 @@ else only ride-along types         ->  no release
 
 ## Branch names
 
-release-please ignores branch names entirely - it reads only commit subjects and PR
+release-please ignores branch names entirely, reading only commit subjects and PR
 titles on `main`. Branch names are a human convention: mirror the commit type.
 
 ```
@@ -161,7 +157,7 @@ Optionally prefix an issue number: `feat/123-monthly-budget-report`.
 1. Open a PR with a Conventional Commit **title** and let the SonarCloud check pass.
 2. Merge it (squash). release-please opens or updates the **chore(main): release
    X.Y.Z** PR.
-3. Merge that release PR - the version is tagged and the GitHub Release is published
+3. Merge that release PR. The version is tagged and the GitHub Release is published
    automatically. No manual tagging, and never hand-edit the version, tags, or
    `CHANGELOG.md`.
 
