@@ -4,17 +4,18 @@
 
 This project is a REST API and a single-page app, maintained on a rolling basis.
 Fixes land only on `main`; please reproduce against the latest commit on `main`
-before reporting an issue. Tagged releases are not patched - a fix ships in the
+before reporting an issue. Tagged releases are not patched; a fix ships in the
 next release.
 
 ## Reporting a Vulnerability
 
 Please **do not** open a public issue for security vulnerabilities.
 
-Instead, report privately via GitHub's
-[private vulnerability reporting](https://github.com/TomBorglum/expense-tracker/security/advisories/new)
+Instead, report privately via GitHub's [private vulnerability reporting][report]
 (the **Security -> Report a vulnerability** button on the repository). This keeps
 the report confidential until a fix is available.
+
+[report]: https://github.com/TomBorglum/expense-tracker/security/advisories/new
 
 When reporting, please include:
 
@@ -34,7 +35,7 @@ handling of untrusted TSV input, and the pinned dependency chain in `pixi.toml`,
 `backend/pyproject.toml` and `frontend/package.json`.
 
 Out of scope: the local PostgreSQL cluster the `db-*` tasks create. It listens on
-`127.0.0.1` only and runs with `--auth=trust` by design - it is a development
+`127.0.0.1` only and runs with `--auth=trust` by design. It is a development
 fixture, never a deployment. A deployed API is handed a `DATABASE_URL` by whoever
 operates its database.
 
