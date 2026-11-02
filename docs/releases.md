@@ -14,7 +14,7 @@ tomborglum/expense-tracker-frontend
 tomborglum/expense-tracker            <- the stack, not an image
 ```
 
-**No one of those names is written down.** `publish.yml` names the directories and
+**No one of those names is written down.** `publish.yml` names the image directories and
 `release.yml`'s `meta` job composes `<namespace>/<repository>-<directory>`, the repository
 read from `github.event.repository.name`. **So renaming this GitHub repository renames what
 a release publishes to**, which `CLAUDE.md` carries as a pair that nothing checks. The
@@ -72,7 +72,7 @@ publish.yml  ->  meta  ->  build (matrix: backend, database, frontend)  -\
 ```
 
 `publish.yml` is the caller and holds the triggers, the concurrency group and every value
-belonging to this repository: the **directories** to build, plus `aws-region`,
+belonging to this repository: the **image directories** to build, plus `aws-region`,
 `aws-ssm-parameter`, `dockerhub-namespace` and the `aws-role-arn` secret. `release.yml` is
 called, reads no `vars` and names no AWS object. The filenames look inverted on purpose -
 the trust policy below pins `job_workflow_ref`, which names the **called** workflow, so

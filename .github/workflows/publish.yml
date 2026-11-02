@@ -34,7 +34,7 @@ jobs:
     # What each value is, and must contain, is its declaration's `description` in
     # release.yml. Why each is sourced the way it is, docs/releases.md records.
     with:
-      directories: '["backend", "database", "frontend"]'
+      image-directories: '["backend", "database", "frontend"]'
       aws-region: ${{ vars.AWS_REGION }}
       aws-ssm-parameter: /expense-tracker/release/dockerhub-pat
       dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}

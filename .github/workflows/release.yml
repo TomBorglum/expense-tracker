@@ -12,13 +12,15 @@ name: Release
 on:
   workflow_call:
     inputs:
-      directories:
+      image-directories:
         # A JSON array, because `strategy` below reads it through `fromJSON`: that is the
         # one place `env` cannot reach, so the matrix is what fixes the format.
         description: >-
-          JSON array of directories to build, one per image, each holding a Dockerfile and
-          a docker-bake.hcl. The repository each image publishes to is composed from the
-          directory name - see the `images` step.
+          JSON array of directories built into images, one per image, each holding a
+          Dockerfile and a docker-bake.hcl. The repository each image publishes to is
+          composed from the directory name - see the `images` step. Images only: the stack
+          this workflow also publishes is compose.yaml, which the `compose` job names
+          directly and no input covers.
         required: true
         type: string
       aws-region:
@@ -91,7 +93,7 @@ jobs:
       - name: Compose the repository each directory publishes to
         id: images
         env:
-          DIRECTORIES: ${{ inputs.directories }}
+          IMAGE_DIRECTORIES: ${{ inputs.image-directories }}
           REPOSITORY: ${{ github.event.repository.name }}
         run: |
           set -euo pipefail
@@ -101,23 +103,23 @@ jobs:
             echo "::error::dockerhub-namespace must be lowercase letters, digits, - or _, got: '$DOCKERHUB_NAMESPACE'"
             exit 1
           fi
-          printf '%s' "$DIRECTORIES" > /tmp/directories.json
+          printf '%s' "$IMAGE_DIRECTORIES" > /tmp/image-directories.json
           # A string passes `length > 0` too, so the type is what is checked.
-          if ! jq -e 'type == "array" and length > 0' /tmp/directories.json > /dev/null; then
-            echo "::error::directories must be a non-empty JSON array, got: $DIRECTORIES"
+          if ! jq -e 'type == "array" and length > 0' /tmp/image-directories.json > /dev/null; then
+            echo "::error::image-directories must be a non-empty JSON array, got: $IMAGE_DIRECTORIES"
             exit 1
           fi
           jq -r --arg ns "$DOCKERHUB_NAMESPACE" --arg repo "$REPOSITORY" \
             '[.[] | "\($ns)/\($repo)-\(.)"] | join(",")' \
-            /tmp/directories.json | sed 's/^/list=/' >> "$GITHUB_OUTPUT"
+            /tmp/image-directories.json | sed 's/^/list=/' >> "$GITHUB_OUTPUT"
           jq -c --arg ns "$DOCKERHUB_NAMESPACE" --arg repo "$REPOSITORY" \
             'map({key: ., value: "\($ns)/\($repo)-\(.)"}) | from_entries' \
-            /tmp/directories.json | sed 's/^/map=/' >> "$GITHUB_OUTPUT"
+            /tmp/image-directories.json | sed 's/^/map=/' >> "$GITHUB_OUTPUT"
           # The compose artifact's repository: the same pair WITHOUT a directory suffix,
           # composed here so the formula stays in one step.
           printf 'compose=%s/%s\n' "$DOCKERHUB_NAMESPACE" "$REPOSITORY" >> "$GITHUB_OUTPUT"
           jq -r --arg ns "$DOCKERHUB_NAMESPACE" --arg repo "$REPOSITORY" \
-            '.[] | "\(.) -> \($ns)/\($repo)-\(.)"' /tmp/directories.json
+            '.[] | "\(.) -> \($ns)/\($repo)-\(.)"' /tmp/image-directories.json
           echo "compose -> $DOCKERHUB_NAMESPACE/$REPOSITORY"
 
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -172,7 +174,7 @@ jobs:
       fail-fast: false
       matrix:
         # `strategy` reads `github`, `needs`, `vars` and `inputs` only, never `env`.
-        directory: ${{ fromJSON(inputs.directories) }}
+        directory: ${{ fromJSON(inputs.image-directories) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
