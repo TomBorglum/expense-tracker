@@ -7,11 +7,11 @@ The schema, and how the two loaders read their files.
 `backend/schema.sql` is the entire schema and the only DDL, run by `db-init` and by
 nothing else - the app issues none of its own, and **a rebuild from the expense files
 takes the place of a migration tool**. Every statement is `CREATE ... IF NOT EXISTS`,
-because `db-init` re-runs against live clusters. Generated keys use
-`GENERATED ALWAYS AS IDENTITY`, per PostgreSQL's own
-[Don't Do This](https://wiki.postgresql.org/wiki/Don%27t_Do_This) page. The
-`LoadedExpenseFile`, `Expense` and `Category` models declare the same tables a second
-time in Python, with nothing checking the agreement; change both together.
+because `db-init` re-runs against live clusters. Generated keys use `GENERATED ALWAYS AS
+IDENTITY`, per PostgreSQL's own [Don't Do
+This](https://wiki.postgresql.org/wiki/Don%27t_Do_This) page. The `LoadedExpenseFile`,
+`Expense` and `Category` models declare the same tables a second time in Python, with
+nothing checking the agreement; change both together.
 
 Access is SQLAlchemy 2 async over asyncpg. A repository module holds its models, an
 **abstract base class**, its `Postgres*` implementation and the `...UnavailableError` it
@@ -32,19 +32,19 @@ where a database is expected to be up.
 
 ## Loading expenses
 
-**The expense files live in a separate private repository.** Real spending is
-confidential and this repository is public, so `EXPENSE_DATA_DIR` in `backend/.env` is the
-absolute path to the `data/` directory in your clone of that one. Keeping that clone
-current is your job.
+**The expense files live in a separate private repository.** Real spending is confidential
+and this repository is public, so `EXPENSE_DATA_DIR` in `backend/.env` is the absolute
+path to the `data/` directory in your clone of that one. Keeping that clone current is
+your job.
 
 ```sh
 pixi run backend-load-expenses      # reads $EXPENSE_DATA_DIR/*.yaml into the database
 ```
 
 **A missing directory loads nothing and succeeds**, a machine without the data repository
-being an ordinary state. An *unset* `EXPENSE_DATA_DIR` - a shell that never ran
-`direnv allow` - aborts on the same `${VAR:?}` guard the `db-*` tasks use. A directory
-handed to the loader directly is still checked, which is what surfaces a typed path.
+being an ordinary state. An *unset* `EXPENSE_DATA_DIR` - a shell that never ran `direnv
+allow` - aborts on the same `${VAR:?}` guard the `db-*` tasks use. A directory handed to
+the loader directly is still checked, which is what surfaces a typed path.
 
 The twelve `sample-*.yaml` files under `backend/tests/data/expenses/` are the suite's
 fixtures and no task points at them. To fill a database from them anyway:
@@ -85,16 +85,16 @@ two fields that place it in its file; `record` is read by nothing here.
 
 | Field | Format | Notes |
 | --- | --- | --- |
-| `datetime` | RFC 3339, with an offset | The day it names is `expense_date`; the offset stands unapplied |
+| `datetime` | RFC 3339, with an offset | Names `expense_date`; the offset is unapplied |
 | `amount` | decimal | At most two decimal places; may be negative; non-zero |
 | `currency` | ISO 4217 alpha-3 | Uppercase |
-| `category` | a `:`-separated path | Each level stripped, non-empty, and slugging to something |
+| `category` | a `:`-separated path | Each level stripped, non-empty, and slug-yielding |
 | `key` | the bank's own text for the record | Stripped and non-blank |
 
 A third decimal place is refused by the loader, ahead of `numeric(12, 2)`. A negative
 amount is accepted, a credit being a negative expense; a zero one is refused, with
-`expense_amount_not_zero` as the database's backstop. A `category` outside the path shape -
-`Food:`, `:Food`, `Food::Drink` - is refused by the loader, which names the file, with
+`expense_amount_not_zero` as the database's backstop. A `category` outside the path shape
+- `Food:`, `:Food`, `Food::Drink` - is refused by the loader, which names the file, with
 `expense_category_is_a_path` behind it; a blank `key` is refused on the same terms.
 **Every field is read as text**, so `2438.47` and the date-time both arrive quoted, clear
 of YAML 1.1's float resolution. A byte-order mark is tolerated.
@@ -110,8 +110,8 @@ so a run that dies half way can simply be re-run.
 is append-only and `currency_rate` is replaced whole, while `category` is extended and
 verified. Each file's load recomputes every slug from the stored rows plus that file's own
 categories, refuses the file if a stored slug would move, and inserts the nodes that are
-new, ancestors included. What it refuses and why is
-[Category slugs](api.md#category-slugs).
+new, ancestors included. What it refuses and why is [Category
+slugs](api.md#category-slugs).
 
 **Editing a loaded file is refused.** A known filename arriving with a different digest
 stops the run, so the database stays the read-only view of the files it was loaded from.
@@ -140,7 +140,7 @@ anything is loaded, the ledger skipping every file it has already seen.
 ## Loading exchange rates
 
 ```sh
-pixi run backend-load-currencies    # replaces the rates with backend/data/currencies/*.tsv
+pixi run backend-load-currencies    # replaces rates from backend/data/currencies/*.tsv
 ```
 
 Same file conventions - tab-separated, UTF-8, strict header, BOM tolerated, blank lines

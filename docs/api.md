@@ -6,18 +6,18 @@ Every query parameter the four routes take. The route table itself is in
 ## Asking for one currency
 
 `?currency=` restates every expense in the code given, **replacing** `amount` and
-`currency`, so the payload is the same shape either way. `1250.00 DKK` at `0.134048`
-comes back as `"167.56" EUR`: `Decimal` arithmetic throughout, quantized to two places
-with `ROUND_HALF_UP`, and still a string on the wire.
+`currency`, so the payload is the same shape either way. `1250.00 DKK` at `0.134048` comes
+back as `"167.56" EUR`: `Decimal` arithmetic throughout, quantized to two places with
+`ROUND_HALF_UP`, and still a string on the wire.
 
 Only what `data/currencies/rates.tsv` states in that direction is used, each rate as the
 file writes it. An expense already in the requested currency passes through untouched, so
 the file holds no `DKK DKK 1.000000` row.
 
-| Request | Body |
+| Request | `detail` |
 | --- | --- |
-| `?currency=CHF` | `{"detail": "no exchange rate from DKK to CHF"}` |
-| `?currency=euro` | `{"detail": "currency must be an ISO 4217 code"}` |
+| `?currency=CHF` | `no exchange rate from DKK to CHF` |
+| `?currency=euro` | `currency must be an ISO 4217 code` |
 
 A lowercase code is refused, matching the loaders. **One unconvertible expense refuses the
 whole request**, so every amount in a list stands in one currency, as does a pair loaded
@@ -25,19 +25,19 @@ twice - and only when that pair is actually needed.
 
 ## Asking for a range of dates
 
-`?from_date=` and `?to_date=` narrow the list to the expenses dated between them.
-**Both bounds are inclusive**, and **each is optional on its own**: give only `from_date`
-and the range runs to the newest expense there is, give only `to_date` and it runs from
-the oldest.
+`?from_date=` and `?to_date=` narrow the list to the expenses dated between them. **Both
+bounds are inclusive**, and **each is optional on its own**: give only `from_date` and the
+range runs to the newest expense there is, give only `to_date` and it runs from the
+oldest.
 
 The range is applied **before** `?currency=`, so an expense outside it needs no exchange
 rate. Dates are read as `YYYY-MM-DD`, the form the payload's own `date` field uses.
 
-| Request | Body |
+| Request | `detail` |
 | --- | --- |
-| `?from_date=01/01/2026` | `{"detail": "from_date must be a date in YYYY-MM-DD form"}` |
-| `?to_date=2026-02-30` | `{"detail": "to_date must be a date in YYYY-MM-DD form"}` |
-| `?from_date=2026-03-01&to_date=2026-01-01` | `{"detail": "from_date must not be after to_date"}` |
+| `?from_date=01/01/2026` | `from_date must be a date in YYYY-MM-DD form` |
+| `?to_date=2026-02-30` | `to_date must be a date in YYYY-MM-DD form` |
+| `?from_date=2026-03-01&to_date=2026-01-01` | `from_date must not be after to_date` |
 
 ## Asking for one or more categories
 
@@ -63,8 +63,8 @@ both lists is everything but one subtree with a branch of that subtree kept.
 
 A value is matched the way the loader stored the slug - **stripped level by level, then
 verbatim** - so `?category=%20food` is `food`, and every slug is lower case. The case is
-the client's to send, as a currency code is. **A category nobody has spent in is
-`200 {"items": []}`**, on the terms an empty table is.
+the client's to send, as a currency code is. **A category nobody has spent in is `200
+{"items": []}`**, on the terms an empty table is.
 
 `GET /api/expenses/categories` is the category list: every category at the levels asked
 for, **once each and in path order**, as `{"items": [{"category": "Settlement:Alice",
@@ -83,17 +83,17 @@ selectable. `MAX_LEVEL` in `backend/src/expense_tracker/level_range.py` bounds h
 levels a client can name. The cluster is `initdb --locale=C`, so name order is byte order:
 `Zoo` before `apple`.
 
-| Request | Body |
+| Request | `detail` |
 | --- | --- |
-| `?category=` | `{"detail": "category must not be blank"}` |
-| `?category=%20` | `{"detail": "category must not be blank"}` |
-| `?not_category=` | `{"detail": "category must not be blank"}` |
-| `?category=food&not_category=food` | `{"detail": "category both selected and deselected: food"}` |
-| `?category_default=every` | `{"detail": "unknown category_default: every"}` |
-| `?from_level=two` | `{"detail": "from_level must be a whole number"}` |
-| `?from_level=0` | `{"detail": "from_level must be 1 or more"}` |
-| `?to_level=11` | `{"detail": "to_level must not be more than 10"}` |
-| `?from_level=3&to_level=2` | `{"detail": "from_level must not be after to_level"}` |
+| `?category=` | `category must not be blank` |
+| `?category=%20` | `category must not be blank` |
+| `?not_category=` | `category must not be blank` |
+| `?category=food&not_category=food` | `category both selected and deselected: food` |
+| `?category_default=every` | `unknown category_default: every` |
+| `?from_level=two` | `from_level must be a whole number` |
+| `?from_level=0` | `from_level must be 1 or more` |
+| `?to_level=11` | `to_level must not be more than 10` |
+| `?from_level=3&to_level=2` | `from_level must not be after to_level` |
 
 ### Category paths
 
@@ -109,10 +109,10 @@ rather than by characters, which is why `food` covers `food:dining` and leaves
 
 ### Category slugs
 
-A category path is what a file said, and a URL carries a spelling of its own:
-`Going Out:Jalsa+pool` percent-encodes to `Going%20Out%3AJalsa%2Bpool`, and `+` already
-spells a space in `application/x-www-form-urlencoded`. So every category also has a
-**slug**, and the slug is what the API takes and what the frontend puts in the URL.
+A category path is what a file said, and a URL carries a spelling of its own: `Going
+Out:Jalsa+pool` percent-encodes to `Going%20Out%3AJalsa%2Bpool`, and `+` already spells a
+space in `application/x-www-form-urlencoded`. So every category also has a **slug**, and
+the slug is what the API takes and what the frontend puts in the URL.
 
 A slug holds `a-z`, `0-9`, `-` within a level and `:` between levels. The one character a
 query escapes is the colon, which `frontend/src/router.ts` puts back, so a category URL is
@@ -122,9 +122,9 @@ diacritic, then collapsing each run of anything left to a single `-` and trimmin
 ends: `Jalsa & pool` is `jalsa-pool`, `100%` is `100`. **A level that comes out empty is
 refused while loading**, so every slug names one category.
 
-Two siblings can want one slug, and the **second is numbered rather than refused**:
-`Going Out` is `going-out` and `Going-Out` is `going-out-1`, with the next free number
-taken, so a real `Going Out 1` beside them keeps `going-out-1` and pushes the collision to
+Two siblings can want one slug, and the **second is numbered rather than refused**: `Going
+Out` is `going-out` and `Going-Out` is `going-out-1`, with the next free number taken, so
+a real `Going Out 1` beside them keeps `going-out-1` and pushes the collision to
 `going-out-2`. The numbering is **per sibling group**. Which sibling gets the bare slug is
 decided by **order of first appearance in file-name order, then by path within a file**,
 which makes the assignment a function of the loaded files and nothing else. Two invariants
@@ -143,14 +143,14 @@ rebuild, the ordinary path here anyway.
 
 ## Asking for totals
 
-`GET /api/expenses/totals` sums the rows `/api/expenses` lists, over the period
-`?period=` names. It takes the same `?currency=`, `?from_date=`, `?to_date=` and
-`?category=` as the list does and means the same thing by each.
+`GET /api/expenses/totals` sums the rows `/api/expenses` lists, over the period `?period=`
+names. It takes the same `?currency=`, `?from_date=`, `?to_date=` and `?category=` as the
+list does and means the same thing by each.
 
 **`?period=` is required**, a grain being the caller's to choose; `month` is the only one,
-so the payload field is the grain-neutral `period`. Rows are keyed by
-`(period, currency)`, and `?group_by=category` adds a third part to that key.
-**`currency` stays in the key whatever was asked for**, so every sum is in one currency.
+so the payload field is the grain-neutral `period`. Rows are keyed by `(period,
+currency)`, and `?group_by=category` adds a third part to that key. **`currency` stays in
+the key whatever was asked for**, so every sum is in one currency.
 
 **`?group_by=` is only a toggle: a row sums under the path its expenses carry.** A totals
 row names exactly what an expenses row names, and `?category=` narrows which rows arrive
@@ -210,6 +210,6 @@ quantization is a conversion's: `ROUND_HALF_UP` to cents, and a cumulative credi
 small to show at that scale is normalised from `-0.00` to `0.00`. **No expenses means an
 empty summary.**
 
-Those four routes are the whole surface, all read-only: rows arrive through
-`pixi run backend-load-expenses` and `pixi run backend-load-currencies`, and the API
-publishes no OpenAPI schema, `/docs` or `/redoc`.
+Those four routes are the whole surface, all read-only: rows arrive through `pixi run
+backend-load-expenses` and `pixi run backend-load-currencies`, and the API publishes no
+OpenAPI schema, `/docs` or `/redoc`.

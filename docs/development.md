@@ -44,18 +44,18 @@ frontend   format-check ~0.8s   typecheck ~1.8s   lint ~3.2s
   making it the priciest frontend gate at roughly twice the type checker.
 
 Those figures are **cold**, as CI always runs them. Cold matters for `tsc` alone: it
-caches to `node_modules/.tmp`, which `frontend-install` rebuilds every run, so the cache is
-never there to reuse. Warm, it is about a third of the figure.
+caches to `node_modules/.tmp`, which `frontend-install` rebuilds every run, so the cache
+is never there to reuse. Warm, it is about a third of the figure.
 
-`backend-db-init` is the one place the cheapest-first rule yields, sitting after the static
-gates deliberately: it *provisions* rather than checks. GitHub sets `CI=true`, which turns
-a database that failed to come up into a failure rather than a silent skip.
+`backend-db-init` is the one place the cheapest-first rule yields, sitting after the
+static gates deliberately: it *provisions* rather than checks. GitHub sets `CI=true`,
+which turns a database that failed to come up into a failure rather than a silent skip.
 
-**The scan brings its own JRE.** `actions/setup-java` installs Temurin 21 and the scan step
-passes `-Dsonar.scanner.skipJreProvisioning=true`; the two are a pair, and the flag is what
-keeps the scan off a JRE downloaded from SonarCloud's API at runtime - a transient point of
-failure on an otherwise green build. The version tracks the scanner CLI's floor, which
-refuses to start below 21.
+**The scan brings its own JRE.** `actions/setup-java` installs Temurin 21 and the scan
+step passes `-Dsonar.scanner.skipJreProvisioning=true`; the two are a pair, and the flag
+is what keeps the scan off a JRE downloaded from SonarCloud's API at runtime - a transient
+point of failure on an otherwise green build. The version tracks the scanner CLI's floor,
+which refuses to start below 21.
 
 ## Editor setup (Zed)
 
@@ -64,29 +64,30 @@ job: pin a language server to the version this repo pins. The linter and type-ch
 settings stay in each stack's own config file, the single source for both. Read the file
 itself for the per-server reasoning.
 
-Preconditions: `direnv allow` (for the basedpyright path under `.pixi/`) and
-`pixi run frontend-install` (for the servers under `frontend/node_modules/`), so those
-paths exist for the servers to start from. `direnv allow` is also what puts the database
-settings into the environment, so a test runner launched from inside the editor reaches the
-local cluster. `format_on_save` is left to your own Zed settings.
+Preconditions: `direnv allow` (for the basedpyright path under `.pixi/`) and `pixi run
+frontend-install` (for the servers under `frontend/node_modules/`), so those paths exist
+for the servers to start from. `direnv allow` is also what puts the database settings into
+the environment, so a test runner launched from inside the editor reaches the local
+cluster. `format_on_save` is left to your own Zed settings.
 
 To confirm the declared pins match what is installed:
 
 ```sh
-cd frontend && pnpm ls @tailwindcss/language-server @vtsls/language-server typescript tailwindcss prettier eslint
+cd frontend && pnpm ls @tailwindcss/language-server @vtsls/language-server \
+  typescript tailwindcss prettier eslint
 ```
 
 One nested entry belongs there: `@vtsls/language-server` bundles its own typescript, which
 the `tsdk` setting redirects to the pinned top-level copy. To confirm Zed is using them,
-open a `.tsx` file **and** `frontend/src/styles/app.css` first, then
-`ps -eo pid,args | grep -E '[v]tsls|[c]ss-language-server|[e]slintServer'`. Expect four
-processes - `@tailwindcss/language-server` ships **two** binaries and this repo runs both,
-the CSS one needing Zed **1.16.1 or newer**. Paths under `frontend/node_modules/` mean the
-pins took effect; paths under `~/.local/share/zed/` mean they did not. `eslintServer.js`
-always runs from there, that server being Zed's own with only the module it loads pinned.
+open a `.tsx` file **and** `frontend/src/styles/app.css` first, then `ps -eo pid,args |
+grep -E '[v]tsls|[c]ss-language-server|[e]slintServer'`. Expect four processes -
+`@tailwindcss/language-server` ships **two** binaries and this repo runs both, the CSS one
+needing Zed **1.16.1 or newer**. Paths under `frontend/node_modules/` mean the pins took
+effect; paths under `~/.local/share/zed/` mean they did not. `eslintServer.js` always runs
+from there, that server being Zed's own with only the module it loads pinned.
 
 Two things read as faults and are ordinary: over a remote/WSL backend, Server Info reports
 `Binary: Unknown` for `vtsls` however healthy it is, and Zed underlines
 `tailwindcss-intellisense-css` as not allowed while applying it (zed#46766). `ps` settles
-both. Where your editor disagrees with CI, `pixi run backend-typecheck` and
-`pixi run frontend-lint` are the authority.
+both. Where your editor disagrees with CI, `pixi run backend-typecheck` and `pixi run
+frontend-lint` are the authority.
