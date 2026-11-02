@@ -113,16 +113,17 @@ whose trust policy only accepts this repository's release workflow at a version 
 reads a Docker Hub PAT out of SSM Parameter Store. `oidc-smoke-test.yml` proved that path
 and remains the cheapest way to diagnose a claim mismatch.
 
-Four details carry the weight:
+Five details carry the weight:
 
-- The **role ARN is a secret at both ends** - stored as one, and passed to `release.yml` as
-  one - so GitHub masks it everywhere. A plain input would not do, for a reason that has
-  nothing to do with the exchange failing: **the runner echoes a step's `with:` block into
-  the log before the action runs**, so the credential step would print the full ARN on every
-  release. `mask-aws-account-id: true` cannot reach that line, and is not redundant either -
-  it masks the account id and `authenticated-arn` that STS *returns*, which the input never
-  carried. The cost is that a wrong ARN logs as `***`, which the configuration check at the
-  top of `push` is what makes diagnosable instead.
+- The **role ARN is a secret at both ends** - stored as one, passed to `release.yml` as one - so
+  GitHub masks it everywhere. A plain input would not do, and not because the exchange would fail:
+  **the runner echoes a step's `with:` block into the log before the action runs**, so it would
+  print the full ARN on every release. `mask-aws-account-id: true` cannot reach that line, nor is
+  it redundant - it masks the account id and `authenticated-arn` STS *returns*. A wrong ARN then
+  logs as `***`, which the configuration check at the top of `push` makes diagnosable instead.
+- **`role-session-name` is a label, not a boundary.** The trust policy conditions on `aud`, `sub`
+  and `job_workflow_ref` alone, so it carries the run id and attempt instead: OIDC auth drops the
+  action's own session tags, leaving the name the only channel by which the run reaches CloudTrail.
 - `aws-actions/configure-aws-credentials` runs with `output-credentials: true` and
   **`output-env-credentials: false`**, so the temporary credentials become step outputs
   rather than job environment variables. Steps that need them name them; the rest never
@@ -347,9 +348,8 @@ default is cosign 3, which attaches the signature as an **OCI 1.1 referrer** ins
 writing a `sha256-<digest>.sig` tag, so a tag listing shows the four published tags and
 nothing more. That version is the installer's, not this repository's.
 
-The `push` job's log is the other half: the claim dump shows the `sub` and
-`job_workflow_ref` the trust policy was written against, and is the only place the
-tag-shaped claims can be observed, the smoke test running from a branch.
+The `push` job's log is the other half: its claim dump shows the `sub` and `job_workflow_ref` the
+policy was written against, the only place tag-shaped claims appear - the smoke test runs from a branch.
 
 **If the exchange is refused**, read the claim dump, correct the trust policy in the
 console and re-run the failed job: the AWS side lives outside the tag, so that loop is
