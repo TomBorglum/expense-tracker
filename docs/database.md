@@ -13,20 +13,17 @@ nothing checking the agreement; change both together.
 
 Access is SQLAlchemy 2 async over asyncpg. A repository module holds its models, an
 **abstract base class**, its `Postgres*` implementation and the `...UnavailableError` it
-raises, and imports nothing from FastAPI, so it knows no status code. Callers depend on
-the base class; implementations carry `@override`, so drift fails `backend-typecheck`.
-`expense_loader.py` is a *sibling* of `deps.py`, which is what keeps FastAPI out of
-`python -m`. The dependency arrows are checked rather than intended: `backend-lint` runs
-import-linter against the contracts in `backend/pyproject.toml`, failing the build on an
-import pointing back up the stack, on anything but `deps.py` learning about FastAPI, and
-on a cycle anywhere in the package.
+raises, and imports nothing from FastAPI. Callers depend on the base class;
+implementations carry `@override`, so drift fails `backend-typecheck`. `expense_loader.py`
+is a *sibling* of `deps.py`, which is what keeps FastAPI out of `python -m`.
+`backend-lint` runs import-linter against the contracts in `backend/pyproject.toml`,
+failing the build on an import pointing back up the stack, on anything but `deps.py`
+learning about FastAPI, and on a cycle anywhere in the package.
 
 The engine is owned by the app's **lifespan** and handed to requests as lifespan state,
-which is what makes `create_app()` open no socket and lets most of the suite construct a
-real app with no database anywhere. Only `backend/tests/test_expense_postgres.py` talks to
-the real server, behind the `postgres` marker. It **skips when nothing answers**, so a
-developer who has not run `db-init` gets a green suite, and **fails under `CI=true`**,
-where a database is expected to be up.
+which is what makes `create_app()` open no socket. Only
+`backend/tests/test_expense_postgres.py` talks to the real server, behind the `postgres`
+marker. It **skips when nothing answers** and **fails under `CI=true`**.
 
 ## Loading expenses
 
@@ -42,8 +39,7 @@ pixi run backend-load-expenses      # reads $EXPENSE_DATA_DIR/*.yaml into the da
 **A missing directory loads nothing and succeeds**, a machine without the data repository
 being an ordinary state. An *unset* `EXPENSE_DATA_DIR`, which is what a shell that never
 ran `direnv allow` has, aborts on the same `${VAR:?}` guard the `db-*` tasks use. A
-directory handed to the loader directly is still checked, which is what surfaces a typed
-path.
+directory handed to the loader directly is still checked.
 
 The twelve `sample-*.yaml` files under `backend/tests/data/expenses/` are the suite's
 fixtures and no task points at them. To fill a database from them anyway:
@@ -53,7 +49,7 @@ cd backend && EXPENSE_DATA_DIR=tests/data/expenses poe load-expenses
 ```
 
 They carry the `sample-` prefix because `loaded_expense_file.filename` is unique on the
-bare name, which keeps a fixture clear of a real `nykredit-2026-01.yaml`.
+bare name.
 
 Files are named `<bank>-YYYY-MM.yaml`, one per bank and calendar month, holding the bank's
 own export header and then every record it exported: the raw line as evidence, and beside
@@ -101,25 +97,24 @@ of YAML 1.1's float resolution. A byte-order mark is tolerated.
 **Re-running the loader is a no-op**, which the ledger does rather than the rows.
 `loaded_expense_file` records each file's name and the SHA-256 of its bytes; a file
 already recorded with a matching digest is skipped whole. The expense rows carry neither a
-content hash nor an `ON CONFLICT`: two identical records are two real purchases, such as a
-pair of same-day fill-ups, and both belong in the month. Each file is its own transaction,
-so a run that dies half way can be re-run as it stands.
+content hash nor an `ON CONFLICT`: two identical records are two real purchases, and both
+belong in the month. Each file is its own transaction, so a run that dies half way can be
+re-run as it stands.
 
-**The `category` table is derived**, a third shape beside the two loaders' own: `expense`
-is append-only and `currency_rate` is replaced whole, while `category` is extended and
-verified. Each file's load recomputes every slug from the stored rows plus that file's own
-categories, refuses the file if a stored slug would move, and inserts the nodes that are
-new, ancestors included. What it refuses and why is [Category
-slugs](api.md#category-slugs).
+**The `category` table is derived.** `expense` is append-only and `currency_rate` is
+replaced whole, while `category` is extended and verified. Each file's load recomputes
+every slug from the stored rows plus that file's own categories, refuses the file if a
+stored slug would move, and inserts the nodes that are new, ancestors included. What it
+refuses and why is [Category slugs](api.md#category-slugs).
 
 **Editing a loaded file is refused.** A known filename arriving with a different digest
 stops the run, so the database stays the read-only view of the files it was loaded from.
 Append a new file, or rebuild.
 
-**With month files, that rebuild is the ordinary path rather than the exception.** The
-other repository adds a later export's records to the month file they fall in, rewriting
-it, so any import touching a month already loaded here arrives as an edit. A settling
-`defer` is that same case. A new month is a new filename and loads on its own:
+**With month files, that rebuild is the ordinary path.** The other repository adds a later
+export's records to the month file they fall in, rewriting it, so any import touching a
+month already loaded here arrives as an edit. A settling `defer` is that same case. A new
+month is a new filename and loads on its own:
 
 ```sh
 pixi run backend-db-reset && pixi run backend-db-init && pixi run backend-load-expenses
@@ -131,9 +126,9 @@ test in `test_currency_postgres.py`. **Running the suite empties whatever was lo
 
 It is the path for a **schema change**, too. `db-init` adds what is missing and leaves
 what is there, so pulling a branch that changes a column or a table name means resetting
-the cluster. A branch that only *adds* a table, as `currency_rate` did, takes `db-init`
-alone. A table the loader fills, as `category` is, takes the reset all the same once
-anything is loaded, the ledger skipping every file it has already seen.
+the cluster. A branch that only *adds* a table takes `db-init` alone. A table the loader
+fills, as `category` is, takes the reset all the same once anything is loaded, the ledger
+skipping every file it has already seen.
 
 ## Loading exchange rates
 
