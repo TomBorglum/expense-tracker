@@ -11,14 +11,14 @@ test or gate that pins it, or with what nothing checks.
   [`README.md`](../README.md) lists**, and `docs_url`, `redoc_url` and `openapi_url` are
   `None`. All four are **read-only**, rows arriving through the two loaders alone. Pinned
   by `test_root_is_not_served` and its three surface neighbours.
-- **CORS is wildcard with `allow_credentials=False`**, which is the pair the spec allows.
-  It is registered outermost, after the security-headers middleware, so it answers
-  preflights itself. Pinned by `test_cors_does_not_allow_credentials`.
+- **CORS is wildcard with `allow_credentials=False`**, the pair the spec allows. It is
+  registered outermost, after the security-headers middleware, so it answers preflights
+  itself. Pinned by `test_cors_does_not_allow_credentials`.
 - **The engine is built by the lifespan in `deps.py`**, so `create_app()` opens no socket:
   `TestClient(app)` without `with` runs database-free, and `uvicorn --factory` works. The
   whole HTTP suite rests on it.
-- **An empty table is 200 with an empty `items` array.** A database nobody has loaded yet
-  is a legitimate state, so both repositories raise from their `except` arm alone.
+- **An empty table is 200 with an empty `items` array.** Both repositories raise from
+  their `except` arm alone.
   `test_expenses_endpoint_returns_an_empty_list_when_nothing_is_loaded` + twins.
 - **`amount` goes out as `str(Decimal)`** so no float round trip can drift a total by a
   cent, and `date` as a bare `YYYY-MM-DD`. The frontend renders both verbatim. Pinned by
@@ -37,9 +37,9 @@ test or gate that pins it, or with what nothing checks.
   it there.
 - **Every refusal is a plain-string `detail`, and the module raising it knows no status
   code.** `ConversionError`, `DateRangeError` and `AggregationError` each become a 422 in
-  a `create_app()` handler, as the repository errors become 503s, which is why the query
-  parameters are typed `str`: every refusal then carries one plain-string detail of the
-  module's own. Only the 422 handlers read their exception.
+  a `create_app()` handler, as the repository errors become 503s. The query parameters are
+  typed `str` so every refusal carries one plain-string detail of the module's own. Only
+  the 422 handlers read their exception.
 - **`db.py` holds `Base` and nothing else.** A shared `DeclarativeBase` in its own module
   lets a second repository arrive without importing the first, which the `|` between
   siblings forbids. A new model goes in the repository reading it. Layers contract.
@@ -50,19 +50,18 @@ test or gate that pins it, or with what nothing checks.
 
 ## The loaders
 
-- **The three loader shapes differ on reloading, and that difference is the design.**
-  `expense_loader` is append-only: its ledger skips a file whose sha256 matches and
-  *refuses* one that changed - and a month file is rewritten in place upstream, so that
-  refusal is the ordinary path and a rebuild is the cure. `currency_loader` has no ledger
-  and replaces the whole `currency_rate` table every run, a rate being a current fact
-  rather than an event, so editing `rates.tsv` and reloading is supported; it parses every
-  file before deleting anything, in one transaction. The `category` table is the third:
-  derived state the expense loader extends and verifies inside each file's own
-  transaction. Pinned by `test_an_edited_rate_replaces_the_old_one` and
+- **The three loader shapes differ on reloading.** `expense_loader` is append-only: its
+  ledger skips a file whose sha256 matches and *refuses* one that changed. A month file is
+  rewritten in place upstream, so that refusal is the ordinary path and a rebuild is the
+  cure. `currency_loader` has no ledger and replaces the whole `currency_rate` table every
+  run, so editing `rates.tsv` and reloading is supported; it parses every file before
+  deleting anything, in one transaction. The `category` table is the third: derived state
+  the expense loader extends and verifies inside each file's own transaction. Pinned by
+  `test_an_edited_rate_replaces_the_old_one` and
   `test_an_edited_file_is_refused_by_name_and_load_date`.
-- **The loader assigns the slugs, and the two invariants are checked, not assumed.**
+- **The loader assigns the slugs, and its two invariants are checked, not assumed.**
   `assign_slugs` orders nodes by `(first filename, path)`, so a reset and a reload
-  reproduce the mapping and a later-named file can only append; one that would **move** a
+  reproduce the mapping and a later-named file can only append. One that would **move** a
   stored slug is refused, as is a level that slugs to nothing, and colliding siblings are
   numbered per parent instead. The write is a plain `insert()`.
   `test_a_rebuild_reproduces_the_slugs_an_incremental_load_arrived_at` + five twins.
@@ -78,7 +77,7 @@ test or gate that pins it, or with what nothing checks.
   any lookup, so `rates.tsv` holds no `DKK DKK 1.000000` row. Pinned by
   `test_an_expense_already_in_the_target_currency_is_untouched`.
 - **`ROUND_HALF_UP` is spelled out because `Decimal` rounds half to even by default**, in
-  `aggregation.py` as well as here - they are `|`-joined siblings, so neither may import
+  `aggregation.py` as well as here. The two are `|`-joined siblings, so neither may import
   the other. `test_a_half_cent_rounds_up_rather_than_to_even` and its average twin.
 
 ## Aggregation
@@ -89,12 +88,12 @@ test or gate that pins it, or with what nothing checks.
 - **A row sums under its own path, so a total names what an expense names.** `?category=`
   filters and chooses no grain, so `aggregate` never sees it, and the grain is the row's
   own path. `test_totals_name_the_same_paths_the_list_endpoint_shows`.
-- **The conversion runs before the summing**, which is what puts the summing in Python, on
-  the terms [`docs/api.md`](../docs/api.md#asking-for-totals) states. Pinned by
+- **The conversion runs before the summing**, which puts the summing in Python, on the
+  terms [`docs/api.md`](../docs/api.md#asking-for-totals) states. Pinned by
   `test_a_total_is_the_sum_of_the_rows_the_list_endpoint_shows`.
 - **A row's optional keys are absent when they have no value.** `exclude_none=True` on the
-  route dump is the whole rule: `_total_payload` sets all six fields, and
-  `?group_by=category` is what puts `category` in the key. Pinned by
+  route dump is the rule: `_total_payload` sets all six fields, and `?group_by=category`
+  is what puts `category` in the key. Pinned by
   `test_totals_drop_the_category_key_when_it_was_not_grouped_by`, read as plain dicts.
 - **The dense calendar's extent is `min`/`max` over the records returned**, so it rests on
   no ordering of the repository's. A period nobody spent in is one bare row carrying the
@@ -102,9 +101,8 @@ test or gate that pins it, or with what nothing checks.
   `test_a_month_nobody_spent_in_is_still_a_row` and its bare-row twin.
 - **A requested bound narrows a period only when it falls inside it**, which keeps
   `?from_date=2026-01-01` honoured as the 1st even when nothing was spent until the 7th.
-  The fake filters nothing, so a March period can arrive carrying a January range, and
-  this rule is what keeps its span in order. A period's `to_date` is inclusive, from
-  `calendar.monthrange`. Pinned by
+  The fake filters nothing, so a March period can arrive carrying a January range. A
+  period's `to_date` is inclusive, from `calendar.monthrange`. Pinned by
   `test_a_range_that_cannot_touch_a_period_leaves_it_whole` and its leap-February twin.
 - **The `summary` beside `items` is the same grouped or not**: one entry per currency
   holding the mean of its period totals over the same calendar, which grouping re-keys the
@@ -118,21 +116,20 @@ test or gate that pins it, or with what nothing checks.
 
 - **The dates and the categories filter in SQL, not in the route.** The `DateRange` and
   the `CategorySelection` go to `list_expenses`, which adds one `>=`, one `<=` and one
-  `CASE` - `= slug OR LIKE slug || ':%'` per arm over a join to `category`, `autoescape`
+  `CASE`: `= slug OR LIKE slug || ':%'` per arm over a join to `category`, `autoescape`
   because a **query** value is unvalidated. Both bounds are **inclusive** and open on
   their own; `everything()` adds no clause and so no join, and nothing selected is a bare
   `false()`, so the empty selection returns an empty table. Postgres suite.
-- **A selection states where it changes.** The root carries a sign - `?category_default=`,
-  `all` unless `?category=` names a slug, which keeps every request written before
-  anything could be deselected meaning what it meant, and which is why `all` is sendable -
-  and each value flips a subtree, **the longest slug over a row deciding**. `flips()` owns
-  that order, longest first and by **levels** rather than characters.
+- **A selection states where it changes.** The root carries a sign, `?category_default=`,
+  `all` unless `?category=` names a slug, which is why `all` is sendable. Each value flips
+  a subtree, **the longest slug over a row deciding**. `flips()` owns that order, longest
+  first and by **levels** rather than characters.
   `test_flips_are_ordered_longest_path_first` and the flag's own twin.
 - **All three types validate in `__post_init__`, so the repository does not.** `DateRange`
   refuses `start > end`, `LevelRange` a level outside `1..MAX_LEVEL`, and
   `CategorySelection` a blank value and a slug flipped both ways, at **every**
-  construction, so validation lives in one place and `list_expenses` stops trusting its
-  caller. An **empty** pair of lists is legal, being the default.
+  construction, so `list_expenses` stops trusting its caller. An **empty** pair of lists
+  is legal, being the default.
   `test_the_type_refuses_an_inverted_range_however_it_is_built`.
 - **`date_range._DATE` is the accepted date form, and the only one.** `date.fromisoformat`
   also takes `20260102` and `2026-W01-1`, so the pattern is what holds the API to
@@ -159,9 +156,9 @@ test or gate that pins it, or with what nothing checks.
   modules connect, on the terms
   [`docs/database.md`](../docs/database.md#schema-and-access) states, and they TRUNCATE
   what they read.
-- **`schema.sql` is the only DDL, and `IF NOT EXISTS` never alters.** Changing a table - a
-  constraint included - means `backend-db-reset` and a reload, a live cluster skipping the
-  whole statement. It has **two** readers on those same terms: `db-init`, and
+- **`schema.sql` is the only DDL, and `IF NOT EXISTS` never alters.** Changing a table,
+  a constraint included, means `backend-db-reset` and a reload, a live cluster skipping
+  the whole statement. It has **two** readers on those same terms: `db-init`, and
   `database/Dockerfile`, which copies it into the image's `initdb.d`, where an empty data
   directory is what re-runs it. The rest of the rule is in
   [`docs/database.md`](../docs/database.md#schema-and-access). Nothing checks this.
@@ -172,10 +169,10 @@ test or gate that pins it, or with what nothing checks.
   `test_missing_database_settings_are_refused_at_startup`.
 - **Any new task reaching a server without an explicit `--port` takes the `:
   "${PGPORT:?...}"` guard.** initdb, psql and createdb each fall back to 5432 and the OS
-  username on their own, and `.env` names 5432 as well - so the fallback finds the right
-  server as the wrong user, and the guard is what aborts an unblessed shell rather than
-  letting it connect. `dev` is the exception and needs none: uvicorn *binds* its port
-  rather than reaching a server. `test_a_non_numeric_port_is_refused`.
+  username on their own, and `.env` names 5432 as well, so the fallback finds the right
+  server as the wrong user. The guard aborts an unblessed shell rather than letting it
+  connect. `dev` is the exception and needs none: uvicorn *binds* its port rather than
+  reaching a server. `test_a_non_numeric_port_is_refused`.
 
 ## Quality gates
 
@@ -183,6 +180,6 @@ test or gate that pins it, or with what nothing checks.
   warning fail the build like an error. It and ruff are configured in `pyproject.toml`
   only.
 - **In a layer list, `|` joins siblings that may *not* import each other and `:` joins
-  siblings that *may***, and the contract enforces the first. `lint-fix` is ruff alone:
-  where a new module belongs in the order is a design decision, and ruff builds no
+  siblings that *may***, and the contract enforces the first. `lint-fix` is ruff alone and
+  reorders no layer: where a new module belongs is a design decision, and ruff builds no
   cross-module graph.

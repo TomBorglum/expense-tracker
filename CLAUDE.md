@@ -1,11 +1,9 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repository.
-
 **Per-stack invariants live beside the code they govern**, in
 [`backend/CLAUDE.md`](backend/CLAUDE.md) and
-[`frontend/CLAUDE.md`](frontend/CLAUDE.md). Read the one whose tree you are about to
-touch; this file is what applies wherever you are working.
+[`frontend/CLAUDE.md`](frontend/CLAUDE.md). Read the one governing the tree being changed.
+This file applies everywhere.
 
 **Each of the three stays under 200 lines**, no line past 90 characters. What earns a
 place in any of them is under [Adding to these files](#adding-to-these-files).
@@ -14,15 +12,16 @@ place in any of them is under [Adding to these files](#adding-to-these-files).
 
 **`direnv allow` is a precondition.** The single `dotenv_if_exists backend/.env` line in
 `.envrc` puts `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` and `UVICORN_PORT` in the
-environment, and `use pixi python` puts the environment's `pytest`, `ruff` and `vitest` on
-`PATH`. `.envrc` is the only source of either. A shell that has not been blessed gets a
-`ValidationError` from the app and a `PGPORT` abort from the db tasks.
+environment. `use pixi python` puts the environment's `pytest`, `ruff` and `vitest` on
+`PATH`. `.envrc` is the only source of either. An unblessed shell gets a `ValidationError`
+from the app and a `PGPORT` abort from the db tasks.
 
 ## Working here
 
-- **The invariants in these three files are deliberate**, and every one names the test or
-  linter that pins it, or says that nothing does. **Rationale lives in these files and
-  under `docs/`, not in the source**, per the comment policy below.
+- **Every invariant in these three files names the test or linter that pins it**, or says
+  that nothing does.
+- **Rationale lives in these files and under `docs/`, not in the source**, per the comment
+  policy below.
 - **If an invariant blocks the task, say so.**
 
 ## Adding to these files
@@ -31,18 +30,18 @@ A bullet earns its place only if all three hold. Most candidates fail the first.
 
 1. **It states a property this tree holds today**, in the present tense.
 2. **Reading the code does not make that property plain.** A value with a single source of
-   truth elsewhere is already shown by the code - ruff's `select` list is in
+   truth elsewhere is already shown by the code. Ruff's `select` list is in
    `pyproject.toml` and needs no second home.
 3. **It fits in one clause.** Anything longer is a description, and descriptions belong in
    `README.md` or under `docs/`.
 
 Then state it in one to three lines and end with the test or gate that pins it, or with
 "nothing checks this". **Never restate a value that has a single source of truth
-elsewhere** - name the file instead. A bullet that wants room past 200 lines retires one.
+elsewhere**; name the file instead. A bullet that wants room past 200 lines retires one.
 
 ## Branch, merge and release rules
 
-Rationale, and the `main-protection` ruleset rule pinning each of these, is in
+The `main-protection` ruleset rule pinning each of these is named in
 [`CONTRIBUTING.md`](CONTRIBUTING.md). Nobody can bypass that ruleset.
 
 - **Never push directly to `main`.** Every change goes on a branch, through a PR.
@@ -57,21 +56,21 @@ Rationale, and the `main-protection` ruleset rule pinning each of these, is in
   (`.github/workflows/release-please.yml`). **Never hand-edit versions, git tags, or
   `CHANGELOG.md`.**
 - **A job that checks out the repository never gets `id-token: write`.** Checked-out code
-  is code that runs, and that token buys the Docker Hub credential out of AWS, which is
-  why `release.yml` splits `build` from `push`. Nothing checks this;
+  runs, and that token buys the Docker Hub credential out of AWS. `release.yml` splits
+  `build` from `push` for that reason. Nothing checks this;
   [`docs/releases.md`](docs/releases.md) has the reasoning.
 
 ## Source conventions
 
-- **This repository is public.** Nothing confidential is ever committed - real spending
+- **This repository is public.** Nothing confidential is ever committed. Real spending
   lives in the private repository `EXPENSE_DATA_DIR` points at, and the files under
   `backend/tests/data/expenses/` are synthetic fixtures. Secret scanning with push
   protection is on, and covers credentials.
 - **ASCII-only** committed source: no em-dashes, smart quotes, arrows, ellipses,
-  including the sample data under `backend/tests/data/expenses/`. PyYAML decodes UTF-8 and
-  strips a byte-order mark itself, so a developer's own uncommitted month files carry
-  Danish text fine. Nothing checks this; ruff's `RUF001`-`003` cover confusable characters
-  in Python source.
+  including the sample data under `backend/tests/data/expenses/`. A developer's own
+  uncommitted month files carry Danish text, PyYAML decoding UTF-8 and stripping a
+  byte-order mark itself. Nothing checks this; ruff's `RUF001`-`003` cover confusable
+  characters in Python source.
 - **Comments say what the code does**, and only where that is not plain from reading it.
   Rationale lives in these files and under `docs/`. Module and function docstrings are one
   line, and only where the name and signature do not already say it. This governs code,
@@ -87,11 +86,10 @@ Rationale, and the `main-protection` ruleset rule pinning each of these, is in
   bullets above and the 200 above them count. Nothing checks this;
   `awk 'length > 90' <file>` is the count.
 - **`.github/workflows/` carries under 200 comment lines in all**, however many files it
-  holds, and a comment that wants room past that retires one. It is a budget on the whole
-  directory rather than a rule per file, so the workflows compete for it the way the
-  bullets in these three files do. Nothing checks this, as nothing checks the 200 above;
+  holds, and a comment that wants room past that retires one. The budget covers the whole
+  directory rather than each file. Nothing checks this;
   `cat .github/workflows/*.yml | grep -c '^[[:space:]]*#'` is the count.
-- **Pin versions exactly** - `==` in `pixi.toml`, in both its conda tables and
+- **Pin versions exactly:** `==` in `pixi.toml`, in both its conda tables and
   `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
   Actions by SHA with a version comment.
 - **Every suppression carries a reason** beside the pragma: a comment next to
@@ -101,7 +99,7 @@ Rationale, and the `main-protection` ruleset rule pinning each of these, is in
 ## Commands
 
 **Commands live in two layers, and adding one means editing both.** The directory that
-runs a command defines it, in the manifest that owns its tools - poe tasks in
+runs a command defines it, in the manifest that owns its tools: poe tasks in
 `backend/pyproject.toml`, `scripts` in `frontend/package.json`, and
 `database/pyproject.toml`, a poe manifest and nothing else. **`pixi.toml` only forwards**,
 one prefixed one-liner per command, so `pixi run` is the single entry point spanning every
@@ -111,18 +109,18 @@ paths relative to its own manifest, which keeps every directory runnable on its 
 reasoning under
 [Where commands are defined](docs/development.md#where-commands-are-defined).
 
-**`dev` depends on `db-init`**, so `pixi run backend-dev` alone gets a backend developer a
-working API: the chain is idempotent, runs once before uvicorn, and leaves the cluster up.
-An empty `expense` or `currency_rate` table is a legitimate `200`, and the HTTP suite runs
-without PostgreSQL, as [`backend/CLAUDE.md`](backend/CLAUDE.md) states.
+**`dev` depends on `db-init`**, so `pixi run backend-dev` alone brings up a working API.
+The chain is idempotent, runs once before uvicorn, and leaves the cluster up. An empty
+`expense` or `currency_rate` table is a legitimate `200`, and the HTTP suite runs without
+PostgreSQL, as [`backend/CLAUDE.md`](backend/CLAUDE.md) states.
 
 **A warning fails the build like an error in both stacks**, by the mechanism each stack's
 file gives.
 
 ## Fast inner loop
 
-`pixi run <task>` is what CI calls. While iterating, run the one tool that covers what you
-changed; a blessed shell has it on `PATH` already:
+`pixi run <task>` is what CI calls. While iterating, run the one tool that covers the
+change; a blessed shell has it on `PATH` already:
 
 ```sh
 cd backend  && pytest tests/test_conversion.py -k half_cent
@@ -133,8 +131,8 @@ Backend `pytest` picks up `--strict-markers` and coverage from `[tool.pytest.ini
 either way. The `postgres`-marked modules need `pixi run backend-db-init` first; every
 other backend test and the whole frontend suite run without a database.
 
-Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in order
-(cheapest first, so it fails fast):
+Before opening a PR, run the gate sequence from `.github/workflows/ci.yml`, in order,
+cheapest first:
 
 ```sh
 pixi run backend-format-check && pixi run backend-lint &&
@@ -161,37 +159,37 @@ The five payload pairs share a backend half, `backend/src/expense_tracker/__init
   against `PeriodTotal`, `amount`/`currency`/`category` absent keys when they have none.
 - **The categories payload and query** + `frontend/src/api/categories.ts`: five string
   fields, `parent`/`parent_slug` absent at depth 1, separator `category_filter.SEPARATOR`.
-- **The four tables** - `backend/schema.sql` + the models in `expense_repository.py` and
+- **The four tables:** `backend/schema.sql` + the models in `expense_repository.py` and
   `currency_repository.py`; `category.slug`'s CHECK matches `category_filter.SLUG_PATH`.
-- **The local database connection** - `backend/.env` + `db-create`'s `initdb` flags and
+- **The local database connection:** `backend/.env` + `db-create`'s `initdb` flags and
   `db-init`'s `createdb`; `PGPORT` reaches `db-create` as `--set=port="$PGPORT"`.
-- **The deployed database connection** - `compose.yaml`'s `database` service +
+- **The deployed database connection:** `compose.yaml`'s `database` service +
   `backend/.env`; the pair is created on **first boot only**, so a volume ignores edits.
-- **The pixi version** - `.envrc` + the builder image in both Dockerfiles; dependabot
+- **The pixi version:** `.envrc` + the builder image in both Dockerfiles; dependabot
   ignores that image, so all three move by hand.
-- **The release workflow's path** - `.github/workflows/release.yml` + the AWS release
+- **The release workflow's path:** `.github/workflows/release.yml` + the AWS release
   role's `job_workflow_ref` condition, **in the console**: moving the file breaks it.
-- **The published image names** - `release.yml`'s `images` step + the Docker Hub
+- **The published image names:** `release.yml`'s `images` step + the Docker Hub
   repositories: renaming this GitHub repository renames what a release publishes to.
-- **The image reference formula** - `compose.yaml`'s five `image:` keys +
+- **The image reference formula:** `compose.yaml`'s five `image:` keys +
   `publish.yml`'s `image-directories`: `-<service>` must spell a directory it names.
-- **The stack's interpolation variables** - the same `image:` keys + `release.yml`'s
+- **The stack's interpolation variables:** the same `image:` keys + `release.yml`'s
   publish step: `EXPENSE_TRACKER_IMAGE_PREFIX` and `EXPENSE_TRACKER_VERSION`.
-- **`release.yml`'s caller-filled configuration** - its `workflow_call` declarations +
+- **`release.yml`'s caller-filled configuration:** its `workflow_call` declarations +
   `publish.yml`'s `with:`/`secrets:`; the `aws-role-arn` **secret** holds the account id.
-- **The Docker Hub namespace** - `DOCKERHUB_NAMESPACE` + the account the PAT in SSM
+- **The Docker Hub namespace:** `DOCKERHUB_NAMESPACE` + the account the PAT in SSM
   belongs to, **both outside this repository**.
-- **The bake target name** - the three `docker-bake.hcl` files + `release.yml`'s
+- **The bake target name:** the three `docker-bake.hcl` files + `release.yml`'s
   `bake-target`, `targets` and `set:`: `image`, which is what merges the label files.
-- **The API base URL placeholder** - `frontend/Dockerfile` +
+- **The API base URL placeholder:** `frontend/Dockerfile` +
   `frontend/docker/40-api-base-url.sh`: `__EXPENSE_TRACKER_API_BASE_URL__`.
-- **The `@` alias (`frontend/src`)** - `frontend/vite.config.ts` +
+- **The `@` alias (`frontend/src`):** `frontend/vite.config.ts` +
   `frontend/tsconfig.app.json`, each resolving it for its own tool.
-- **The `frontend/src/main.tsx` coverage exclusion** - `frontend/vite.config.ts` +
+- **The `frontend/src/main.tsx` coverage exclusion:** `frontend/vite.config.ts` +
   `sonar-project.properties`: one exclusion, two tools that each name it.
-- **The `frontend/src/routeTree.gen.ts` exclusion** - `frontend/.prettierignore` +
+- **The `frontend/src/routeTree.gen.ts` exclusion:** `frontend/.prettierignore` +
   `frontend/vite.config.ts` + `sonar-project.properties`; prettier's half has the gate.
-- **`VITE_API_BASE_URL`** - `frontend/.env` + `frontend/src/vite-env.d.ts`: set in the
+- **`VITE_API_BASE_URL`:** `frontend/.env` + `frontend/src/vite-env.d.ts`: set in the
   first, typed in the second.
-- **daisyUI's `@plugin` descriptors** - `frontend/src/styles/app.css` + the `plugin`
+- **daisyUI's `@plugin` descriptors:** `frontend/src/styles/app.css` + the `plugin`
   override in `frontend/eslint.config.ts`, which names the descriptors this repo uses.
