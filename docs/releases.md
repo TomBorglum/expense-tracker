@@ -68,11 +68,14 @@ carries the repository its image publishes to, so no step in `push` names a dire
 Before copying, `push` compares the two sets, catching a build that uploaded nothing or an
 artifact that arrived twice.
 
-`compose` is a matrix over the compose directories. Per directory it checks the directory
-out, renders it under `--profile '*'` with nothing exported - which is what proves the
-`.env` beside the file supplies every variable - and uploads the whole directory, the
-`.env` included. **That render is the only gate on a compose file anywhere**, `ci.yml`
-never reading one. The job also asserts `docker compose publish` exists on the runner.
+`compose` loops over the compose directories rather than matrixing them, rendering only
+and building nothing. Per directory it renders under `--profile '*'` with nothing exported
+- which is what proves the `.env` beside the file supplies every variable - and stages the
+whole directory, the `.env` included. One artifact carries them all, plus the manifest of
+directory names `push` reads. **That render is the only gate on a compose file anywhere**,
+`ci.yml` never reading one. The job also asserts `docker compose publish` exists on the
+runner. It carries no `if:` and so never skips, which is what lets `push` keep a plain
+`needs` gate when no compose directory is given.
 
 **Moving or renaming `release.yml` breaks the AWS trust policy**, which pins
 `job_workflow_ref` to its path. See [The AWS objects](#the-aws-objects).

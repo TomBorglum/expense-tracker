@@ -328,45 +328,52 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # `push` checks nothing out, so this job checks each compose directory out on its behalf
-  # - which makes it the second job running repository code, hence no `id-token: write`. It
-  # is also the only gate on a compose file anywhere; ci.yml never reads one.
+  # `push` checks nothing out, so this job checks every compose directory out on its
+  # behalf - which makes it the second job running repository code, hence no
+  # `id-token: write`. It is also the only gate on a compose file anywhere; ci.yml reads
+  # none. A LOOP RATHER THAN A MATRIX, and no `if:`: it renders and builds nothing, so
+  # there is no parallelism worth buying, and a job that always runs never skips - which
+  # is what lets `push` keep the plain `needs` gate on an empty input.
   compose:
-    if: inputs.compose-directories != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        directory: ${{ fromJSON(inputs.compose-directories) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # A job holding repository code must not also hold a credential for it.
           persist-credentials: false
 
-      - name: Validate the ${{ matrix.directory }} compose file
+      - name: Validate and stage every compose directory
         env:
-          DIRECTORY: ${{ matrix.directory }}
+          COMPOSE_DIRECTORIES: ${{ inputs.compose-directories }}
         run: |
           set -euo pipefail
           docker compose version
           # Experimental when it was added, so a runner whose compose predates it would
           # otherwise fail a release at its very last step.
           docker compose publish --help > /dev/null
-          # `*` rather than a profile named here: which profiles a stack declares is the
-          # stack's business, and `config` renders only the services a profile selects.
-          # Nothing is exported, so this renders from the directory's own .env alone,
-          # which is what proves that file supplies every variable the publish will need.
-          docker compose -f "$DIRECTORY/compose.yaml" --profile '*' config --quiet
+          mkdir -p /tmp/stacks
+          # ALWAYS written, empty input included, so the artifact is never empty.
+          printf '%s' "$COMPOSE_DIRECTORIES" | jq -r '.[]' > /tmp/stacks/directories
+          while read -r directory; do
+            [ -n "$directory" ] || continue
+            # `*` rather than a profile named here: which profiles a stack declares is the
+            # stack's business, and `config` renders only the services a profile selects.
+            # Nothing is exported, so this renders from the directory's own .env alone,
+            # which proves that file supplies every variable the publish will need.
+            docker compose -f "$directory/compose.yaml" --profile '*' config --quiet
+            # The whole directory: the .env travels beside the file that needs it.
+            mkdir -p "/tmp/stacks/$directory"
+            cp -R "$directory/." "/tmp/stacks/$directory/"
+            echo "staged $directory"
+          done < /tmp/stacks/directories
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: compose-${{ matrix.directory }}
-          # The whole directory, so the .env travels to `push` beside the file that needs
-          # it. Hidden files are excluded by default, which is exactly the .env.
-          path: ${{ matrix.directory }}/
+          name: compose
+          # Hidden files are excluded by default, which is exactly the .env files.
+          path: /tmp/stacks/
           include-hidden-files: true
           # The image archives' retention, for the same reason.
           retention-days: 1
@@ -376,13 +383,7 @@ jobs:
   # SHA-pinned action or a `run` block written in this file.
   push:
     needs: [meta, build, compose]
-    # `compose` is SKIPPED when no compose directory was given, and a skipped `needs`
-    # skips this job unless the condition says otherwise - hence `!cancelled()` and a
-    # per-job result, rather than the bare event check this carried before.
-    if: >-
-      !cancelled() && github.event_name == 'release'
-      && needs.meta.result == 'success' && needs.build.result == 'success'
-      && needs.compose.result != 'failure' && needs.compose.result != 'cancelled'
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       # A job-level block replaces the workflow-level one rather than merging, so
@@ -441,9 +442,8 @@ jobs:
           path: /tmp/images
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: inputs.compose-directories != '[]'
         with:
-          pattern: compose-*
+          name: compose
           path: /tmp/compose
 
       # BEFORE regctl-installer, and load-bearing: that installer verifies its download
@@ -558,13 +558,11 @@ jobs:
 
       # AFTER the copy above, which is why this step lives in this job at all:
       # --resolve-image-digests reads each digest back OUT of the registry. ONE PUBLISH PER
-      # TAG, each resolving against that tag's own images. docs/releases.md says
-      # what the artifact ends up holding.
-      # THE ONLY TWO NAMES THIS WORKFLOW PUTS INTO A COMPOSE FILE. The shell environment
-      # outranks an .env, so these win over the directory's own file, which supplies
-      # every other variable and is the only thing that knows what they are called.
+      # TAG, each resolving against that tag's own images, and docs/releases.md says what
+      # the artifact ends up holding. IMAGE_PREFIX and IMAGE_VERSION are THE ONLY TWO
+      # NAMES THIS WORKFLOW PUTS INTO A COMPOSE FILE: the shell environment outranks an
+      # .env, so they win over the directory's own file, which supplies the rest.
       - name: Publish every stack to Docker Hub
-        if: inputs.compose-directories != '[]'
         env:
           COMPOSE_TAGS: ${{ needs.meta.outputs.compose-tags }}
           COMPOSE_REPOSITORIES: ${{ needs.meta.outputs.compose-repositories }}
@@ -575,11 +573,19 @@ jobs:
           export IMAGE_PREFIX
           printf '%s\n' "$COMPOSE_TAGS" > /tmp/compose-tags
           : > /tmp/compose-digests
+          stacks=0
           published=0
-          for dir in /tmp/compose/compose-*/; do
-            [ -d "$dir" ] || continue
-            directory="${dir%/}"; directory="${directory##*/compose-}"
-            repository="$(printf '%s' "$COMPOSE_REPOSITORIES" | jq -r --arg d "$directory" '.[$d]')"
+          # The manifest `compose` staged: a list, not a glob, and an empty one is a
+          # release with no stack rather than a failure.
+          while read -r directory; do
+            [ -n "$directory" ] || continue
+            stacks=$((stacks + 1))
+            repository="$(printf '%s' "$COMPOSE_REPOSITORIES" \
+              | jq -r --arg d "$directory" '.[$d] // empty')"
+            if [ -z "$repository" ]; then
+              echo "::error::no repository was composed for $directory."
+              exit 1
+            fi
             last=""
             while read -r ref; do
               [ -n "$ref" ] || continue
@@ -587,11 +593,13 @@ jobs:
               # The repository holds no port, so the last colon is the tag's.
               export IMAGE_VERSION="${ref##*:}"
               echo "publishing $directory -> $ref, naming images at :$IMAGE_VERSION"
-              docker compose -f "$dir/compose.yaml" publish "$ref" \
-                --resolve-image-digests --yes
+              docker compose -f "/tmp/compose/$directory/compose.yaml" publish "$ref" \
+                --resolve-image-digests --yes < /dev/null
               published=$((published + 1))
               last="$ref"
             done < /tmp/compose-tags
+            # A derivation that yielded nothing would otherwise leave the images
+            # published and no stack describing them.
             if [ -z "$last" ]; then
               echo "::error::no tag was derived for $directory, so it was not published."
               exit 1
@@ -599,14 +607,8 @@ jobs:
             # Read back from the registry: the signature below covers content, not a name.
             printf '%s@%s\n' "$repository" "$(regctl manifest digest "$last")" \
               >> /tmp/compose-digests
-          done
-          # A derivation that yielded nothing would otherwise leave the images published
-          # and no stack describing them.
-          if [ "$published" -eq 0 ]; then
-            echo "::error::no compose tags were derived, so no stack was published."
-            exit 1
-          fi
-          echo "$published tag(s) published"
+          done < /tmp/compose/directories
+          echo "$stacks stack(s), $published tag(s) published"
           cat /tmp/compose-digests
 
       # Keyless, reusing this job's own OIDC token. The digest is the index's, so one
@@ -618,13 +620,11 @@ jobs:
             cosign sign --yes "$(cat "$dir/repository")@$(cat "$dir/digest")"
           done
           # cosign signs a digest, so the artifact's media type is nothing it has to know.
-          # The file is absent when no compose directory was given.
-          if [ -f /tmp/compose-digests ]; then
-            while read -r ref; do
-              [ -n "$ref" ] || continue
-              cosign sign --yes "$ref"
-            done < /tmp/compose-digests
-          fi
+          # Empty when no compose directory was given.
+          while read -r ref; do
+            [ -n "$ref" ] || continue
+            cosign sign --yes "$ref"
+          done < /tmp/compose-digests
 
       - name: Log out of Docker Hub
         if: always()
