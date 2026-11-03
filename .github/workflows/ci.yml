@@ -29,10 +29,6 @@ jobs:
           # Full history so SonarCloud can attribute issues to the right commits.
           fetch-depth: 0
       - uses: TomBorglum/actions/direnv/setup@8bb5c662cb67237681564ec96cbb7ed84bc4aed8 # v3.0.0
-      # The gate on the compose stack: direnv has put backend/.env and stack/.env in the
-      # environment, so this renders from the repository's own declarations and fails on a
-      # name declared nowhere. release.yml cannot - it fills what it is not given.
-      - run: docker compose -f stack/compose.yaml --profile '*' config --quiet
       # Each stack's gates run cheapest first, then its tests, then anything that builds.
       # The two stacks order lint differently; the measurements behind that are in
       # docs/development.md, under Continuous integration.

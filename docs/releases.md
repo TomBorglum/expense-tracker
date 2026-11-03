@@ -78,11 +78,11 @@ named explicitly and the directory's own file goes second, where the later file 
 bind source is the deployment's to name, and **the published artifact is the source file
 byte for byte** - one layer, `application/vnd.docker.compose.file+yaml`, every `${...}`
 intact, measured against a scratch registry - so no placeholder reaches what is published.
-`ci.yml` renders the one stack in this repository in a direnv-blessed shell, which is what
-fails a name declared nowhere. One artifact carries every directory, plus the manifest of
-directory names `push` reads. The job also asserts `docker compose publish` exists on the
-runner. It carries no `if:` and so never skips, which is what lets `push` keep a plain
-`needs` gate when no compose directory is given.
+Nothing proves a name is declared at all; a missing one fails only a local `up`. One
+artifact carries every directory, plus the manifest of directory names `push` reads. The
+job also asserts `docker compose publish` exists on the runner. It carries no `if:` and so
+never skips, which is what lets `push` keep a plain `needs` gate when no compose directory
+is given.
 
 **Moving or renaming `release.yml` breaks the AWS trust policy**, which pins
 `job_workflow_ref` to its path. See [The AWS objects](#the-aws-objects).
