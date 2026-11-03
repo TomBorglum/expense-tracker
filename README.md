@@ -474,20 +474,20 @@ travels in the image.
 ### The two directories it mounts
 
 ```sh
-CURRENCY_DATA_DIR   # backend/.env: $PWD/data/currencies
-EXPENSE_DATA_DIR    # backend/.env: $HOME/projects/expense-data/data
+CURRENCY_DATA_DIR   # stack/.env: ../backend/data/currencies
+EXPENSE_DATA_DIR    # stack/.env: $HOME/projects/expense-data/data
 ```
 
-Both are named in `backend/.env`, being facts about the backend's data rather than about
-the stack, and both arrive **absolute**: direnv expands `$PWD` as that file's own
-directory. Both are mounted read-only, and both must be readable by **uid 65532**, which
-is what the API image runs as.
+Both are named in **`stack/.env`**, where every name the stack interpolates is declared:
+`release.yml` loads the `.env` beside a compose file and no other. Both are mounted
+read-only, and both must be readable by **uid 65532**, which is what the API image runs
+as.
 
-So **a blessed shell points `load-expenses` at the private expense repository with no
-further setting**. To read the committed fixtures instead, name them:
-`EXPENSE_DATA_DIR=$PWD/../backend/tests/data/expenses docker compose run --rm
-load-expenses`. Neither variable has a default, so a shell that is not blessed is refused
-rather than served the wrong directory.
+The rates live in this repository, so that path is relative and resolves against the
+compose file's own directory. The month files do not, so **`load-expenses` points at the
+private expense repository with no further setting**. To read the committed fixtures
+instead, name them: `EXPENSE_DATA_DIR=../backend/tests/data/expenses docker compose run
+--rm load-expenses`.
 
 Both mounts carry **`create_host_path: false`**. Compose creates a missing bind source by
 default, and the currency loader replaces the whole rate table from whatever it finds, so
@@ -507,8 +507,7 @@ from, a checkout, a scratch directory holding one `.env`, or an `oci://` referen
 ## Configuration
 
 Where this checkout's backend listens is written down once, in **`backend/.env`**: the
-four facts `psql` and `createdb` already read, the port `uvicorn` already reads, and where
-the expense files are.
+four facts `psql` and `createdb` already read, and the port `uvicorn` already reads.
 
 ```
 PGHOST=127.0.0.1
@@ -516,17 +515,17 @@ PGPORT=5432
 PGUSER=expense_tracker
 PGDATABASE=expense_tracker
 UVICORN_PORT=8000
-EXPENSE_DATA_DIR=$HOME/projects/expense-data/data
 ```
 
-`EXPENSE_DATA_DIR` is the only value here that is a fact about a *machine* rather than the
-project, pointing outside the checkout at a clone of the private data repository. direnv
-expands `$HOME` as it loads the file, so the committed default is a real path wherever
-that clone sits beside this one; anywhere else, set it in **`backend/.env.local`**, which
-`.envrc` loads afterwards and which is gitignored. Unset and set-but-absent differ: unset
-aborts on the guard, set-but-absent loads nothing and succeeds. That is what tells a
-machine without the data repository from one whose shell was never blessed. See [Loading
-expenses](docs/database.md#loading-expenses).
+The deployed stack's names are in **`stack/.env`**, which `.envrc` loads as well. That
+file holds `EXPENSE_DATA_DIR`, what `poe load-expenses` reads and the only value in either
+file that is a fact about a *machine* rather than the project. direnv expands `$HOME` as
+it loads the file, so the committed default is a real path wherever the clone of the
+private data repository sits beside this one; anywhere else, set it in
+**`backend/.env.local`**, which `.envrc` loads afterwards and which is gitignored. Unset
+and set-but-absent differ: unset aborts on the guard, set-but-absent loads nothing and
+succeeds. That tells a machine without the data repository from one whose shell was never
+blessed. See [Loading expenses](docs/database.md#loading-expenses).
 
 Every one of them is a name the tool itself looks for, which is why no task passes
 `--host`, `--port` or `--username`. `UVICORN_PORT` is the API's half of that: uvicorn's
@@ -541,6 +540,7 @@ the one launcher that does it here:
 ```sh
 # .envrc
 dotenv_if_exists backend/.env
+dotenv_if_exists stack/.env
 dotenv_if_exists backend/.env.local
 ```
 
@@ -567,11 +567,11 @@ python -m expense_tracker.expense_loader ~/exports # any directory, not the conf
 `psql`, `pg_dump` and friends need no arguments, and a test run started from an editor
 reaches the same cluster as `pixi run backend-test`.
 
-**Precedence is short.** `backend/.env` *overwrites* what is already in the environment,
-so an `export PGPORT=...` ahead of it leaves the port as the file states it, and
-`backend/.env.local` overwrites that in turn. Above both sits **`DATABASE_URL`, which
-overrides the four parts wholesale**. That is the deployment path, and a deployment
-supplies its own. `database_url()` returns a `sqlalchemy.URL` rather than a `str`, so
+**Precedence is short.** Each dotenv *overwrites* what is already in the environment, in
+`.envrc` order, so an `export PGPORT=...` ahead of them leaves the port as `backend/.env`
+states it, and `backend/.env.local` overwrites both in turn. Above them all sits
+**`DATABASE_URL`, which overrides the four parts wholesale**: the deployment path, where
+a deployment supplies its own. `database_url()` returns a `sqlalchemy.URL` not a `str`, so
 `str()` and `repr()` render any password as `***`.
 
 **Every one of them is required.** With no `DATABASE_URL` and none of the four names in
@@ -582,7 +582,7 @@ is baked into the cluster at `initdb` time, so follow that edit with `pixi run
 backend-db-reset && pixi run backend-db-init`; `UVICORN_PORT` takes effect on the next
 `pixi run backend-dev`. That leaves the file a committed default edited in place, which
 shows up as a dirty working tree. `backend/.env.local` is where a value that names one
-machine goes. `.gitignore` ignores **every** `.env` variant and names back only the two
+machine goes. `.gitignore` ignores **every** `.env` variant and names back only the three
 committed defaults.
 
 The frontend has exactly one variable of its own, `VITE_API_BASE_URL`. See [Where the API

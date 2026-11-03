@@ -12,10 +12,10 @@ place in any of them is under [Adding to these files](#adding-to-these-files).
 
 **`direnv allow` is a precondition.** Two `dotenv_if_exists` lines in `.envrc` put
 `backend/.env` and `stack/.env` in the environment, and they are the only loader of
-either: **a variable is named in exactly one `.env`**, the one owning what it describes.
-`use pixi python` puts the environment's `pytest`, `ruff` and `vitest` on `PATH`. An
-unblessed shell gets a `ValidationError` from the app and a `PGPORT` abort from the db
-tasks.
+either: **a variable is named in exactly one `.env`**, and **`stack/.env` names every one
+`stack/compose.yaml` interpolates**, `release.yml` loading the `.env` beside a compose
+file and no other. `use pixi python` puts `pytest`, `ruff` and `vitest` on `PATH`. An
+unblessed shell gets a `ValidationError` from the app and a `PGPORT` abort from db tasks.
 
 ## Working here
 
