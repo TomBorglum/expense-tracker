@@ -10,11 +10,12 @@ place in any of them is under [Adding to these files](#adding-to-these-files).
 
 ## Prerequisites
 
-**`direnv allow` is a precondition.** The single `dotenv_if_exists backend/.env` line in
-`.envrc` puts `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` and `UVICORN_PORT` in the
-environment. `use pixi python` puts the environment's `pytest`, `ruff` and `vitest` on
-`PATH`. `.envrc` is the only source of either. An unblessed shell gets a `ValidationError`
-from the app and a `PGPORT` abort from the db tasks.
+**`direnv allow` is a precondition.** Two `dotenv_if_exists` lines in `.envrc` put
+`backend/.env` and `stack/.env` in the environment, and they are the only loader of
+either: **a variable is named in exactly one `.env`**, the one owning what it describes.
+`use pixi python` puts the environment's `pytest`, `ruff` and `vitest` on `PATH`. An
+unblessed shell gets a `ValidationError` from the app and a `PGPORT` abort from the db
+tasks.
 
 ## Working here
 
@@ -89,6 +90,9 @@ The `main-protection` ruleset rule pinning each of these is named in
   holds, and a comment that wants room past that retires one. The budget covers the whole
   directory rather than each file. Nothing checks this;
   `cat .github/workflows/*.yml | grep -c '^[[:space:]]*#'` is the count.
+- **Every `${...}` in a compose file is required and names no default**, so an unset one
+  stops `up`, `config` and `publish` alike, and each `:?` message names the `.env` that
+  owns the variable. Nothing checks this; `config --variables` reports each `REQUIRED`.
 - **Pin versions exactly:** `==` in `pixi.toml`, in both its conda tables and
   `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
   Actions by SHA with a version comment.
@@ -163,7 +167,7 @@ The five payload pairs share a backend half, `backend/src/expense_tracker/__init
   `currency_repository.py`; `category.slug`'s CHECK matches `category_filter.SLUG_PATH`.
 - **The local database connection:** `backend/.env` + `db-create`'s `initdb` flags and
   `db-init`'s `createdb`; `PGPORT` reaches `db-create` as `--set=port="$PGPORT"`.
-- **The deployed database connection:** `compose.yaml`'s `database` service +
+- **The deployed database connection:** `stack/compose.yaml`'s `database` service +
   `backend/.env`; the pair is created on **first boot only**, so a volume ignores edits.
 - **The pixi version:** `.envrc` + the builder image in both Dockerfiles; dependabot
   ignores that image, so all three move by hand.
@@ -171,10 +175,10 @@ The five payload pairs share a backend half, `backend/src/expense_tracker/__init
   role's `job_workflow_ref` condition, **in the console**: moving the file breaks it.
 - **The published image names:** `release.yml`'s `images` step + the Docker Hub
   repositories: renaming this GitHub repository renames what a release publishes to.
-- **The image reference formula:** `compose.yaml`'s five `image:` keys +
+- **The image reference formula:** `stack/compose.yaml`'s five `image:` keys +
   `publish.yml`'s `image-directories`: `-<service>` must spell a directory it names.
 - **The stack's interpolation variables:** the same `image:` keys + `release.yml`'s
-  publish step: `EXPENSE_TRACKER_IMAGE_PREFIX` and `EXPENSE_TRACKER_VERSION`.
+  publish step: `IMAGE_PREFIX` and `IMAGE_VERSION`, the only two it sets.
 - **`release.yml`'s caller-filled configuration:** its `workflow_call` declarations +
   `publish.yml`'s `with:`/`secrets:`; the `aws-role-arn` **secret** holds the account id.
 - **The Docker Hub namespace:** `DOCKERHUB_NAMESPACE` + the account the PAT in SSM

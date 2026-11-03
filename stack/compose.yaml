@@ -12,6 +12,13 @@
 # below is `expense-tracker_database-data` wherever the file is loaded from - a checkout, a
 # scratch directory holding one .env, or an `oci://` reference. `docker compose down -v`
 # then reaches the same volume every time.
+#
+# EVERY interpolation below is REQUIRED and none carries a default, so an unset variable
+# stops `up`, `config` and `publish` alike with the variable's name in the message. Each
+# `:?` message names the file that owns the variable: .env beside this file for the three
+# the stack itself needs, backend/.env for the two host directories. direnv loads both.
+# IMAGE_PREFIX and IMAGE_VERSION are the two names release.yml exports when it publishes
+# this file, which is the whole of what that workflow knows about this repository.
 name: expense-tracker
 
 services:
@@ -19,7 +26,7 @@ services:
   # directory. So this service needs no init script, no migration step and no ordering
   # against anything: it is the first thing up and the only thing that writes.
   database:
-    image: ${EXPENSE_TRACKER_IMAGE_PREFIX:-expense-tracker}-database:${EXPENSE_TRACKER_VERSION:-dev}
+    image: ${IMAGE_PREFIX:?stack/.env}-database:${IMAGE_VERSION:?stack/.env}
     # The pair backend/.env's PGUSER and PGDATABASE have to agree with, which CLAUDE.md
     # carries as a pair nothing checks. The entrypoint creates both on first boot, and
     # POSTGRES_USER becomes the superuser, so an existing volume ignores a change here.
@@ -73,7 +80,7 @@ services:
   # with. Whichever port the local cluster listens on is a fact about a developer's host,
   # not about this stack.
   backend:
-    image: ${EXPENSE_TRACKER_IMAGE_PREFIX:-expense-tracker}-backend:${EXPENSE_TRACKER_VERSION:-dev}
+    image: ${IMAGE_PREFIX:?stack/.env}-backend:${IMAGE_VERSION:?stack/.env}
     environment:
       PGHOST: database
       PGPORT: 5432
@@ -81,7 +88,7 @@ services:
       PGDATABASE: expense_tracker
     # Published because the BROWSER calls this port, not the SPA container. The host port
     # is the one API_BASE_URL names below, so the two move together: serving the API
-    # somewhere other than 8000 means setting EXPENSE_TRACKER_API_BASE_URL as well.
+    # somewhere other than 8000 means setting API_BASE_URL as well.
     ports:
       - "8000:8000"
     # service_healthy rather than service_started: the API answers 200 with an empty items
@@ -98,7 +105,7 @@ services:
   # The SPA, served by unprivileged nginx on 8080 - a privileged port being out of reach of
   # the uid it runs as.
   frontend:
-    image: ${EXPENSE_TRACKER_IMAGE_PREFIX:-expense-tracker}-frontend:${EXPENSE_TRACKER_VERSION:-dev}
+    image: ${IMAGE_PREFIX:?stack/.env}-frontend:${IMAGE_VERSION:?stack/.env}
     # The origin the BROWSER should call, which is why it cannot be http://backend:8000:
     # the bundle runs on the host's browser, where that name does not resolve. The image's
     # own entrypoint script rewrites the build-time placeholder across the document root
@@ -106,7 +113,7 @@ services:
     # misconfiguration here stops the container rather than serving an app that reaches
     # nothing. Wildcard CORS is what lets 8080 call 8000.
     environment:
-      API_BASE_URL: ${EXPENSE_TRACKER_API_BASE_URL:-http://localhost:8000}
+      API_BASE_URL: ${API_BASE_URL:?stack/.env}
     ports:
       - "8080:8080"
     # No depends_on. Nothing in this container talks to the API - the browser does - so an
@@ -129,9 +136,8 @@ services:
   # is what it would take to run both in one container, and there is none.
   #
   # Both mounts are read-only, and both host directories must be readable by uid 65532.
-  # Both interpolations take a default deliberately: a bare ${VAR} resolves to an EMPTY
-  # bind source, which compose rejects, so an unset variable would break `compose config`
-  # and the publish that reads it.
+  # Both interpolations are required: a bare ${VAR} resolves to an EMPTY bind source and
+  # compose rejects that without saying which variable was missing, where `:?` names it.
   #
   # Both are also LONG syntax carrying `create_host_path: false`, which is the one setting
   # here with data loss behind it. Compose creates a missing bind source by default, so an
@@ -140,13 +146,13 @@ services:
   # deletes every rate and reports `0 files read` with exit 0. Refusing to create the path
   # turns that into a container that does not start.
   #
-  # It matters most where a checkout does not exist. The defaults below are RELATIVE, and
-  # a relative bind source in a file loaded from `oci://` resolves against compose's own
-  # download cache rather than the current directory - measured, not assumed - so a
-  # deployment names both directories absolutely or loads nothing at all. README says so
-  # under Deployment.
+  # It matters most where a checkout does not exist. A relative bind source in a file
+  # loaded from `oci://` resolves against compose's own download cache rather than the
+  # current directory - measured, not assumed - so both names below are set absolutely,
+  # in backend/.env from a blessed shell and by the operator anywhere else. README says
+  # so under Deployment.
   load-currencies:
-    image: ${EXPENSE_TRACKER_IMAGE_PREFIX:-expense-tracker}-backend:${EXPENSE_TRACKER_VERSION:-dev}
+    image: ${IMAGE_PREFIX:?stack/.env}-backend:${IMAGE_VERSION:?stack/.env}
     profiles: ["load"]
     entrypoint: ["/app/.pixi/envs/backend/bin/python", "-m", "expense_tracker.currency_loader"]
     command: ["/currencies"]
@@ -160,7 +166,7 @@ services:
     # event, so re-running this after editing rates.tsv is the supported path.
     volumes:
       - type: bind
-        source: ${EXPENSE_TRACKER_CURRENCIES_DIR:-./backend/data/currencies}
+        source: ${CURRENCY_DATA_DIR:?backend/.env}
         target: /currencies
         read_only: true
         bind:
@@ -172,7 +178,7 @@ services:
     # a finished loader forever.
 
   load-expenses:
-    image: ${EXPENSE_TRACKER_IMAGE_PREFIX:-expense-tracker}-backend:${EXPENSE_TRACKER_VERSION:-dev}
+    image: ${IMAGE_PREFIX:?stack/.env}-backend:${IMAGE_VERSION:?stack/.env}
     profiles: ["load"]
     entrypoint: ["/app/.pixi/envs/backend/bin/python", "-m", "expense_tracker.expense_loader"]
     command: ["/expenses"]
@@ -191,7 +197,7 @@ services:
     # reloading, not by re-running this. See the reload sequence in README.
     volumes:
       - type: bind
-        source: ${EXPENSE_DATA_DIR:-./backend/tests/data/expenses}
+        source: ${EXPENSE_DATA_DIR:?backend/.env}
         target: /expenses
         read_only: true
         bind:

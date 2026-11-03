@@ -13,7 +13,7 @@ holds only what spans both. Locally that means two processes.
 expense-tracker/
   pixi.toml, pixi.lock          # environments, and one `pixi run` task per command
   sonar-project.properties      # one Sonar project spanning both languages
-  compose.yaml                  # the deployment: three services, two profiled loaders
+  stack/                        # the deployment: three services, two profiled loaders
   .github/                      # CI, release-please, dependabot
   docs/                         # reference for each subsystem
   backend/
@@ -62,9 +62,9 @@ PostgreSQL arrives with it. The server is a conda-forge package pinned in `pixi.
 [Database](#database).
 
 Docker is the one tool pixi does not supply. The three `*-image` tasks call for it, and so
-does `compose.yaml`, which is the whole deployment; the development loop runs without
-either. A machine without it gets `docker: command not found` from those tasks. See
-[Container images](#container-images) and [Deployment](#deployment).
+does `stack/compose.yaml`, which is the whole deployment; the development loop runs
+without either. A machine without it gets `docker: command not found` from those tasks.
+See [Container images](#container-images) and [Deployment](#deployment).
 
 `use pixi` comes from a direnv library. On a workstation it is the one
 [`wsl-cloud-init`](https://github.com/TomBorglum/wsl-cloud-init) provisions; in CI, the
@@ -334,10 +334,12 @@ vulnerability gate and the AWS objects behind it, is in
 
 ## Deployment
 
-**`compose.yaml` is the deployment.** There is no chart, no manifest and no deploy script
-beside it: one file describing the three images as three services, plus the two loaders
-behind a `load` profile, on one network with one volume. The target is a single host, a
-laptop, and `docker compose up` is the whole operation.
+**`stack/compose.yaml` is the deployment.** There is no chart, no manifest and no deploy
+script beside it: one file describing the three images as three services, plus the two
+loaders behind a `load` profile, on one network with one volume. The target is a single
+host, a laptop, and `docker compose up` is the whole operation. The directory is what
+`publish.yml` hands `release.yml` as a compose directory, and its name is the suffix the
+published artifact carries.
 
 Every service names an `image:` and none a `build:`. `docker compose publish` refuses a
 service carrying `build` without `image`, and a release publishes this file as an OCI
@@ -375,24 +377,25 @@ directory holding one `.env`:
 
 ```sh
 cat > .env <<'EOF'
-EXPENSE_TRACKER_CURRENCIES_DIR=/home/you/somewhere/currencies
+API_BASE_URL=http://localhost:8000
+CURRENCY_DATA_DIR=/home/you/somewhere/currencies
 EXPENSE_DATA_DIR=/home/you/projects/expense-data/data
 EOF
 
-stack=oci://docker.io/tomborglum/expense-tracker:2.1.0
+stack=oci://docker.io/tomborglum/expense-tracker-stack:2.1.0
 docker compose -f "$stack" up -d -y
 printf 'y\n' | docker compose -f "$stack" run --rm -T load-currencies
 printf 'y\n' | docker compose -f "$stack" run --rm -T load-expenses
 ```
 
-That `.env` is the only state the host keeps. The images come out of the artifact pinned
-by digest, so neither `EXPENSE_TRACKER_IMAGE_PREFIX` nor `EXPENSE_TRACKER_VERSION` has any
-effect here. The artifact's tag is what selects a version, and [The published
+That `.env` is the only state the host keeps, and **all three names are required**: the
+file carries no defaults, so an unset one stops `up` and names itself. The images come out
+of the artifact pinned by digest, so neither `IMAGE_PREFIX` nor `IMAGE_VERSION` is asked
+for here. The artifact's tag is what selects a version, and [The published
 stack](docs/releases.md#the-published-stack) says why.
 
 - **A relative bind source resolves against compose's download cache**, not the current
-  directory. The two defaults in the file are relative and correct for a checkout, so a
-  host holding none must name both directories **absolutely**, as the `.env` above does.
+  directory, so both directories are named **absolutely**, as the `.env` above does.
   `create_host_path: false` is what turns a missing one into a container that refuses to
   start rather than an empty mount.
 - **Loading an `oci://` file prompts** for the interpolation variables and the sources
@@ -405,31 +408,33 @@ stack](docs/releases.md#the-published-stack) says why.
 
 ### Running it from this checkout
 
-The three image references default to the local `:dev` tags, which are exactly what the
-`*-image` tasks build, so a checkout needs no variables at all:
+A blessed shell already carries every variable the file requires, `stack/.env` naming the
+local `:dev` tags the `*-image` tasks build, so a checkout needs no setting at all. **The
+commands in this section and the two below run from `stack/`**, which is what makes the
+`.env` beside the file compose's own too:
 
 ```sh
 pixi run backend-image && pixi run database-image && pixi run frontend-image
-docker compose up -d
+cd stack && docker compose up -d
 ```
 
 The SPA is then on <http://localhost:8080> and the API on <http://localhost:8000>. **8000
 is also the port `pixi run backend-dev` binds**, so the two cannot run at once; stop one
 before starting the other, or move the stack with the variables below.
 
-Which images it runs is two variables, `EXPENSE_TRACKER_IMAGE_PREFIX` (default
-`expense-tracker`) and `EXPENSE_TRACKER_VERSION` (default `dev`), composing as
-`<prefix>-<service>:<version>`, the shape [Releases](#releases) composes published names
-in. Pointing the stack at a release is one setting, and **no published name is written
-down in this file either**:
+Which images it runs is two variables, `IMAGE_PREFIX` and `IMAGE_VERSION`, `stack/.env`
+naming them `expense-tracker` and `dev`, composing as `<prefix>-<service>:<version>` - the
+shape [Releases](#releases) composes published names in, and the two names
+`release.yml` sets when it publishes. A shell variable outranks that file, so pointing the
+stack at a release is one setting and **no published name is written down anywhere here**:
 
 ```sh
-EXPENSE_TRACKER_IMAGE_PREFIX=<namespace>/expense-tracker \
-EXPENSE_TRACKER_VERSION=2.1.0 docker compose up -d
+IMAGE_PREFIX=<namespace>/expense-tracker \
+IMAGE_VERSION=2.1.0 docker compose up -d
 ```
 
-Where the browser should reach the API is a third, `EXPENSE_TRACKER_API_BASE_URL`,
-defaulting to `http://localhost:8000`. **It cannot be `http://backend:8000`**: the bundle
+Where the browser should reach the API is a third, `API_BASE_URL`, which `stack/.env` sets
+to `http://localhost:8000`. **It cannot be `http://backend:8000`**: the bundle
 runs in the host's browser, where that name does not resolve. The SPA image's entrypoint
 refuses an absent value and one carrying a path, so a mistake here stops that container
 rather than serving an app that reaches nothing. Moving the API off host port 8000 means
@@ -469,16 +474,20 @@ travels in the image.
 ### The two directories it mounts
 
 ```sh
-EXPENSE_TRACKER_CURRENCIES_DIR   # default ./backend/data/currencies
-EXPENSE_DATA_DIR                 # default ./backend/tests/data/expenses
+CURRENCY_DATA_DIR   # backend/.env: $PWD/data/currencies
+EXPENSE_DATA_DIR    # backend/.env: $HOME/projects/expense-data/data
 ```
 
-Both are mounted read-only, and both must be readable by **uid 65532**, which is what the
-API image runs as.
+Both are named in `backend/.env`, being facts about the backend's data rather than about
+the stack, and both arrive **absolute**: direnv expands `$PWD` as that file's own
+directory. Both are mounted read-only, and both must be readable by **uid 65532**, which
+is what the API image runs as.
 
-`EXPENSE_DATA_DIR` is the name `backend/.env` already carries, so **a blessed shell points
-`load-expenses` at the private expense repository with no further setting**. The committed
-fixture default applies only where that variable is unset.
+So **a blessed shell points `load-expenses` at the private expense repository with no
+further setting**. To read the committed fixtures instead, name them:
+`EXPENSE_DATA_DIR=$PWD/../backend/tests/data/expenses docker compose run --rm
+load-expenses`. Neither variable has a default, so a shell that is not blessed is refused
+rather than served the wrong directory.
 
 Both mounts carry **`create_host_path: false`**. Compose creates a missing bind source by
 default, and the currency loader replaces the whole rate table from whatever it finds, so

@@ -9,15 +9,15 @@ do it. Four tags per image, derived once by `docker/metadata-action`: `1.1.0`, `
 tomborglum/expense-tracker-backend
 tomborglum/expense-tracker-database
 tomborglum/expense-tracker-frontend
-tomborglum/expense-tracker            <- the stack, not an image
+tomborglum/expense-tracker-stack      <- the stack, not an image
 ```
 
 **No one of those names is written down.** `publish.yml` names the image directories and
 `release.yml`'s `meta` job composes `<namespace>/<repository>-<directory>`, the repository
 read from `github.event.repository.name`. **So renaming this GitHub repository renames
-what a release publishes to.** The fourth repository is the same pair **without** a
-directory suffix, holding `compose.yaml`. See [The published
-stack](#the-published-stack).
+what a release publishes to.** The fourth repository is composed by the same formula from
+the compose directories `publish.yml` names, so `stack/` publishes to
+`<namespace>/<repository>-stack`. See [The published stack](#the-published-stack).
 
 `meta` also derives eight `org.opencontainers.image.*` values, carried as both labels and
 manifest annotations. **`title` and `description` are each image's own**, declared in its
@@ -68,9 +68,11 @@ carries the repository its image publishes to, so no step in `push` names a dire
 Before copying, `push` compares the two sets, catching a build that uploaded nothing or an
 artifact that arrived twice.
 
-`compose` checks out `compose.yaml`, loads it with every variable unset, and uploads it.
-**That load is the only gate on the file anywhere**, `ci.yml` never reading it. The job
-also asserts `docker compose publish` exists on the runner.
+`compose` is a matrix over the compose directories. Per directory it checks the directory
+out, renders it under `--profile '*'` with nothing exported - which is what proves the
+`.env` beside the file supplies every variable - and uploads the whole directory, the
+`.env` included. **That render is the only gate on a compose file anywhere**, `ci.yml`
+never reading one. The job also asserts `docker compose publish` exists on the runner.
 
 **Moving or renaming `release.yml` breaks the AWS trust policy**, which pins
 `job_workflow_ref` to its path. See [The AWS objects](#the-aws-objects).
@@ -244,7 +246,7 @@ provider, a standard-tier SSM parameter and the AWS-managed `aws/ssm` key.
 
 ## The published stack
 
-`compose.yaml` is published to the fourth repository as an OCI artifact of type
+`stack/compose.yaml` is published to the fourth repository as an OCI artifact of type
 `application/vnd.docker.compose.project`, by `docker compose publish` in `push` and
 **after** the images are copied, `--resolve-image-digests` reading each digest back out of
 the registry. It holds **two layers**:
@@ -254,8 +256,9 @@ the registry. It holds **two layers**:
 | `compose.yaml` | The committed file, **byte for byte**, comments and all. |
 | `image-digests.yaml` | Overlay restating the five `image:` keys as `<tag>@sha256:...` |
 
-The overlay is merged last, so `EXPENSE_TRACKER_IMAGE_PREFIX` and
-`EXPENSE_TRACKER_VERSION` **have no effect on a deployment that loads the artifact**. The
+The overlay is merged last, so `IMAGE_PREFIX` and `IMAGE_VERSION` **have no effect on a
+deployment that loads the artifact**. Every other variable travels unresolved, and none
+carries a default, so the deployment supplies them or is refused. The
 artifact is published **once per tag**, each resolving against that tag's own images, and
 every tag resolves to the same digests. The published digest is signed by `cosign`,
 keyless, as the images are. Only the bind mount *declarations* travel: **no directory
@@ -268,10 +271,10 @@ docker buildx imagetools inspect tomborglum/expense-tracker-backend:2.0.0
 cosign verify tomborglum/expense-tracker-backend@sha256:<digest> \
   --certificate-identity-regexp '.*expense-tracker.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
-docker compose -f oci://docker.io/tomborglum/expense-tracker:2.0.0 config
+docker compose -f oci://docker.io/tomborglum/expense-tracker-stack:2.0.0 config
 ```
 
-The stack takes the same two verifications against the suffixless repository.
+The stack takes the same two verifications against its own repository.
 `cosign-installer`'s default is cosign 3, which attaches the signature as an **OCI 1.1
 referrer** rather than a `sha256-<digest>.sig` tag, so a tag listing shows the four
 published tags and nothing more.
