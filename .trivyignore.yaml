@@ -1,33 +1,44 @@
 # Suppressions for the HIGH/CRITICAL gate in .github/workflows/release.yml. Applied to
-# every image scan; an entry that does not match an image is simply inert. Both entries
-# below match TWO of the three: the frontend's nginx base and the database's postgres
-# base, which are both alpine and both carry the same two packages. The API's distroless
-# base matches neither.
+# every image scan; an entry that does not match an image is simply inert. The first two
+# match TWO of the three images: the frontend's nginx base and the database's postgres
+# base, which are both alpine and both carry the same two packages. The libexpat pair
+# matches the frontend alone, postgres:18-alpine installing no libexpat. The API's
+# distroless base matches none of the four.
 #
 # EVERY ENTRY CARRIES expired_at, AND THAT IS THE POINT. On the date below trivy stops
 # honouring the entry and the finding fails the release again, so a suppression cannot
 # outlive the reason for it by being forgotten. Removing the date instead of extending it
 # turns this file into a permanent blind spot.
 #
-# Both entries are the same situation: the fixed package versions are in neither base yet.
-# nginxinc/nginx-unprivileged:1.31-alpine is built on alpine 3.24.2 and postgres:18-alpine
-# on 3.24.3, and both still ship brotli-libs 1.2.0-r1 and libcurl 8.22.0-r0. The digest
-# pinned in each Dockerfile is already the newest its tag resolves to, so there is nothing
-# to re-pin to - only an upstream rebuild clears them. Switching either to the debian
-# variant of the same image is not the answer and was measured both times: 60 HIGH/CRITICAL
-# for nginx, and 62 for postgres with a fix available for none of them, against these 2.
+# All four are one situation: the fix is published and the base has not been rebuilt to
+# take it. alpine v3.24/main carries brotli 1.2.1-r0, curl 8.23.0-r0 and libexpat
+# 2.10.0-r0 today, while nginxinc/nginx-unprivileged:1.31-alpine, last pushed
+# 2026-10-19, still ships brotli-libs 1.2.0-r1, libcurl 8.22.0-r0 and libexpat 2.9.0-r0,
+# and postgres:18-alpine the first two. The digest pinned in each Dockerfile is already
+# the newest its tag resolves to, so there is nothing to re-pin to - only an upstream
+# rebuild clears them. Switching either to the debian variant of the same image is not the
+# answer and was measured both times: 60 HIGH/CRITICAL for nginx, and 62 for postgres with
+# a fix available for none of them, against these 4.
 #
-# Neither is reachable in either image, and the two differ in how little they reach:
-# nothing decodes brotli on either side - nginx-unprivileged:alpine ships no brotli module
-# and frontend/docker/default.conf.template enables gzip, and the database image only holds
-# brotli-libs as a dependency of libcurl - while curl is a base package the frontend never
-# invokes and the database image has no curl binary at all, only the library. The frontend
-# runs nginx and one entrypoint script; the database image runs postgres. The only curl in
-# the repository is in CI.
+# None of the four is reachable, and the libexpat pair is the furthest out of reach. The
+# only ELF in the nginx image linking libexpat.so is libfontconfig.so.1.16.1, the only one
+# linking THAT is libgd.so.3, and libgd is there for ngx_http_image_filter_module.so - a
+# DYNAMIC module, which nginx loads only on a `load_module` directive. The base ships no
+# such directive and frontend/docker/default.conf.template declares none, so the module
+# is never loaded and no request reaches expat; the XSLT module links libxml2, not expat.
+# Fontconfig's own config files are the only XML in the image, and they are image content
+# rather than input. All of it measured in the pinned image, not inferred.
+#
+# The other two differ in how little they reach: nothing decodes brotli on either side -
+# nginx-unprivileged:alpine ships no brotli module and default.conf.template enables gzip,
+# and the database image only holds brotli-libs as a dependency of libcurl - while curl is
+# a base package the frontend never invokes and the database image has no curl binary at
+# all, only the library. The frontend runs nginx and one entrypoint script; the database
+# image runs postgres. The only curl in the repository is in CI.
 #
 # Dependabot's docker ecosystem covers all three bases (README.md, under Container
-# images), so the base bump that clears both arrives on its own; this file then goes back
-# to holding nothing.
+# images), so the base bump that clears all four arrives on its own; this file then goes
+# back to holding nothing.
 vulnerabilities:
   - id: CVE-2026-111497
     statement: >-
@@ -41,4 +52,18 @@ vulnerabilities:
       curl HTTP/2 upload use-after-free, in curl and libcurl 8.22.0-r0; fixed in 8.23.0-r0.
       Reachable only by running curl, which the frontend image never does and which the
       database image cannot: it carries libcurl without the curl binary.
+    expired_at: 2026-11-30
+  - id: CVE-2026-117610
+    statement: >-
+      libexpat NULL pointer dereference in externalEntityInitProcessor2() on empty input,
+      in libexpat 2.9.0-r0; fixed in 2.10.0-r0. Present in the frontend's nginx base
+      alone, and only as a fontconfig dependency behind the image filter module, which
+      nginx never loads: nothing in the image parses attacker-supplied XML.
+    expired_at: 2026-11-30
+  - id: CVE-2026-118370
+    statement: >-
+      libexpat signed integer overflow in storeAtts(), reached by a start tag carrying
+      over 2^30 attributes in a multi-gigabyte document; libexpat 2.9.0-r0, fixed in
+      2.10.0-r0. Same single, unloaded path as CVE-2026-117610, and the frontend serves
+      static files rather than accepting a document at all.
     expired_at: 2026-11-30
