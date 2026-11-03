@@ -25,14 +25,16 @@ node_modules/
 # backend is a REST API and ships nothing from here.
 frontend/dist/
 
-# Every .env variant is ignored, and the two committed defaults are named back in. Those
-# two hold development values only - an API origin and a loopback database - while any
-# other variant is the shape a real credential arrives in, so the default is to keep it
-# out. .envrc is committed and matches `.env*`, which is why it is excused too.
+# Every .env variant is ignored, and the three committed defaults are named back in.
+# Those hold development values only - an API origin, a loopback database and local image
+# names - while any other variant is the shape a real credential arrives in, so the
+# default is to keep it out. `.env*` carries no slash and so matches at any depth, which
+# is why stack/.env needs naming. .envrc is committed and matches the rule too.
 .env*
 !.envrc
 !backend/.env
 !frontend/.env
+!stack/.env
 
 # Claude Code's per-developer permission decisions. Ignored here rather than only in a
 # personal ~/.config/git/ignore, because a fresh clone has no such file and would offer

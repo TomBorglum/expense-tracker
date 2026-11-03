@@ -46,5 +46,7 @@ coverage/
 .zed/
 
 # The deployment. It describes how the images these builds produce are run, so no build
-# reads it and an image carrying it would be carrying its own deployment.
-compose.yaml
+# reads it and an image carrying it would be carrying its own deployment. The whole
+# directory, which is also what keeps stack/.env out: the `.env*` rule above carries no
+# `**/` and so matches at the context root only, where git's equivalent matches at depth.
+stack/

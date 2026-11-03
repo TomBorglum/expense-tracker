@@ -35,6 +35,7 @@ jobs:
     # release.yml. Why each is sourced the way it is, docs/releases.md records.
     with:
       image-directories: '["backend", "database", "frontend"]'
+      compose-directories: '["stack"]'
       aws-region: ${{ vars.AWS_REGION }}
       aws-ssm-parameter: /expense-tracker/release/dockerhub-pat
       dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
