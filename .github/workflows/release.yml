@@ -82,8 +82,8 @@ jobs:
   meta:
     runs-on: ubuntu-latest
     env:
-      # Declared ONCE for both derivations below, so a release cannot tag the stack
-      # differently from the images that stack names. A `with:` reads the `env` context,
+      # Declared ONCE for both derivations below, so a release cannot tag a compose file
+      # differently from the images that file names. A `with:` reads the `env` context,
       # which is what lets one declaration serve both; a YAML anchor would not. The semver
       # patterns resolve only on a tag ref, so a pull_request run yields the sha tag alone.
       TAG_PATTERNS: |
@@ -93,7 +93,7 @@ jobs:
         type=raw,value=latest,enable=${{ github.event_name == 'release' }}
     outputs:
       image-tags: ${{ steps.meta-images.outputs.tags }}
-      image-repositories: ${{ steps.images.outputs.map }}
+      image-repositories: ${{ steps.images.outputs.image-map }}
       compose-tags: ${{ steps.meta-compose.outputs.tags }}
       compose-repositories: ${{ steps.images.outputs.compose-map }}
       image-prefix: ${{ steps.images.outputs.prefix }}
@@ -101,9 +101,10 @@ jobs:
       bake-annotations: ${{ steps.bake.outputs.annotations }}
     steps:
       # THE IMAGE NAME IS COMPOSED HERE AND NOWHERE ELSE: <namespace>/<repository>-<dir>,
-      # read back from `list` and `map` so no consumer can spell one differently.
-      # `list` is comma-joined because metadata-action splits `images` on newlines only,
-      # then CSV-parses each line. Single-line outputs for the reason the bake step gives.
+      # read back from `image-list` and `image-map` so no consumer can spell one
+      # differently. `image-list` is comma-joined because metadata-action splits `images`
+      # on newlines only, then CSV-parses each line. Single-line outputs for the reason
+      # the bake step gives.
       - name: Compose the repository each directory publishes to
         id: images
         env:
@@ -125,7 +126,7 @@ jobs:
             echo "::error::image-directories must be a non-empty JSON array, got: $IMAGE_DIRECTORIES"
             exit 1
           fi
-          # Empty is legal here: a repository may publish images and no stack.
+          # Empty is legal here: a repository may publish images and no compose file.
           if ! jq -e 'type == "array"' /tmp/compose-directories.json > /dev/null; then
             echo "::error::compose-directories must be a JSON array, got: $COMPOSE_DIRECTORIES"
             exit 1
@@ -136,9 +137,9 @@ jobs:
           prefix="$DOCKERHUB_NAMESPACE/$REPOSITORY"
           printf 'prefix=%s\n' "$prefix" >> "$GITHUB_OUTPUT"
           jq -r --arg p "$prefix" '[.[] | "\($p)-\(.)"] | join(",")' \
-            /tmp/image-directories.json | sed 's/^/list=/' >> "$GITHUB_OUTPUT"
+            /tmp/image-directories.json | sed 's/^/image-list=/' >> "$GITHUB_OUTPUT"
           jq -c --arg p "$prefix" 'map({key: ., value: "\($p)-\(.)"}) | from_entries' \
-            /tmp/image-directories.json | sed 's/^/map=/' >> "$GITHUB_OUTPUT"
+            /tmp/image-directories.json | sed 's/^/image-map=/' >> "$GITHUB_OUTPUT"
           jq -r --arg p "$prefix" '[.[] | "\($p)-\(.)"] | join(",")' \
             /tmp/compose-directories.json | sed 's/^/compose-list=/' >> "$GITHUB_OUTPUT"
           jq -c --arg p "$prefix" 'map({key: ., value: "\($p)-\(.)"}) | from_entries' \
@@ -154,7 +155,7 @@ jobs:
           bake-target: image
           # Every image, so one derivation serves them all; `push` selects each image's
           # lines by its `<image>:` prefix.
-          images: ${{ steps.images.outputs.list }}
+          images: ${{ steps.images.outputs.image-list }}
           # Turns off the implicit "latest on any semver tag", so that tag is declared in
           # TAG_PATTERNS like every other. Both derivations need it.
           flavor: latest=false
@@ -162,7 +163,7 @@ jobs:
 
       # Derived SEPARATELY rather than as further names above: `push` diffs the
       # repositories the image artifacts carry against the ones the derived tags name, and
-      # a stack has no image artifact, so a name there would abort every release.
+      # a compose file has no image artifact, so a name there would abort every release.
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta-compose
         if: inputs.compose-directories != '[]'
@@ -226,7 +227,7 @@ jobs:
           # What the directory's bake file, `poe image` and `pnpm run image` all pass.
           source: ${{ matrix.directory }}
           # ORDER IS LOAD-BEARING and nothing reports it: the last file wins the keys it
-          # names, so the stack's own file goes last. CLAUDE.md states the pair.
+          # names, so the directory's own file goes last. CLAUDE.md states the pair.
           files: |
             /tmp/bake/labels.json
             /tmp/bake/annotations.json
@@ -234,7 +235,7 @@ jobs:
           targets: image
           # Exported, not pushed: the archive is what crosses into the job holding the
           # registry credential. `set` rather than declared in the bake file, because
-          # where the artifact lands is this workflow's decision, not the stack's.
+          # where the artifact lands is this workflow's decision, not the directory's.
           set: |
             image.output=type=oci,dest=/tmp/image.oci.tar
           # Spelled out because `provenance: true` would leave BuildKit's own `mode=min`
@@ -346,14 +347,15 @@ jobs:
           # Experimental when it was added, so a runner whose compose predates it would
           # otherwise fail a release at its very last step.
           docker compose publish --help > /dev/null
-          mkdir -p /tmp/stacks
+          mkdir -p /tmp/compose-files
           # ALWAYS written, empty input included, so the artifact is never empty.
-          printf '%s' "$COMPOSE_DIRECTORIES" | jq -r '.[]' > /tmp/stacks/directories
+          printf '%s' "$COMPOSE_DIRECTORIES" | jq -r '.[]' \
+            > /tmp/compose-files/directories
           while read -r directory; do
             [ -n "$directory" ] || continue
             # The whole directory: the .env travels beside the file that needs it.
-            mkdir -p "/tmp/stacks/$directory"
-            cp -R "$directory/." "/tmp/stacks/$directory/"
+            mkdir -p "/tmp/compose-files/$directory"
+            cp -R "$directory/." "/tmp/compose-files/$directory/"
             # EVERY name the file interpolates, listed without resolving any, so this
             # reads a file nothing can render. Each gets a placeholder: a bind source is
             # the deployment's to name, and the artifact is the source file byte for byte,
@@ -361,20 +363,20 @@ jobs:
             # the later file wins, so the directory's own declarations outrank these.
             docker compose -f "$directory/compose.yaml" --profile '*' config --variables \
               --format json | jq -r 'keys[] | "\(.)=release-workflow-placeholder"' \
-              > "/tmp/stacks/$directory/.placeholders.env"
-            set -- --env-file "/tmp/stacks/$directory/.placeholders.env"
+              > "/tmp/compose-files/$directory/.placeholders.env"
+            set -- --env-file "/tmp/compose-files/$directory/.placeholders.env"
             [ -f "$directory/.env" ] && set -- "$@" --env-file "$directory/.env"
-            # `*` rather than a profile named here: which profiles a stack declares is the
-            # stack's business, and `config` renders only the services a profile selects.
+            # `*` rather than a profile named here: a compose file's profiles are its
+            # own business, and `config` renders only the services a profile selects.
             docker compose "$@" -f "$directory/compose.yaml" --profile '*' config --quiet
             echo "staged $directory"
-          done < /tmp/stacks/directories
+          done < /tmp/compose-files/directories
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: compose
+          name: compose-files
           # Hidden files are excluded by default, which is exactly the .env files.
-          path: /tmp/stacks/
+          path: /tmp/compose-files/
           include-hidden-files: true
           # The image archives' retention, for the same reason.
           retention-days: 1
@@ -444,8 +446,8 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: compose
-          path: /tmp/compose
+          name: compose-files
+          path: /tmp/compose-files
 
       # BEFORE regctl-installer, and load-bearing: that installer verifies its download
       # against regclient's cosign signature only `if [ -x "$(command -v cosign)" ]`.
@@ -562,8 +564,9 @@ jobs:
       # TAG, each resolving against that tag's own images, and docs/releases.md says what
       # the artifact ends up holding. IMAGE_PREFIX and IMAGE_VERSION are THE ONLY TWO
       # NAMES THIS WORKFLOW PUTS INTO A COMPOSE FILE: the shell environment outranks both
-      # files below, the placeholders `compose` staged and the directory's own .env.
-      - name: Publish every stack to Docker Hub
+      # files below: the placeholders the `compose` job staged, and the directory's
+      # own .env.
+      - name: Publish every compose file to Docker Hub
         env:
           COMPOSE_TAGS: ${{ needs.meta.outputs.compose-tags }}
           COMPOSE_REPOSITORIES: ${{ needs.meta.outputs.compose-repositories }}
@@ -574,13 +577,13 @@ jobs:
           export IMAGE_PREFIX
           printf '%s\n' "$COMPOSE_TAGS" > /tmp/compose-tags
           : > /tmp/compose-digests
-          stacks=0
+          files=0
           published=0
-          # The manifest `compose` staged: a list, not a glob, and an empty one is a
-          # release with no stack rather than a failure.
+          # The manifest the `compose` job staged: a list, not a glob, and an empty
+          # one is a release with no compose file rather than a failure.
           while read -r directory; do
             [ -n "$directory" ] || continue
-            stacks=$((stacks + 1))
+            files=$((files + 1))
             repository="$(printf '%s' "$COMPOSE_REPOSITORIES" \
               | jq -r --arg d "$directory" '.[$d] // empty')"
             if [ -z "$repository" ]; then
@@ -594,17 +597,17 @@ jobs:
               # The repository holds no port, so the last colon is the tag's.
               export IMAGE_VERSION="${ref##*:}"
               echo "publishing $directory -> $ref, naming images at :$IMAGE_VERSION"
-              set -- --env-file "/tmp/compose/$directory/.placeholders.env"
-              if [ -f "/tmp/compose/$directory/.env" ]; then
-                set -- "$@" --env-file "/tmp/compose/$directory/.env"
+              set -- --env-file "/tmp/compose-files/$directory/.placeholders.env"
+              if [ -f "/tmp/compose-files/$directory/.env" ]; then
+                set -- "$@" --env-file "/tmp/compose-files/$directory/.env"
               fi
-              docker compose "$@" -f "/tmp/compose/$directory/compose.yaml" \
+              docker compose "$@" -f "/tmp/compose-files/$directory/compose.yaml" \
                 publish "$ref" --resolve-image-digests --yes < /dev/null
               published=$((published + 1))
               last="$ref"
             done < /tmp/compose-tags
             # A derivation that yielded nothing would otherwise leave the images
-            # published and no stack describing them.
+            # published and no compose file describing them.
             if [ -z "$last" ]; then
               echo "::error::no tag was derived for $directory, so it was not published."
               exit 1
@@ -612,8 +615,8 @@ jobs:
             # Read back from the registry: the signature below covers content, not a name.
             printf '%s@%s\n' "$repository" "$(regctl manifest digest "$last")" \
               >> /tmp/compose-digests
-          done < /tmp/compose/directories
-          echo "$stacks stack(s), $published tag(s) published"
+          done < /tmp/compose-files/directories
+          echo "$files compose file(s), $published tag(s) published"
           cat /tmp/compose-digests
 
       # Keyless, reusing this job's own OIDC token. The digest is the index's, so one
