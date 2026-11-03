@@ -28,7 +28,7 @@ marker. It **skips when nothing answers** and **fails under `CI=true`**.
 ## Loading expenses
 
 **The expense files live in a separate private repository.** Real spending is confidential
-and this repository is public, so `EXPENSE_DATA_DIR` in `stack/.env` is the absolute
+and this repository is public, so `EXPENSE_DATA_DIR` in `backend/.env` is the absolute
 path to the `data/` directory in a clone of that one. Nothing here keeps that clone
 current.
 

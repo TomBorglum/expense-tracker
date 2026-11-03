@@ -15,10 +15,10 @@
 #
 # EVERY interpolation below is REQUIRED and none carries a default, so an unset variable
 # stops `up`, `config` and `publish` alike with the variable's name in the message. Each
-# `:?` message names the .env beside this file, which declares every one of them: that is
-# the file release.yml loads, and the only one it loads. IMAGE_PREFIX and IMAGE_VERSION
-# are the two names that workflow exports over it when it publishes this file, and they
-# are the whole of what it knows about this repository.
+# `:?` message names the file that owns the variable: .env beside this file for the three
+# the stack itself needs, backend/.env for the two host directories. direnv loads both.
+# IMAGE_PREFIX and IMAGE_VERSION are the two names release.yml exports when it publishes
+# this file, which is the whole of what that workflow knows about this repository.
 name: expense-tracker
 
 services:
@@ -146,12 +146,11 @@ services:
   # deletes every rate and reports `0 files read` with exit 0. Refusing to create the path
   # turns that into a container that does not start.
   #
-  # It matters most where a checkout does not exist. A relative bind source resolves
-  # against the directory of the file compose was given, which from a checkout is this
-  # one; in a file loaded from `oci://` that is compose's own download cache - measured,
-  # not assumed. So a deployment sets both names absolutely in a .env of its own, where
-  # .env beside this file points one at this repository's own rates. README says so under
-  # Deployment.
+  # It matters most where a checkout does not exist. A relative bind source in a file
+  # loaded from `oci://` resolves against compose's own download cache rather than the
+  # current directory - measured, not assumed - so both names below are set absolutely,
+  # in backend/.env from a blessed shell and by the operator anywhere else. README says
+  # so under Deployment.
   load-currencies:
     image: ${IMAGE_PREFIX:?stack/.env}-backend:${IMAGE_VERSION:?stack/.env}
     profiles: ["load"]
@@ -167,7 +166,7 @@ services:
     # event, so re-running this after editing rates.tsv is the supported path.
     volumes:
       - type: bind
-        source: ${CURRENCY_DATA_DIR:?stack/.env}
+        source: ${CURRENCY_DATA_DIR:?backend/.env}
         target: /currencies
         read_only: true
         bind:
@@ -188,17 +187,17 @@ services:
       PGPORT: 5432
       PGUSER: expense_tracker
       PGDATABASE: expense_tracker
-    # .env beside this file points this at the separate private repository, absolutely,
-    # and is where `poe load-expenses` reads the same name from. To load the committed
-    # synthetic fixtures instead, override it on the command line - README names that
-    # directory under Deployment.
+    # EXPENSE_DATA_DIR is the name backend/.env already carries, so a blessed shell points
+    # this at the private repository with no further setting. The default is the committed
+    # synthetic fixture set, which is what makes this path provable from a checkout alone -
+    # the same directory README names for filling a local database without that repository.
     #
     # The expense loader is append-only: its ledger skips a file whose sha256 matches and
     # REFUSES one that changed, so a reclassified month is cured by dropping the volume and
     # reloading, not by re-running this. See the reload sequence in README.
     volumes:
       - type: bind
-        source: ${EXPENSE_DATA_DIR:?stack/.env}
+        source: ${EXPENSE_DATA_DIR:?backend/.env}
         target: /expenses
         read_only: true
         bind:
