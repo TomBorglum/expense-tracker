@@ -91,8 +91,8 @@ The `main-protection` ruleset rule pinning each of these is named in
   directory rather than each file. Nothing checks this;
   `cat .github/workflows/*.yml | grep -c '^[[:space:]]*#'` is the count.
 - **Every `${...}` in a compose file is required and names no default**, so an unset one
-  stops `up`, `config` and `publish` alike, and each `:?` message names the `.env` that
-  owns the variable. Nothing checks this; `config --variables` reports each `REQUIRED`.
+  stops `up`, `config` and `publish` alike, each `:?` message naming the `.env` that owns
+  it. `ci.yml`'s `config --quiet` pins that every name is declared, nothing the default.
 - **Pin versions exactly:** `==` in `pixi.toml`, in both its conda tables and
   `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
   Actions by SHA with a version comment.
