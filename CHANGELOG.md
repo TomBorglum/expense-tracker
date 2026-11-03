@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.0](https://github.com/TomBorglum/expense-tracker/compare/v2.1.0...v2.2.0) (2026-11-03)
+
+
+### Features
+
+* decouple the compose stack from the release workflow ([#191](https://github.com/TomBorglum/expense-tracker/issues/191)) ([6f0b86c](https://github.com/TomBorglum/expense-tracker/commit/6f0b86cb1c1b553b77155c2198013e8cdb175add))
+
+
+### Dependencies
+
+* update pixi dependencies ([#184](https://github.com/TomBorglum/expense-tracker/issues/184)) ([b5a57b0](https://github.com/TomBorglum/expense-tracker/commit/b5a57b0dcb7c86401a8e5f44bcb452ef478e52ed))
+
 ## [2.1.0](https://github.com/TomBorglum/expense-tracker/compare/v2.0.0...v2.1.0) (2026-10-31)
 
 
