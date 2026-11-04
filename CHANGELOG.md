@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/TomBorglum/expense-tracker/compare/v2.3.0...v2.3.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* default the stack's two image variables to a placeholder ([#196](https://github.com/TomBorglum/expense-tracker/issues/196)) ([218d140](https://github.com/TomBorglum/expense-tracker/commit/218d140f8794a4e3d35cea6172b26b7224c24b4b))
+
 ## [2.3.0](https://github.com/TomBorglum/expense-tracker/compare/v2.2.0...v2.3.0) (2026-11-04)
 
 
