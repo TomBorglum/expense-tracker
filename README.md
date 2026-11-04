@@ -369,43 +369,43 @@ is socket-only, so over TCP readiness and init completing are the same moment.
 
 ### Running it from a release
 
-A release publishes the file itself, so a host needs **no checkout and no clone**, one
-directory holding one `.env`:
+A release publishes the file itself, so a host needs **no checkout, no clone and no file
+of its own**. Render the artifact once, then feed the result to each command on stdin:
 
 ```sh
-cat > .env <<'EOF'
-API_BASE_URL=http://localhost:8000
-CURRENCY_DATA_DIR=/home/you/somewhere/currencies
-EXPENSE_DATA_DIR=/home/you/projects/expense-data/data
-EOF
+stack=oci://docker.io/tomborglum/expense-tracker-stack:2.3.1
 
-stack=oci://docker.io/tomborglum/expense-tracker-stack:2.3.0
-docker compose -f "$stack" up -d -y
-printf 'y\n' | docker compose -f "$stack" run --rm -T load-currencies
-printf 'y\n' | docker compose -f "$stack" run --rm -T load-expenses
+rendered=$(API_BASE_URL=http://localhost:8000 \
+  CURRENCY_DATA_DIR=/home/you/somewhere/currencies \
+  EXPENSE_DATA_DIR=/home/you/projects/expense-data/data \
+  docker compose -f "$stack" --profile '*' config)
+
+printf '%s' "$rendered" | docker compose -f - up -d
+printf '%s' "$rendered" | docker compose -f - run --rm -T load-currencies
+printf '%s' "$rendered" | docker compose -f - run --rm -T load-expenses
 ```
 
-That `.env` is the only state the host keeps, and **all three names are required**: none
-carries a default, so an unset one stops `up` and names itself. The artifact carries a
-second document naming every image at its digest, so `IMAGE_PREFIX` and `IMAGE_TAG` are
-not needed here and the tag you pull selects the version -
-[The published stack](docs/releases.md#the-published-stack) says why. They are still
-interpolated first, so the file defaults them to a placeholder; **2.2.0 and earlier
-refuse without them, and 2.3.0 prints ten warnings.**
+**All three names are required**, and that `config` call is their only reader: none
+carries a default, so an unset one stops the render and names itself. `config` resolves
+every `${...}`, so the rendered text holds no variable and the piped commands need
+nothing set. `IMAGE_PREFIX` and `IMAGE_TAG` are not among them: the artifact's second
+document names every image at its digest, as
+[the published stack](docs/releases.md#the-published-stack) explains.
 
-The project is `expense-tracker-stack`, so the volume is
-`expense-tracker-stack_database-data`. Set `COMPOSE_PROJECT_NAME` in that `.env`, or pass
-`-p`, to run two of these on one host.
+Rendering **pins digests and freezes `name:`**: re-run it to change a value or move
+releases. The project is `expense-tracker-stack`, its volume
+`expense-tracker-stack_database-data`; `COMPOSE_PROJECT_NAME` on the render runs two.
 
+- **`--profile '*'` and `-T` are both load-bearing.** Without the first, `config` drops
+  the profiled loaders; without the second, `run` wants the stdin `-f -` already took.
+- **Rendering first is what keeps the prompt away.** Loading an `oci://` file asks you to
+  confirm its variables, and reports any supplied through a `.env` as `<unset>`. `config`
+  does not prompt, and a piped file is not remote. `up` has `-y`; **`run` has none**.
 - **A relative bind source resolves against compose's download cache**, not the current
   directory, so both are named **absolutely**. `create_host_path: false` turns a missing
   one into a container that refuses to start rather than an empty mount.
-- **Loading an `oci://` file prompts** for the interpolation variables and the sources
-  they resolved from, every time. `up` takes `-y` for it. **`run` has no such flag**, so
-  it wants a `y` typed, or `printf 'y\n' |` ahead of it with `-T`, as above.
-- **Take it down with `docker compose -p expense-tracker-stack down`.** A plain `down`
-  there reports `no configuration file provided`, and `-f oci://...` re-interpolates the
-  artifact before it will stop anything.
+- **Address the running stack by name:** `docker compose -p expense-tracker-stack ps`,
+  `logs -f backend` and `down -v` need no file and no `-f`.
 - **`COMPOSE_FILE` cannot carry an `oci://` reference.** Compose splits that variable on
   `:`, so the value becomes three nonexistent paths. Pass `-f oci://...` instead, or set
   `COMPOSE_PATH_SEPARATOR=,` first.
@@ -435,7 +435,7 @@ anywhere here**:
 
 ```sh
 IMAGE_PREFIX=<namespace>/expense-tracker \
-IMAGE_TAG=2.3.0 docker compose up -d
+IMAGE_TAG=2.3.1 docker compose up -d
 ```
 
 Where the browser should reach the API is a third, `API_BASE_URL`, which `stack/.env` sets
@@ -499,10 +499,10 @@ Error response from daemon: invalid mount config for type "bind":
 bind source path does not exist: /...
 ```
 
-The project name is pinned to `expense-tracker` in the file rather than taken from the
-directory, so the volume is `expense-tracker_database-data` wherever the file is loaded
-from, a checkout, a scratch directory holding one `.env`, or an `oci://` reference, and
-`down -v` reaches the same one every time.
+The project name is `expense-tracker-stack` in the file rather than taken from the
+directory, so a scratch directory and an `oci://` reference reach the same
+`expense-tracker-stack_database-data`. A checkout is deliberately apart: `stack/.env`
+sets `COMPOSE_PROJECT_NAME=expense-tracker-dev`, so `down -v` cannot cross.
 
 ## Configuration
 
