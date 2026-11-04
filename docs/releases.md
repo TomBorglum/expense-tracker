@@ -18,6 +18,8 @@ read from `github.event.repository.name`. **So renaming this GitHub repository r
 what a release publishes to.** The fourth repository is composed by the same formula from
 the compose directories `publish.yml` names, so `stack/` publishes to
 `<namespace>/<repository>-stack`. See [The published stack](#the-published-stack).
+`meta` refuses a directory listed twice in either input, which would otherwise race two
+matrix legs on one artifact name, or publish one compose artifact twice.
 
 `meta` also derives eight `org.opencontainers.image.*` values, carried as both labels and
 manifest annotations. **`title` and `description` are each image's own**, declared in its
