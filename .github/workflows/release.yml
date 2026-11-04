@@ -20,8 +20,9 @@ on:
         description: >-
           JSON array of directories built into images, one per image, each holding a
           Dockerfile and a docker-bake.hcl. The repository each image publishes to is
-          composed from the directory name - see the `images` step. Images only; compose
-          files are the input below.
+          composed from the directory name - see the `images` step. A directory listed
+          twice is refused, the name being both a matrix leg and an artifact. Images only;
+          compose files are the input below.
         required: true
         type: string
       compose-directories:
@@ -36,8 +37,9 @@ on:
           IMAGE_PREFIX, to <namespace>/<repository>, and IMAGE_TAG, to the tag being
           published, and NAMES NOTHING ELSE. Every other variable the file interpolates is
           filled from the .env beside it where that file declares one, and with a
-          placeholder where it does not, a host path being the deployment's to supply.
-          Empty by default, for a repository that publishes images alone.
+          placeholder where it does not, a host path being the deployment's to supply. A
+          directory listed twice is refused. Empty by default, for a repository that
+          publishes images alone.
         required: false
         default: "[]"
         type: string
@@ -99,15 +101,14 @@ jobs:
       image-repositories: ${{ steps.images.outputs.image-map }}
       compose-tags: ${{ steps.meta-compose.outputs.tags }}
       compose-repositories: ${{ steps.images.outputs.compose-map }}
-      image-prefix: ${{ steps.images.outputs.prefix }}
+      image-prefix: ${{ steps.images.outputs.image-prefix }}
       bake-labels: ${{ steps.bake.outputs.labels }}
       bake-annotations: ${{ steps.bake.outputs.annotations }}
     steps:
       # THE IMAGE NAME IS COMPOSED HERE AND NOWHERE ELSE: <namespace>/<repository>-<dir>,
-      # read back from `image-list` and `image-map` so no consumer can spell one
-      # differently. `image-list` is comma-joined because metadata-action splits `images`
-      # on newlines only, then CSV-parses each line. Single-line outputs for the reason
-      # the bake step gives.
+      # read back from `image-list` and `image-map` so no consumer can spell one differently.
+      # `image-list` is comma-joined because metadata-action splits `images` on newlines only,
+      # then CSV-parses each line. Single-line outputs for the reason the bake step gives.
       - name: Compose the repository each directory publishes to
         id: images
         env:
@@ -134,11 +135,20 @@ jobs:
             echo "::error::compose-directories must be a JSON array, got: $COMPOSE_DIRECTORIES"
             exit 1
           fi
+          # A repeat is not a no-op: image-directories drives a matrix, so two legs would race
+          # on one artifact name, and the compose loop would publish one artifact twice.
+          for file in /tmp/image-directories.json /tmp/compose-directories.json; do
+            if ! jq -e 'length == (unique | length)' "$file" > /dev/null; then
+              echo "::error::$(basename "$file" .json) repeats a directory:" \
+                "$(jq -c '[group_by(.)[] | select(length > 1) | first]' "$file")"
+              exit 1
+            fi
+          done
           # THE PREFIX, which every name below is built on and which `push` exports to
           # compose as IMAGE_PREFIX. A compose artifact is named by the same formula as an
           # image, so the two halves differ in nothing but which list they read.
           prefix="$DOCKERHUB_NAMESPACE/$REPOSITORY"
-          printf 'prefix=%s\n' "$prefix" >> "$GITHUB_OUTPUT"
+          printf 'image-prefix=%s\n' "$prefix" >> "$GITHUB_OUTPUT"
           jq -r --arg p "$prefix" '[.[] | "\($p)-\(.)"] | join(",")' \
             /tmp/image-directories.json | sed 's/^/image-list=/' >> "$GITHUB_OUTPUT"
           jq -c --arg p "$prefix" 'map({key: ., value: "\($p)-\(.)"}) | from_entries' \
