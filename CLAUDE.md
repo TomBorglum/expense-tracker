@@ -91,7 +91,7 @@ The `main-protection` ruleset rule pinning each of these is named in
   directory rather than each file. Nothing checks this;
   `cat .github/workflows/*.yml | grep -c '^[[:space:]]*#'` is the count.
 - **A compose file's `name:` is `<repository>-<directory>` and every `${...}` carries a
-  `:?` naming the `.env` that owns it**, bar `IMAGE_PREFIX`/`IMAGE_VERSION`, which the
+  `:?` naming the `.env` that owns it**, bar `IMAGE_PREFIX`/`IMAGE_TAG`, which the
   artifact's digest document overrides. `release.yml`'s compose job gates all three.
 - **Pin versions exactly:** `==` in `pixi.toml`, in both its conda tables and
   `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
@@ -178,7 +178,7 @@ The five payload pairs share a backend half, `backend/src/expense_tracker/__init
 - **The image reference formula:** `stack/compose.yaml`'s five `image:` keys +
   `publish.yml`'s `image-directories`: `-<service>` must spell a directory it names.
 - **The stack's interpolation variables:** the same `image:` keys + `release.yml`'s
-  publish step: `IMAGE_PREFIX` and `IMAGE_VERSION`, the only two it sets, neither guarded.
+  publish step: `IMAGE_PREFIX` and `IMAGE_TAG`, the only two it sets, neither guarded.
 - **`release.yml`'s caller-filled configuration:** its `workflow_call` declarations +
   `publish.yml`'s `with:`/`secrets:`; the `aws-role-arn` **secret** holds the account id.
 - **The Docker Hub namespace:** `DOCKERHUB_NAMESPACE` + the account the PAT in SSM

@@ -3,7 +3,7 @@ name: Release
 # Builds, scans and publishes one image per directory it is given, then publishes one OCI
 # compose artifact per compose directory it is given. CALLED, never triggered. It names no
 # repository, no file outside the directories it is handed, and exactly two variables:
-# IMAGE_PREFIX and IMAGE_VERSION, which is the whole contract a compose file answers to.
+# IMAGE_PREFIX and IMAGE_TAG, which is the whole contract a compose file answers to.
 # TWO INVARIANTS, both stated in CLAUDE.md: no job that checks the repository out gets
 # `id-token: write`, and nothing here reads `vars` or names an AWS object. The logs are
 # world-readable, so nothing added may print the account id or the PAT either.
@@ -33,7 +33,7 @@ on:
           equal <repository>-<directory>, and the directory must not be nested, so the
           project, its network and its volume are readable off the artifact's reference
           and two repositories cannot collide on one host. THE CONTRACT: this workflow sets
-          IMAGE_PREFIX, to <namespace>/<repository>, and IMAGE_VERSION, to the tag being
+          IMAGE_PREFIX, to <namespace>/<repository>, and IMAGE_TAG, to the tag being
           published, and NAMES NOTHING ELSE. Every other variable the file interpolates is
           filled from the .env beside it where that file declares one, and with a
           placeholder where it does not, a host path being the deployment's to supply.
@@ -262,7 +262,6 @@ jobs:
           # `--skip-version-check`, which the action exposes no input for.
           TRIVY_SKIP_VERSION_CHECK: "true"
         with:
-          
           scan-type: image
           input: /tmp/oci
           scanners: vuln
@@ -591,10 +590,9 @@ jobs:
       # AFTER the copy above, which is why this step lives in this job at all:
       # --resolve-image-digests reads each digest back OUT of the registry. ONE PUBLISH PER
       # TAG, each resolving against that tag's own images, and docs/releases.md says what
-      # the artifact ends up holding. IMAGE_PREFIX and IMAGE_VERSION are THE ONLY TWO
-      # NAMES THIS WORKFLOW PUTS INTO A COMPOSE FILE: the shell environment outranks both
-      # files below: the placeholders the `compose` job staged, and the directory's
-      # own .env.
+      # the artifact ends up holding. IMAGE_PREFIX and IMAGE_TAG are THE ONLY TWO NAMES
+      # THIS WORKFLOW PUTS INTO A COMPOSE FILE: the shell environment outranks both files
+      # below: the placeholders the `compose` job staged, and the directory's own .env.
       - name: Publish every compose file to Docker Hub
         env:
           COMPOSE_TAGS: ${{ needs.meta.outputs.compose-tags }}
@@ -624,8 +622,8 @@ jobs:
               [ -n "$ref" ] || continue
               case "$ref" in "$repository:"*) ;; *) continue ;; esac
               # The repository holds no port, so the last colon is the tag's.
-              export IMAGE_VERSION="${ref##*:}"
-              echo "publishing $directory -> $ref, naming images at :$IMAGE_VERSION"
+              export IMAGE_TAG="${ref##*:}"
+              echo "publishing $directory -> $ref, naming images at :$IMAGE_TAG"
               set -- --env-file "/tmp/compose-files/$directory/.placeholders.env"
               if [ -f "/tmp/compose-files/$directory/.env" ]; then
                 set -- "$@" --env-file "/tmp/compose-files/$directory/.env"

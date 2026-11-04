@@ -388,8 +388,8 @@ printf 'y\n' | docker compose -f "$stack" run --rm -T load-expenses
 That `.env` is the only state the host keeps, and **all three names are required**: the
 file carries no defaults, so an unset one stops `up` and names itself. The artifact
 carries a second document naming every image at its digest, and that document wins, so
-`IMAGE_PREFIX` and `IMAGE_VERSION` are not asked for and the tag you pull is what selects
-a version - [The published stack](docs/releases.md#the-published-stack) says why.
+`IMAGE_PREFIX` and `IMAGE_TAG` are not asked for and the tag you pull is what selects a
+version - [The published stack](docs/releases.md#the-published-stack) says why.
 **Releases up to 2.2.0 demand those two anyway**, with any value at all, which the digest
 document then discards.
 
@@ -427,15 +427,15 @@ is also the port `pixi run backend-dev` binds**, so the two cannot run at once.
 `stack/.env` also sets `COMPOSE_PROJECT_NAME=expense-tracker-dev`, which keeps a checkout
 and a release artifact on one machine two projects with two volumes.
 
-Which images it runs is two variables, `IMAGE_PREFIX` and `IMAGE_VERSION`, `stack/.env`
-naming them `expense-tracker` and `dev`, composing as `<prefix>-<service>:<version>` - the
-shape [Releases](#releases) composes published names in. A shell variable outranks that
-file, so pointing the stack at a release is one setting and **no published name is written
-down anywhere here**:
+Which images it runs is two variables, `IMAGE_PREFIX` and `IMAGE_TAG`, `stack/.env` naming
+them `expense-tracker` and `dev`, composing as `<prefix>-<service>:<tag>` - the shape
+[Releases](#releases) composes published names in. A shell variable outranks that file, so
+pointing the stack at a release is one setting and **no published name is written down
+anywhere here**:
 
 ```sh
 IMAGE_PREFIX=<namespace>/expense-tracker \
-IMAGE_VERSION=2.3.0 docker compose up -d
+IMAGE_TAG=2.3.0 docker compose up -d
 ```
 
 Where the browser should reach the API is a third, `API_BASE_URL`, which `stack/.env` sets

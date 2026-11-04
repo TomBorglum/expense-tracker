@@ -266,7 +266,7 @@ the registry. It holds **two layers**:
 | `compose.yaml` | The committed file, **byte for byte**, comments and all. |
 | `image-digests.yaml` | Overlay restating the five `image:` keys as `<tag>@sha256:...` |
 
-The overlay is merged last, so `IMAGE_PREFIX` and `IMAGE_VERSION` **have no effect on a
+The overlay is merged last, so `IMAGE_PREFIX` and `IMAGE_TAG` **have no effect on a
 deployment that loads the artifact**. That is why those two alone carry no `:?`: guarding
 them would demand a value the overlay then discards. Interpolation runs per document and
 **before** the merge, so a guard there would fire on a host that has no use for the name.
