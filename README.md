@@ -385,13 +385,13 @@ printf 'y\n' | docker compose -f "$stack" run --rm -T load-currencies
 printf 'y\n' | docker compose -f "$stack" run --rm -T load-expenses
 ```
 
-That `.env` is the only state the host keeps, and **all three names are required**: the
-file carries no defaults, so an unset one stops `up` and names itself. The artifact
-carries a second document naming every image at its digest, and that document wins, so
-`IMAGE_PREFIX` and `IMAGE_TAG` are not asked for and the tag you pull is what selects a
-version - [The published stack](docs/releases.md#the-published-stack) says why.
-**Releases up to 2.2.0 demand those two anyway**, with any value at all, which the digest
-document then discards.
+That `.env` is the only state the host keeps, and **all three names are required**: none
+carries a default, so an unset one stops `up` and names itself. The artifact carries a
+second document naming every image at its digest, so `IMAGE_PREFIX` and `IMAGE_TAG` are
+not needed here and the tag you pull selects the version -
+[The published stack](docs/releases.md#the-published-stack) says why. They are still
+interpolated first, so the file defaults them to a placeholder; **2.2.0 and earlier
+refuse without them, and 2.3.0 prints ten warnings.**
 
 The project is `expense-tracker-stack`, so the volume is
 `expense-tracker-stack_database-data`. Set `COMPOSE_PROJECT_NAME` in that `.env`, or pass
