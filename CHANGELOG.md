@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/TomBorglum/expense-tracker/compare/v2.2.0...v2.3.0) (2026-11-04)
+
+
+### Features
+
+* name the compose project after the repository and the directory ([#193](https://github.com/TomBorglum/expense-tracker/issues/193)) ([f24c3ed](https://github.com/TomBorglum/expense-tracker/commit/f24c3edf53b06027db68da9372b63367cc2557c8))
+
 ## [2.2.0](https://github.com/TomBorglum/expense-tracker/compare/v2.1.0...v2.2.0) (2026-11-03)
 
 
