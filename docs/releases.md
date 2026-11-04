@@ -134,7 +134,7 @@ cannot walk, Trivy resolves the empty config `{}`, reports no findings and exits
 `{}` declares no platform.
 
 Suppressions live in **`.trivyignore.yaml`**, and every entry carries an `expired_at`
-date. The four today are CVEs in the alpine bases, each fixed in a package version the
+date. The five today are CVEs in the alpine bases, each fixed in a package version the
 pinned digest does not yet resolve to, and none reachable: nothing loads a brotli module,
 invokes curl, or parses XML with the expat sitting behind an nginx module never loaded.
 

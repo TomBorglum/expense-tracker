@@ -247,10 +247,9 @@ jobs:
           provenance: mode=max
           sbom: true
 
-      # trivy reads an OCI layout directory and rejects the archive, which is a tarred
-      # one. `tar -xf` rather than `regctl image import`: import leads index.json with a
-      # referrers index, trivy reads the first entry only, and the scan then reports
-      # SUCCESS having found nothing.
+      # trivy reads an OCI layout directory and rejects the tarred one. `tar -xf` rather
+      # than `regctl image import`: import leads index.json with a referrers index, trivy
+      # reads the first entry only, and the scan then reports SUCCESS having found nothing.
       - name: Unpack the OCI layout
         run: |
           set -euo pipefail
@@ -259,7 +258,11 @@ jobs:
 
       - name: Scan the ${{ matrix.directory }} image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          # `--skip-version-check`, which the action exposes no input for.
+          TRIVY_SKIP_VERSION_CHECK: "true"
         with:
+          
           scan-type: image
           input: /tmp/oci
           scanners: vuln
