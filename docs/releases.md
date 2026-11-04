@@ -134,7 +134,7 @@ cannot walk, Trivy resolves the empty config `{}`, reports no findings and exits
 `{}` declares no platform.
 
 Suppressions live in **`.trivyignore.yaml`**, and every entry carries an `expired_at`
-date. The four today are CVEs in the alpine bases, each fixed in a package version the
+date. The five today are CVEs in the alpine bases, each fixed in a package version the
 pinned digest does not yet resolve to, and none reachable: nothing loads a brotli module,
 invokes curl, or parses XML with the expat sitting behind an nginx module never loaded.
 
@@ -266,13 +266,30 @@ the registry. It holds **two layers**:
 | `compose.yaml` | The committed file, **byte for byte**, comments and all. |
 | `image-digests.yaml` | Overlay restating the five `image:` keys as `<tag>@sha256:...` |
 
-The overlay is merged last, so `IMAGE_PREFIX` and `IMAGE_VERSION` **have no effect on a
-deployment that loads the artifact**. Every other variable travels unresolved, and none
-carries a default, so the deployment supplies them or is refused. The
-artifact is published **once per tag**, each resolving against that tag's own images, and
-every tag resolves to the same digests. The published digest is signed by `cosign`,
-keyless, as the images are. Only the bind mount *declarations* travel: **no directory
-contents are published.**
+The overlay is merged last, so `IMAGE_PREFIX` and `IMAGE_TAG` **have no effect on a
+deployment that loads the artifact**. That is why those two alone carry no `:?`: guarding
+them would demand a value the overlay then discards. Interpolation runs per document and
+**before** the merge, so a guard there would fire on a host that has no use for the name.
+The remaining three travel unresolved and guarded, so the deployment supplies them or is
+refused. The artifact is published **once per tag**, each resolving against that tag's own
+images, and every tag resolves to the same digests. The published digest is signed by
+`cosign`, keyless, as the images are. Only the bind mount *declarations* travel: **no
+directory contents are published.**
+
+### What the compose job gates
+
+`stack/compose.yaml` declares `name: expense-tracker-stack`, and the `compose` job fails a
+release whose `name:` is not `<repository>-<directory>` or whose directory is nested. The
+formula is the images' own, so an operator reads the project, its network
+(`expense-tracker-stack_default`) and its volume (`expense-tracker-stack_database-data`)
+off the artifact's reference, and two repositories cannot collide on one host. The job
+reads the **declared** key rather than `config`'s resolved `.name`, which
+`COMPOSE_PROJECT_NAME` would override - a deployer and `stack/.env` both set that to run a
+second copy beside the first, and neither changes what is published.
+
+It also fails a file whose unguarded names are not declared in the directory's own `.env`.
+An unguarded `${VAR}` renders blank rather than failing, and `up` then reports
+`invalid reference format` without naming it, so the declaration is the only guard left.
 
 ## Verifying a release
 

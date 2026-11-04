@@ -1,16 +1,16 @@
 # Suppressions for the HIGH/CRITICAL gate in .github/workflows/release.yml. Applied to
 # every image scan; an entry that does not match an image is simply inert. The first two
 # match TWO of the three images: the frontend's nginx base and the database's postgres
-# base, which are both alpine and both carry the same two packages. The libexpat pair
+# base, which are both alpine and both carry the same two packages. The libexpat trio
 # matches the frontend alone, postgres:18-alpine installing no libexpat. The API's
-# distroless base matches none of the four.
+# distroless base matches none of the five.
 #
 # EVERY ENTRY CARRIES expired_at, AND THAT IS THE POINT. On the date below trivy stops
 # honouring the entry and the finding fails the release again, so a suppression cannot
 # outlive the reason for it by being forgotten. Removing the date instead of extending it
 # turns this file into a permanent blind spot.
 #
-# All four are one situation: the fix is published and the base has not been rebuilt to
+# All five are one situation: the fix is published and the base has not been rebuilt to
 # take it. alpine v3.24/main carries brotli 1.2.1-r0, curl 8.23.0-r0 and libexpat
 # 2.10.0-r0 today, while nginxinc/nginx-unprivileged:1.31-alpine, last pushed
 # 2026-10-19, still ships brotli-libs 1.2.0-r1, libcurl 8.22.0-r0 and libexpat 2.9.0-r0,
@@ -18,9 +18,9 @@
 # the newest its tag resolves to, so there is nothing to re-pin to - only an upstream
 # rebuild clears them. Switching either to the debian variant of the same image is not the
 # answer and was measured both times: 60 HIGH/CRITICAL for nginx, and 62 for postgres with
-# a fix available for none of them, against these 4.
+# a fix available for none of them, against these 5.
 #
-# None of the four is reachable, and the libexpat pair is the furthest out of reach. The
+# None of the five is reachable, and the libexpat trio is the furthest out of reach. The
 # only ELF in the nginx image linking libexpat.so is libfontconfig.so.1.16.1, the only one
 # linking THAT is libgd.so.3, and libgd is there for ngx_http_image_filter_module.so - a
 # DYNAMIC module, which nginx loads only on a `load_module` directive. The base ships no
@@ -37,7 +37,7 @@
 # image runs postgres. The only curl in the repository is in CI.
 #
 # Dependabot's docker ecosystem covers all three bases (README.md, under Container
-# images), so the base bump that clears all four arrives on its own; this file then goes
+# images), so the base bump that clears all five arrives on its own; this file then goes
 # back to holding nothing.
 vulnerabilities:
   - id: CVE-2026-111497
@@ -66,4 +66,12 @@ vulnerabilities:
       over 2^30 attributes in a multi-gigabyte document; libexpat 2.9.0-r0, fixed in
       2.10.0-r0. Same single, unloaded path as CVE-2026-117610, and the frontend serves
       static files rather than accepting a document at all.
+    expired_at: 2026-11-30
+  - id: CVE-2026-113351
+    statement: >-
+      libexpat denial of service: XML_ParserReset() zeroes the direct byte count without
+      offsetting the heap allocations it tracks, so a parser reused after a large document
+      fails every later parse with XML_ERROR_NO_MEMORY until it is recreated. Affects
+      2.7.2 through 2.9.0, fixed in 2.10.0-r0. Same single, unloaded path as the two
+      above, and nothing in the image resets a parser because nothing creates one.
     expired_at: 2026-11-30

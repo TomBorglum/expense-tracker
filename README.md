@@ -367,9 +367,6 @@ schema would serve empty answers rather than failing. The healthcheck is `pg_isr
 init-phase temporary server answers while the schema is still being applied. That server
 is socket-only, so over TCP readiness and init completing are the same moment.
 
-Neither `backend` nor `frontend` declares a healthcheck: the API image is distroless and
-holds no shell, curl or wget to probe itself with.
-
 ### Running it from a release
 
 A release publishes the file itself, so a host needs **no checkout and no clone**, one
@@ -382,26 +379,33 @@ CURRENCY_DATA_DIR=/home/you/somewhere/currencies
 EXPENSE_DATA_DIR=/home/you/projects/expense-data/data
 EOF
 
-stack=oci://docker.io/tomborglum/expense-tracker-stack:2.1.0
+stack=oci://docker.io/tomborglum/expense-tracker-stack:2.3.0
 docker compose -f "$stack" up -d -y
 printf 'y\n' | docker compose -f "$stack" run --rm -T load-currencies
 printf 'y\n' | docker compose -f "$stack" run --rm -T load-expenses
 ```
 
 That `.env` is the only state the host keeps, and **all three names are required**: the
-file carries no defaults, so an unset one stops `up` and names itself. The images come out
-of the artifact pinned by digest, so neither `IMAGE_PREFIX` nor `IMAGE_VERSION` is asked
-for here. The artifact's tag is what selects a version, and [The published
-stack](docs/releases.md#the-published-stack) says why.
+file carries no defaults, so an unset one stops `up` and names itself. The artifact
+carries a second document naming every image at its digest, and that document wins, so
+`IMAGE_PREFIX` and `IMAGE_TAG` are not asked for and the tag you pull is what selects a
+version - [The published stack](docs/releases.md#the-published-stack) says why.
+**Releases up to 2.2.0 demand those two anyway**, with any value at all, which the digest
+document then discards.
+
+The project is `expense-tracker-stack`, so the volume is
+`expense-tracker-stack_database-data`. Set `COMPOSE_PROJECT_NAME` in that `.env`, or pass
+`-p`, to run two of these on one host.
 
 - **A relative bind source resolves against compose's download cache**, not the current
-  directory, so both directories are named **absolutely**, as the `.env` above does.
-  `create_host_path: false` is what turns a missing one into a container that refuses to
-  start rather than an empty mount.
+  directory, so both are named **absolutely**. `create_host_path: false` turns a missing
+  one into a container that refuses to start rather than an empty mount.
 - **Loading an `oci://` file prompts** for the interpolation variables and the sources
   they resolved from, every time. `up` takes `-y` for it. **`run` has no such flag**, so
-  it wants a `y` typed, or `printf 'y\n' |` ahead of it with `-T`, which is what a script
-  needs and what the commands above use.
+  it wants a `y` typed, or `printf 'y\n' |` ahead of it with `-T`, as above.
+- **Take it down with `docker compose -p expense-tracker-stack down`.** A plain `down`
+  there reports `no configuration file provided`, and `-f oci://...` re-interpolates the
+  artifact before it will stop anything.
 - **`COMPOSE_FILE` cannot carry an `oci://` reference.** Compose splits that variable on
   `:`, so the value becomes three nonexistent paths. Pass `-f oci://...` instead, or set
   `COMPOSE_PATH_SEPARATOR=,` first.
@@ -419,26 +423,26 @@ cd stack && docker compose up -d
 ```
 
 The SPA is then on <http://localhost:8080> and the API on <http://localhost:8000>. **8000
-is also the port `pixi run backend-dev` binds**, so the two cannot run at once; stop one
-before starting the other, or move the stack with the variables below.
+is also the port `pixi run backend-dev` binds**, so the two cannot run at once.
+`stack/.env` also sets `COMPOSE_PROJECT_NAME=expense-tracker-dev`, which keeps a checkout
+and a release artifact on one machine two projects with two volumes.
 
-Which images it runs is two variables, `IMAGE_PREFIX` and `IMAGE_VERSION`, `stack/.env`
-naming them `expense-tracker` and `dev`, composing as `<prefix>-<service>:<version>` - the
-shape [Releases](#releases) composes published names in, and the two names
-`release.yml` sets when it publishes. A shell variable outranks that file, so pointing the
-stack at a release is one setting and **no published name is written down anywhere here**:
+Which images it runs is two variables, `IMAGE_PREFIX` and `IMAGE_TAG`, `stack/.env` naming
+them `expense-tracker` and `dev`, composing as `<prefix>-<service>:<tag>` - the shape
+[Releases](#releases) composes published names in. A shell variable outranks that file, so
+pointing the stack at a release is one setting and **no published name is written down
+anywhere here**:
 
 ```sh
 IMAGE_PREFIX=<namespace>/expense-tracker \
-IMAGE_VERSION=2.1.0 docker compose up -d
+IMAGE_TAG=2.3.0 docker compose up -d
 ```
 
 Where the browser should reach the API is a third, `API_BASE_URL`, which `stack/.env` sets
 to `http://localhost:8000`. **It cannot be `http://backend:8000`**: the bundle
 runs in the host's browser, where that name does not resolve. The SPA image's entrypoint
-refuses an absent value and one carrying a path, so a mistake here stops that container
-rather than serving an app that reaches nothing. Moving the API off host port 8000 means
-editing the `ports:` entry and setting this variable to match.
+refuses an absent value and one carrying a path, so a mistake here stops that container.
+Moving the API off host port 8000 means editing `ports:` and this variable together.
 
 ### Loading data
 
@@ -450,14 +454,10 @@ docker compose run --rm load-currencies
 docker compose run --rm load-expenses
 ```
 
-`docker compose --profile load up -d` is the other form, and brings the whole stack up
-with both loaders alongside it.
-
 The loaders keep the differing reload shapes
 [docs/database.md](docs/database.md#loading-expenses) describes: currencies replace the
 whole rate table every run, and expenses are append-only with a ledger that **refuses** a
-file whose contents changed. A reclassified month is not cured by re-running
-`load-expenses`, but by throwing the database away:
+file whose contents changed. A reclassified month is cured by throwing the database away:
 
 ```sh
 docker compose down -v                     # drop the volume: this IS the wipe

@@ -8,25 +8,30 @@
 # loaded as `-f oci://...` on a machine holding no checkout. Nothing is built where this
 # runs.
 #
-# The project name is fixed rather than taken from the directory, so the named volume
-# below is `expense-tracker_database-data` wherever the file is loaded from - a checkout, a
-# scratch directory holding one .env, or an `oci://` reference. `docker compose down -v`
-# then reaches the same volume every time.
+# The project name is `<repository>-<directory>`, the formula the published images and the
+# published artifact already follow. So `tomborglum/expense-tracker-stack:2.2.0` tells a
+# deployer the project, the network and the volume without opening this file, and two
+# repositories cannot collide on one host. release.yml's compose job fails a release whose
+# name does not match. COMPOSE_PROJECT_NAME and `-p` outrank this key, and .env beside
+# this file sets the first, which is what keeps a checkout off a release's volume.
 #
-# EVERY interpolation below is REQUIRED and none carries a default, so an unset variable
-# stops `up`, `config` and `publish` alike with the variable's name in the message. Each
-# `:?` message names the file that owns the variable: .env beside this file for the three
-# the stack itself needs, backend/.env for the two host directories. direnv loads both.
-# IMAGE_PREFIX and IMAGE_VERSION are the two names release.yml exports when it publishes
-# this file, which is the whole of what that workflow knows about this repository.
-name: expense-tracker
+# IMAGE_PREFIX and IMAGE_TAG carry NO `:?`, alone among the five. `publish` writes a
+# second document into the artifact naming every image at its digest, and that document
+# wins, so a release host reads these two and discards them - guarding them would demand a
+# value nothing uses. An `up` from a checkout takes them from .env beside this file, and
+# the compose job fails a file whose unguarded names are not declared there.
+#
+# The other three ARE guarded, so an unset one stops `up`, `config` and `publish` alike
+# with the variable's name in the message. Each `:?` names the file that owns it: .env
+# beside this file for API_BASE_URL, backend/.env for the two host directories.
+name: expense-tracker-stack
 
 services:
   # The schema travels in the image, applied by the base's entrypoint on an empty data
   # directory. So this service needs no init script, no migration step and no ordering
   # against anything: it is the first thing up and the only thing that writes.
   database:
-    image: ${IMAGE_PREFIX:?stack/.env}-database:${IMAGE_VERSION:?stack/.env}
+    image: ${IMAGE_PREFIX}-database:${IMAGE_TAG}
     # The pair backend/.env's PGUSER and PGDATABASE have to agree with, which CLAUDE.md
     # carries as a pair nothing checks. The entrypoint creates both on first boot, and
     # POSTGRES_USER becomes the superuser, so an existing volume ignores a change here.
@@ -80,7 +85,7 @@ services:
   # with. Whichever port the local cluster listens on is a fact about a developer's host,
   # not about this stack.
   backend:
-    image: ${IMAGE_PREFIX:?stack/.env}-backend:${IMAGE_VERSION:?stack/.env}
+    image: ${IMAGE_PREFIX}-backend:${IMAGE_TAG}
     environment:
       PGHOST: database
       PGPORT: 5432
@@ -105,7 +110,7 @@ services:
   # The SPA, served by unprivileged nginx on 8080 - a privileged port being out of reach of
   # the uid it runs as.
   frontend:
-    image: ${IMAGE_PREFIX:?stack/.env}-frontend:${IMAGE_VERSION:?stack/.env}
+    image: ${IMAGE_PREFIX}-frontend:${IMAGE_TAG}
     # The origin the BROWSER should call, which is why it cannot be http://backend:8000:
     # the bundle runs on the host's browser, where that name does not resolve. The image's
     # own entrypoint script rewrites the build-time placeholder across the document root
@@ -152,7 +157,7 @@ services:
   # in backend/.env from a blessed shell and by the operator anywhere else. README says
   # so under Deployment.
   load-currencies:
-    image: ${IMAGE_PREFIX:?stack/.env}-backend:${IMAGE_VERSION:?stack/.env}
+    image: ${IMAGE_PREFIX}-backend:${IMAGE_TAG}
     profiles: ["load"]
     entrypoint: ["/app/.pixi/envs/backend/bin/python", "-m", "expense_tracker.currency_loader"]
     command: ["/currencies"]
@@ -178,7 +183,7 @@ services:
     # a finished loader forever.
 
   load-expenses:
-    image: ${IMAGE_PREFIX:?stack/.env}-backend:${IMAGE_VERSION:?stack/.env}
+    image: ${IMAGE_PREFIX}-backend:${IMAGE_TAG}
     profiles: ["load"]
     entrypoint: ["/app/.pixi/envs/backend/bin/python", "-m", "expense_tracker.expense_loader"]
     command: ["/expenses"]

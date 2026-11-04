@@ -3,7 +3,7 @@ name: Release
 # Builds, scans and publishes one image per directory it is given, then publishes one OCI
 # compose artifact per compose directory it is given. CALLED, never triggered. It names no
 # repository, no file outside the directories it is handed, and exactly two variables:
-# IMAGE_PREFIX and IMAGE_VERSION, which is the whole contract a compose file answers to.
+# IMAGE_PREFIX and IMAGE_TAG, which is the whole contract a compose file answers to.
 # TWO INVARIANTS, both stated in CLAUDE.md: no job that checks the repository out gets
 # `id-token: write`, and nothing here reads `vars` or names an AWS object. The logs are
 # world-readable, so nothing added may print the account id or the PAT either.
@@ -29,8 +29,11 @@ on:
           JSON array of directories published as OCI compose artifacts, one per directory,
           each holding a compose.yaml. The repository each publishes to is composed from
           the directory name exactly as an image's is, so a directory named `stack`
-          publishes to <namespace>/<repository>-stack. THE CONTRACT: this workflow sets
-          IMAGE_PREFIX, to <namespace>/<repository>, and IMAGE_VERSION, to the tag being
+          publishes to <namespace>/<repository>-stack. THE NAME: the file's `name:` must
+          equal <repository>-<directory>, and the directory must not be nested, so the
+          project, its network and its volume are readable off the artifact's reference
+          and two repositories cannot collide on one host. THE CONTRACT: this workflow sets
+          IMAGE_PREFIX, to <namespace>/<repository>, and IMAGE_TAG, to the tag being
           published, and NAMES NOTHING ELSE. Every other variable the file interpolates is
           filled from the .env beside it where that file declares one, and with a
           placeholder where it does not, a host path being the deployment's to supply.
@@ -244,10 +247,9 @@ jobs:
           provenance: mode=max
           sbom: true
 
-      # trivy reads an OCI layout directory and rejects the archive, which is a tarred
-      # one. `tar -xf` rather than `regctl image import`: import leads index.json with a
-      # referrers index, trivy reads the first entry only, and the scan then reports
-      # SUCCESS having found nothing.
+      # trivy reads an OCI layout directory and rejects the tarred one. `tar -xf` rather
+      # than `regctl image import`: import leads index.json with a referrers index, trivy
+      # reads the first entry only, and the scan then reports SUCCESS having found nothing.
       - name: Unpack the OCI layout
         run: |
           set -euo pipefail
@@ -256,6 +258,9 @@ jobs:
 
       - name: Scan the ${{ matrix.directory }} image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          # `--skip-version-check`, which the action exposes no input for.
+          TRIVY_SKIP_VERSION_CHECK: "true"
         with:
           scan-type: image
           input: /tmp/oci
@@ -322,12 +327,10 @@ jobs:
           if-no-files-found: error
 
   # `push` checks nothing out, so this job checks every compose directory out on its
-  # behalf - which makes it the second job running repository code, hence no
-  # `id-token: write`. It gates that a compose file LOADS and is publishable, never that a
-  # repository declares its own variables - ci.yml does that, in a blessed shell. A LOOP
-  # RATHER THAN A MATRIX, and no `if:`: it renders and builds nothing, so
-  # there is no parallelism worth buying, and a job that always runs never skips - which
-  # is what lets `push` keep the plain `needs` gate on an empty input.
+  # behalf - the second job running repository code, hence no `id-token: write`. It gates
+  # the project name, the directory shape, undeclared variables, and that the file LOADS.
+  # A LOOP RATHER THAN A MATRIX, and no `if:`: it builds nothing, and a job that always
+  # runs never skips, which is what lets `push` keep the plain `needs` gate on empty input.
   compose:
     runs-on: ubuntu-latest
     permissions:
@@ -341,6 +344,7 @@ jobs:
       - name: Validate and stage every compose directory
         env:
           COMPOSE_DIRECTORIES: ${{ inputs.compose-directories }}
+          REPOSITORY: ${{ github.event.repository.name }}
         run: |
           set -euo pipefail
           docker compose version
@@ -353,16 +357,40 @@ jobs:
             > /tmp/compose-files/directories
           while read -r directory; do
             [ -n "$directory" ] || continue
+            # Nested composes a three-component Hub repository, and a project name whose
+            # silently stripped slash collides with the flat spelling.
+            case "$directory" in */*)
+              echo "::error::compose directory $directory must not be nested."
+              exit 1 ;;
+            esac
+            # <repository>-<directory>, the formula the images and the artifact follow, so
+            # a deployer reads the project, network and volume off the artifact reference.
+            # The DECLARED key: `config .name` would show a COMPOSE_PROJECT_NAME override.
+            expected="$REPOSITORY-$directory"
+            declared="$(sed -n 's/^name:[[:space:]]*//p' "$directory/compose.yaml" \
+              | head -1 | tr -d "\"' ")"
+            if [ "$declared" != "$expected" ]; then
+              echo "::error::$directory/compose.yaml names the project" \
+                "'${declared:-nothing}', expected '$expected'."
+              exit 1
+            fi
             # The whole directory: the .env travels beside the file that needs it.
             mkdir -p "/tmp/compose-files/$directory"
             cp -R "$directory/." "/tmp/compose-files/$directory/"
-            # EVERY name the file interpolates, listed without resolving any, so this
-            # reads a file nothing can render. Each gets a placeholder: a bind source is
-            # the deployment's to name, and the artifact is the source file byte for byte,
-            # so no value here reaches it. `--env-file` turns .env auto-loading OFF, and
-            # the later file wins, so the directory's own declarations outrank these.
             docker compose -f "$directory/compose.yaml" --profile '*' config --variables \
-              --format json | jq -r 'keys[] | "\(.)=release-workflow-placeholder"' \
+              --format json > /tmp/variables.json
+            # A name with no `:?` renders BLANK when unset rather than failing.
+            for name in $(jq -r 'to_entries[]
+              | select(.value.Required | not) | .key' /tmp/variables.json); do
+              grep -qE "^[[:space:]]*$name=" "$directory/.env" 2>/dev/null && continue
+              echo "::error::$directory/compose.yaml leaves \$$name unguarded and" \
+                "$directory/.env does not declare it."
+              exit 1
+            done
+            # EVERY name, listed without resolving any, so this reads a file nothing can
+            # render. `--env-file` turns .env auto-loading OFF and the later file wins, so
+            # the directory's own declarations outrank these placeholders.
+            jq -r 'keys[] | "\(.)=release-workflow-placeholder"' /tmp/variables.json \
               > "/tmp/compose-files/$directory/.placeholders.env"
             set -- --env-file "/tmp/compose-files/$directory/.placeholders.env"
             [ -f "$directory/.env" ] && set -- "$@" --env-file "$directory/.env"
@@ -562,10 +590,9 @@ jobs:
       # AFTER the copy above, which is why this step lives in this job at all:
       # --resolve-image-digests reads each digest back OUT of the registry. ONE PUBLISH PER
       # TAG, each resolving against that tag's own images, and docs/releases.md says what
-      # the artifact ends up holding. IMAGE_PREFIX and IMAGE_VERSION are THE ONLY TWO
-      # NAMES THIS WORKFLOW PUTS INTO A COMPOSE FILE: the shell environment outranks both
-      # files below: the placeholders the `compose` job staged, and the directory's
-      # own .env.
+      # the artifact ends up holding. IMAGE_PREFIX and IMAGE_TAG are THE ONLY TWO NAMES
+      # THIS WORKFLOW PUTS INTO A COMPOSE FILE: the shell environment outranks both files
+      # below: the placeholders the `compose` job staged, and the directory's own .env.
       - name: Publish every compose file to Docker Hub
         env:
           COMPOSE_TAGS: ${{ needs.meta.outputs.compose-tags }}
@@ -595,8 +622,8 @@ jobs:
               [ -n "$ref" ] || continue
               case "$ref" in "$repository:"*) ;; *) continue ;; esac
               # The repository holds no port, so the last colon is the tag's.
-              export IMAGE_VERSION="${ref##*:}"
-              echo "publishing $directory -> $ref, naming images at :$IMAGE_VERSION"
+              export IMAGE_TAG="${ref##*:}"
+              echo "publishing $directory -> $ref, naming images at :$IMAGE_TAG"
               set -- --env-file "/tmp/compose-files/$directory/.placeholders.env"
               if [ -f "/tmp/compose-files/$directory/.env" ]; then
                 set -- "$@" --env-file "/tmp/compose-files/$directory/.env"
