@@ -389,7 +389,7 @@ jobs:
             cp -R "$directory/." "/tmp/compose-files/$directory/"
             docker compose -f "$directory/compose.yaml" --profile '*' config --variables \
               --format json > /tmp/variables.json
-            # A name with no `:?` renders BLANK when unset rather than failing.
+            # A name with no `:?` renders a WRONG value when unset rather than failing.
             for name in $(jq -r 'to_entries[]
               | select(.value.Required | not) | .key' /tmp/variables.json); do
               grep -qE "^[[:space:]]*$name=" "$directory/.env" 2>/dev/null && continue

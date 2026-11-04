@@ -271,7 +271,9 @@ the registry. It holds **two layers**:
 The overlay is merged last, so `IMAGE_PREFIX` and `IMAGE_TAG` **have no effect on a
 deployment that loads the artifact**. That is why those two alone carry no `:?`: guarding
 them would demand a value the overlay then discards. Interpolation runs per document and
-**before** the merge, so a guard there would fire on a host that has no use for the name.
+**before** the merge, so a guard there would fire on a host that has no use for the name,
+and a bare `${...}` would warn ten times instead. Both carry a `:-` placeholder for that
+reason, which is substituted into document 1 and then discarded with it.
 The remaining three travel unresolved and guarded, so the deployment supplies them or is
 refused. The artifact is published **once per tag**, each resolving against that tag's own
 images, and every tag resolves to the same digests. The published digest is signed by
