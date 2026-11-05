@@ -4,8 +4,7 @@
 release-please's GitHub Release is published. It holds the triggers, the concurrency group
 and every value belonging to this repository; the work is done by the reusable
 `docker-hub-publish.yml` in [TomBorglum/workflows][workflows], pinned at an exact version.
-Four tags per image, derived once by `docker/metadata-action`: `1.1.0`, `1.1`,
-`sha-<full commit>` and `latest`.
+Four tags per image: `1.1.0`, `1.1`, `sha-<full commit>` and `latest`.
 
 ```
 tomborglum/expense-tracker-backend
@@ -21,14 +20,12 @@ release publishes to.** The fourth repository is composed by the same formula fr
 compose directories `publish.yml` names, so `stack/` publishes to
 `<namespace>/<repository>-stack`. See [The published stack](#the-published-stack).
 
-Eight `org.opencontainers.image.*` values are derived alongside, carried as both labels
-and manifest annotations. **`title` and `description` are each image's own**, declared in
-its `docker-bake.hcl` and merged last, which is why the build uses `docker buildx bake`.
-The bake target is spelled `image` in five places: all three bake files, metadata-action's
-`bake-target`, and the build step's `targets` and `set:` keys.
+Each image's `title` and `description` are its own, declared in its `docker-bake.hcl`.
+All three declare `target "image"`, the name the release workflow fixes.
 
-[`docs/docker-hub-publish.md`][reference] documents the called workflow: its four jobs,
-the credential path, the vulnerability gate and the trust policy in general form.
+[`docs/docker-hub-publish.md`][reference] documents the called workflow: what a caller
+must provide, the credential path, the vulnerability gate and the trust policy in general
+form.
 
 ## The version pin
 
@@ -61,14 +58,13 @@ which reads no `vars` and names no AWS object. Dropping `trivyignores` fails qui
 [The vulnerability gate](#the-vulnerability-gate).
 
 `publish.yml` grants `contents: read` and `id-token: write` as a **ceiling**, which the
-called workflow lowers: `build` and `compose` check out repository code and take
-`contents: read` alone, and only `push` holds the credential and checks nothing out.
-`CLAUDE.md` carries that split as an invariant.
+called workflow lowers: only the job holding the credential can spend the token, and it
+checks nothing out. `CLAUDE.md` carries that split as an invariant.
 
 The concurrency group is declared here because GitHub cancels the *caller* when caller and
 called share a group. `cancel-in-progress` is conditioned on the event: **a release run is
 never cancelled**, where a superseded pull request run is. A run stopped partway through
-`push` can leave one image published and another not.
+publishing can leave one image published and another not.
 
 ## The automation App
 
@@ -120,8 +116,8 @@ appears in this repository, the ARN carrying it being a repository **secret**.
   parameter ARN is the whole isolation boundary.**
 - **Secret** `AWS_RELEASE_ROLE_ARN` =
   `arn:aws:iam::<account-id>:role/gha-expense-tracker-release`, passed as the
-  `aws-role-arn` secret. A fork's pull request gets no secrets, and `push` runs on the
-  release event alone.
+  `aws-role-arn` secret. A fork's pull request gets no secrets, and a release is the only
+  event that publishes.
 - `DOCKERHUB_NAMESPACE` = `tomborglum`, passed as `dockerhub-namespace`. Has to be the
   account the PAT belongs to, which nothing checks.
 - `AWS_REGION`, passed as `aws-region`.
@@ -173,9 +169,8 @@ carrying an altered workflow satisfies `job_workflow_ref`.
 ## The published stack
 
 `stack/compose.yaml` is published to the fourth repository as an OCI artifact of type
-`application/vnd.docker.compose.project`, by `docker compose publish` in `push` and
-**after** the images are copied, `--resolve-image-digests` reading each digest back out of
-the registry. It holds **two layers**:
+`application/vnd.docker.compose.project`, after the images it names are copied. It holds
+**two layers**:
 
 | Layer | What it is |
 |---|---|
@@ -194,14 +189,14 @@ images, and every tag resolves to the same digests. The published digest is sign
 `cosign`, keyless, as the images are. Only the bind mount *declarations* travel: **no
 directory contents are published.**
 
-### What the compose job gates
+### What a release gates in this file
 
-`stack/compose.yaml` declares `name: expense-tracker-stack`, and the `compose` job fails a
-release whose `name:` is not `<repository>-<directory>` or whose directory is nested. The
-formula is the images' own, so an operator reads the project, its network
+`stack/compose.yaml` declares `name: expense-tracker-stack`, and a release fails if that
+`name:` is not `<repository>-<directory>` or if the directory is nested. The formula is
+the images' own, so an operator reads the project, its network
 (`expense-tracker-stack_default`) and its volume (`expense-tracker-stack_database-data`)
-off the artifact's reference, and two repositories cannot collide on one host. The job
-reads the **declared** key rather than `config`'s resolved `.name`, which
+off the artifact's reference, and two repositories cannot collide on one host. The
+**declared** key is what is read, rather than `config`'s resolved `.name`, which
 `COMPOSE_PROJECT_NAME` would override - a deployer and `stack/.env` both set that to run a
 second copy beside the first, and neither changes what is published.
 
@@ -222,23 +217,22 @@ docker compose -f oci://docker.io/tomborglum/expense-tracker-stack:2.0.0 config
 ```
 
 The stack takes the same two verifications against its own repository.
-`cosign-installer`'s default is cosign 3, which attaches the signature as an **OCI 1.1
-referrer** rather than a `sha256-<digest>.sig` tag, so a tag listing shows the four
-published tags and nothing more.
+Signatures are attached as **OCI 1.1 referrers** rather than `sha256-<digest>.sig` tags,
+so a tag listing shows the four published tags and nothing more.
 
 **The signing identity is the called workflow, not this repository.** Fulcio puts
 `job_workflow_ref` in the certificate's SAN, so the identity to match is
 `TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@refs/tags/vX.Y.Z`. A
 regexp written against `expense-tracker` matches nothing.
 
-**If the credential exchange is refused**, read the `push` job's claim dump, correct the
-trust policy in the console and re-run the failed job: the AWS side lives outside the tag,
-so that loop is free.
+**If the credential exchange is refused**, read the claim dump the run logs before its
+first AWS call, correct the trust policy in the console and re-run the failed job: the AWS
+side lives outside the tag, so that loop is free.
 
 **If the called workflow itself is wrong**, the fix is a release in `workflows` and a pin
 bump here: a `release` event runs `publish.yml` as it exists on the tag, and that file
-names an exact version. Every pull request builds, scans and gates all three images, with
-`push` held back by `if: github.event_name == 'release'`.
+names an exact version. Every pull request builds, scans and gates all three images, and
+publishes nothing.
 
 [workflows]: https://github.com/TomBorglum/workflows
 [reference]: https://github.com/TomBorglum/workflows/blob/main/docs/docker-hub-publish.md

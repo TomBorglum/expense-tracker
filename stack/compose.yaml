@@ -11,10 +11,9 @@
 # The project name is `<repository>-<directory>`, the formula the published images and the
 # published artifact already follow. So `tomborglum/expense-tracker-stack:2.2.0` tells a
 # deployer the project, the network and the volume without opening this file, and two
-# repositories cannot collide on one host. docker-hub-publish.yml's compose job fails a
-# release whose name does not match. COMPOSE_PROJECT_NAME and `-p` outrank this key, and
-# .env beside this file sets the first, which is what keeps a checkout off a release's
-# volume.
+# repositories cannot collide on one host. A release whose name does not match is failed.
+# COMPOSE_PROJECT_NAME and `-p` outrank this key, and .env beside this file sets the
+# first, which is what keeps a checkout off a release's volume.
 #
 # IMAGE_PREFIX and IMAGE_TAG carry a `:-` placeholder, not a `:?`, alone among the five.
 # `publish` writes a second document into the artifact naming every image at its digest,
