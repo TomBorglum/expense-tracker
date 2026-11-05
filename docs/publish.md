@@ -1,4 +1,4 @@
-# Releases
+# Publishing
 
 `.github/workflows/publish.yml` publishes all three images to Docker Hub when
 release-please's GitHub Release is published. It holds the triggers, the concurrency group

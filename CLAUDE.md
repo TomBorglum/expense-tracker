@@ -59,7 +59,7 @@ The `main-protection` ruleset rule pinning each of these is named in
 - **A job that checks out the repository never gets `id-token: write`.** Checked-out code
   runs, and that token buys the Docker Hub credential out of AWS. `publish.yml` grants it
   as a ceiling the called workflow lowers. Nothing checks this;
-  [`docs/releases.md`](docs/releases.md) has the reasoning.
+  [`docs/publish.md`](docs/publish.md) has the reasoning.
 
 ## Source conventions
 
