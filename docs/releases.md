@@ -4,7 +4,6 @@
 release-please's GitHub Release is published. It holds the triggers, the concurrency group
 and every value belonging to this repository; the work is done by the reusable
 `docker-hub-publish.yml` in [TomBorglum/workflows][workflows], pinned at an exact version.
-Four tags per image: `1.1.0`, `1.1`, `sha-<full commit>` and `latest`.
 
 ```
 tomborglum/expense-tracker-backend
@@ -13,15 +12,10 @@ tomborglum/expense-tracker-frontend
 tomborglum/expense-tracker-stack      <- the stack, not an image
 ```
 
-**No one of those names is written down.** `publish.yml` names the image directories and
-the called workflow composes `<namespace>/<repository>-<directory>`, the repository read
-from `github.event.repository.name`. **So renaming this GitHub repository renames what a
-release publishes to.** The fourth repository is composed by the same formula from the
-compose directories `publish.yml` names, so `stack/` publishes to
-`<namespace>/<repository>-stack`. See [The published stack](#the-published-stack).
-
-Each image's `title` and `description` are its own, declared in its `docker-bake.hcl`.
-All three declare `target "image"`, the name the release workflow fixes.
+**No one of those names is written down.** Each is `<namespace>/<repository>-<directory>`,
+composed at release time from the directories `publish.yml` names. **So renaming this
+GitHub repository renames what a release publishes to.** The fourth is the stack rather
+than an image; see [The published stack](#the-published-stack).
 
 [`docs/docker-hub-publish.md`][reference] documents the called workflow: what a caller
 must provide, the credential path, the vulnerability gate and the trust policy in general
@@ -75,10 +69,8 @@ Each image is scanned by Trivy before anything is published, and a HIGH or CRITI
 finding fails the release. [The reference][reference] records how the scan is made
 trustworthy.
 
-Suppressions live in **`.trivyignore.yaml`**, and every entry carries an `expired_at`
-date. The five today are CVEs in the alpine bases, each fixed in a package version the
-pinned digest does not yet resolve to, and none reachable: nothing loads a brotli module,
-invokes curl, or parses XML with the expat sitting behind an nginx module never loaded.
+Suppressions live in **`.trivyignore.yaml`**, which records what each one covers and why
+it is unreachable.
 
 **The file is found only because `publish.yml` names it.** The `trivyignores` input
 defaults to empty, and an empty value configures no ignore file at all, so dropping that
@@ -103,9 +95,6 @@ appears in this repository, the ARN carrying it being a repository **secret**.
 - `DOCKERHUB_NAMESPACE` = `tomborglum`, passed as `dockerhub-namespace`. Has to be the
   account the PAT belongs to, which nothing checks.
 - `AWS_REGION`, passed as `aws-region`.
-
-The SSM path is neither a variable nor a secret: `publish.yml` passes it as the
-`aws-ssm-parameter` input.
 
 The role's `Allow` statement names the account's `token.actions.githubusercontent.com`
 provider as `Principal.Federated` and `sts:AssumeRoleWithWebIdentity` as its `Action`. Its
@@ -159,34 +148,14 @@ carrying an altered workflow satisfies `job_workflow_ref`.
 | `compose.yaml` | The committed file, **byte for byte**, comments and all. |
 | `image-digests.yaml` | Overlay restating the five `image:` keys as `<tag>@sha256:...` |
 
-The overlay is merged last, so `IMAGE_PREFIX` and `IMAGE_TAG` **have no effect on a
-deployment that loads the artifact**. That is why those two alone carry no `:?`: guarding
-them would demand a value the overlay then discards. Interpolation runs per document and
-**before** the merge, so a guard there would fire on a host that has no use for the name,
-and a bare `${...}` would warn ten times instead. Both carry a `:-` placeholder for that
-reason, which is substituted into document 1 and then discarded with it.
-The remaining three travel unresolved and guarded, so the deployment supplies them or is
-refused. The artifact is published **once per tag**, each resolving against that tag's own
-images, and every tag resolves to the same digests. The published digest is signed by
-`cosign`, keyless, as the images are. Only the bind mount *declarations* travel: **no
-directory contents are published.**
+The overlay is merged last and wins, which is why `stack/compose.yaml` guards
+`IMAGE_PREFIX` and `IMAGE_TAG` with a `:-` rather than a `:?`; that file's header carries
+the reasoning. The artifact is published **once per tag**, and every tag resolves to the
+same digests. The published digest is signed by `cosign`, keyless, as the images are. Only
+the bind mount *declarations* travel: **no directory contents are published.**
 
-### What a release gates in this file
-
-`stack/compose.yaml` declares `name: expense-tracker-stack`, and a release fails if that
-`name:` is not `<repository>-<directory>` or if the directory is nested. The formula is
-the images' own, so an operator reads the project, its network
-(`expense-tracker-stack_default`) and its volume (`expense-tracker-stack_database-data`)
-off the artifact's reference, and two repositories cannot collide on one host. The
-**declared** key is what is read, rather than `config`'s resolved `.name`, which
-`COMPOSE_PROJECT_NAME` would override - a deployer and `stack/.env` both set that to run a
-second copy beside the first, and neither changes what is published.
-
-It also fails any name carrying neither a `:?` guard nor a `:-` default. The file is
-published uninterpolated, so a bare `${VAR}` renders blank on the deploy host and `up`
-then reports `invalid reference format` without naming it. **No `.env` beside the compose
-file is required**, and `stack/.env` reaches neither end: the workflow exports
-`IMAGE_PREFIX` and `IMAGE_TAG` itself, and `image-digests.yaml` wins at deploy.
+`stack/.env` reaches neither end of a release: the release sets `IMAGE_PREFIX` and
+`IMAGE_TAG` itself, and `image-digests.yaml` wins at deploy.
 
 ## Verifying a release
 
@@ -199,8 +168,6 @@ docker compose -f oci://docker.io/tomborglum/expense-tracker-stack:2.0.0 config
 ```
 
 The stack takes the same two verifications against its own repository.
-Signatures are attached as **OCI 1.1 referrers** rather than `sha256-<digest>.sig` tags,
-so a tag listing shows the four published tags and nothing more.
 
 **The signing identity is the called workflow, not this repository.** Fulcio puts
 `job_workflow_ref` in the certificate's SAN, so the identity to match is

@@ -25,8 +25,7 @@
 # The placeholder is deliberately not a real image name. A checkout whose .env lost them
 # fails on the pull with `unset-image-prefix-...` in the message, rather than quietly
 # running something that happens to exist. An `up` from a checkout takes them from .env
-# beside this file, and the compose job fails a file whose unguarded names are not
-# declared there - a default leaves `Required: false`, so that gate is unaffected.
+# beside this file.
 #
 # The other three ARE guarded, so an unset one stops `up`, `config` and `publish` alike
 # with the variable's name in the message. Each `:?` names the file that owns it: .env
