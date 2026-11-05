@@ -13,7 +13,7 @@
 #
 # alpine rather than the debian variant, for the reason .trivyignore.yaml records for the
 # SPA's base: the smaller package inventory is what keeps findings out of the HIGH/CRITICAL
-# gate in release.yml, which fails a release outright.
+# gate in docker-hub-publish.yml, which fails a release outright.
 
 FROM postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
 
@@ -35,12 +35,13 @@ COPY backend/schema.sql /docker-entrypoint-initdb.d/10-schema.sql
 ENV POSTGRES_INITDB_ARGS="--locale=C --encoding=UTF8"
 
 # Deleting gosu and running unprivileged are ONE change, not two. The base calls gosu in
-# exactly one situation - dropping from root to the postgres user - and all three call sites
-# sit behind `if [ "$(id -u)" = '0' ]`, so starting as 70 reaches none of them and the
-# binary becomes unreachable code. It is also 1.7 MB of Go whose stdlib carried 26
-# HIGH/CRITICAL findings into the gate release.yml fails a release on, every one of them in
-# net/http, crypto/tls, encoding/xml, html/template or net/url - none of which a program
-# that resolves a user and execs could reach either. Removing it takes this image to zero.
+# exactly one situation - dropping from root to the postgres user - and all three call
+# sites sit behind `if [ "$(id -u)" = '0' ]`, so starting as 70 reaches none of them and
+# the binary becomes unreachable code. It is also 1.7 MB of Go whose stdlib carried 26
+# HIGH/CRITICAL findings into the gate docker-hub-publish.yml fails a release on, every
+# one of them in net/http, crypto/tls, encoding/xml, html/template or net/url - none of
+# which a program that resolves a user and execs could reach either. Removing it takes
+# this image to zero.
 #
 # What it gives up is the other thing root does: docker_create_db_directories chowns the
 # data directory. A fresh NAMED volume needs no chown, docker seeding it from this image's

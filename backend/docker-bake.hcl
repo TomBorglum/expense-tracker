@@ -1,19 +1,20 @@
-# What the API image IS, declared beside it rather than in the pipeline. release.yml loads
-# the release metadata docker/metadata-action derives UNDER this file, so bake merges the
-# two: `labels` is a map and merges per key, so a key named here wins and every shared one
-# survives, and `annotations` is a list and is appended to.
+# What the API image IS, declared beside it rather than in the pipeline.
+# docker-hub-publish.yml loads the release metadata docker/metadata-action derives UNDER
+# this file, so bake merges the two: `labels` is a map and merges per key, so a key named
+# here wins and every shared one survives, and `annotations` is a list and is appended to.
 #
 # Paths resolve the way a plain `docker build` resolves them - `context` against the
 # working directory, `dockerfile` against the context - so this file is invoked from THIS
-# directory, by `poe image` locally and by release.yml's `source` input in CI. A context
-# that leaves this directory needs `--allow=fs.read=..`, which both callers pass.
+# directory, by `poe image` locally and by docker-hub-publish.yml's `source` input in CI.
+# A context that leaves this directory needs `--allow=fs.read=..`, which both callers
+# pass.
 
 variable "DESCRIPTION" {
   default = "The expense-tracker REST API - four read-only JSON endpoints over PostgreSQL, served by uvicorn."
 }
 
-# The release target: no tags, because release.yml exports an OCI archive and the push job
-# is what names the images.
+# The release target: no tags, because docker-hub-publish.yml exports an OCI archive and
+# the push job is what names the images.
 target "image" {
   context    = ".."
   dockerfile = "backend/Dockerfile"

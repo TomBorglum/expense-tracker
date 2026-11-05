@@ -1,43 +1,52 @@
 name: Publish
 
-# What this repository publishes, and the events that publish it; release.yml is HOW.
-# THE FILENAMES LOOK BACKWARDS deliberately - CLAUDE.md states the pair that pins it.
-# A `./` reference resolves at this file's own ref, so a release calls release.yml as it
-# exists on the tag and `job_workflow_ref` carries that tag.
+# What this repository publishes, and the events that publish it; the called workflow is
+# HOW. docs/releases.md records every value below that is this repository's to decide.
+#
+# THE CALLED WORKFLOW IS REMOTE AND PINNED AT AN EXACT TAG. The AWS release role trusts
+# the pair of this repository's `sub` claim and that workflow's `job_workflow_ref` claim,
+# and its pattern admits `vX.Y.Z` alone - the moving `v1` and `v1.1` tags carry too few
+# dots to match. So pinning this at `@v1` fails every release at the credential exchange.
+# CLAUDE.md states the pair as an invariant.
 
 on:
   release:
     types: [published]
-  # The build half only - release.yml guards `push` with an `if` of its own. EVERY PATH,
-  # no `paths` filter: that would be a second copy of what the two Dockerfiles copy by
-  # name, with nothing checking the two agree.
+  # The build half only - the called workflow guards `push` with an `if` of its own. EVERY
+  # PATH, no `paths` filter: that would be a second copy of what the two Dockerfiles copy
+  # by name, with nothing checking the two agree.
   pull_request:
     types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
 
-# Declared here rather than in release.yml: GitHub cancels the caller when the two share a
-# group. A RELEASE is never cancelled - docs/releases.md says why.
+# Declared here rather than in the called workflow: GitHub cancels the caller when the two
+# share a group. A RELEASE is never cancelled - docs/releases.md says why.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   images:
-    uses: ./.github/workflows/release.yml
+    uses: TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@v1.1.0
     # A ceiling the called workflow can only lower, which `build` does - the isolation
     # invariant CLAUDE.md states.
     permissions:
       contents: read
       id-token: write
-    # What each value is, and must contain, is its declaration's `description` in
-    # release.yml. Why each is sourced the way it is, docs/releases.md records.
+    # What each value is, and must contain, is its declaration's `description` in the
+    # called workflow. Why each is sourced the way it is, docs/releases.md records.
     with:
       image-directories: '["backend", "database", "frontend"]'
       compose-directories: '["stack"]'
       aws-region: ${{ vars.AWS_REGION }}
       aws-ssm-parameter: /expense-tracker/release/dockerhub-pat
       dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
+      # REQUIRED HERE, THOUGH THE INPUT IS OPTIONAL. It defaults to empty, and an empty
+      # value configures no ignore file at all, so omitting this line drops all five
+      # suppressions in .trivyignore.yaml and the gate fails the release on findings this
+      # repository has already accepted and dated.
+      trivyignores: .trivyignore.yaml
     secrets:
       aws-role-arn: ${{ secrets.AWS_RELEASE_ROLE_ARN }}

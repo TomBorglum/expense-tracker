@@ -315,8 +315,8 @@ byte-identical output.
 ## Container images
 
 Three images, each taking the repository root as its build context and each declaring
-itself in a `docker-bake.hcl` beside its Dockerfile, so the local task and `release.yml`
-build the same target. All three are published to Docker Hub on a release; see
+itself in a `docker-bake.hcl` beside its Dockerfile, so the local task and the release
+workflow build the same target. All three are published to Docker Hub on a release; see
 [docs/releases.md](docs/releases.md).
 
 Two of them are one per stack, built from the lean pixi environment of the same name. The
@@ -328,9 +328,9 @@ How each of the three is built is in [docs/images.md](docs/images.md).
 ## Releases
 
 Tagged releases are cut by release-please and published to Docker Hub by
-`.github/workflows/release.yml`. The whole path, the four jobs, the credential, the
-vulnerability gate and the AWS objects behind it, is in
-[docs/releases.md](docs/releases.md).
+`.github/workflows/publish.yml`, which calls a reusable workflow in
+[TomBorglum/workflows](https://github.com/TomBorglum/workflows), pinned at an exact
+version. [docs/releases.md](docs/releases.md) documents what this repository decides.
 
 ## Deployment
 
@@ -338,8 +338,8 @@ vulnerability gate and the AWS objects behind it, is in
 script beside it: one file describing the three images as three services, plus the two
 loaders behind a `load` profile, on one network with one volume. The target is a single
 host, a laptop, and `docker compose up` is the whole operation. The directory is what
-`publish.yml` hands `release.yml` as a compose directory, and its name is the suffix the
-published artifact carries.
+`publish.yml` hands the release workflow as a compose directory, and its name is the
+suffix the published artifact carries.
 
 Every service names an `image:` and none a `build:`. `docker compose publish` refuses a
 service carrying `build` without `image`, and a release publishes this file as an OCI

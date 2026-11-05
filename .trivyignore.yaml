@@ -1,5 +1,10 @@
-# Suppressions for the HIGH/CRITICAL gate in .github/workflows/release.yml. Applied to
-# every image scan; an entry that does not match an image is simply inert. The first two
+# Suppressions for the HIGH/CRITICAL gate in the release workflow. Applied to every image
+# scan; an entry that does not match an image is simply inert.
+#
+# NOTHING FINDS THIS FILE BY NAME. The called workflow's `trivyignores` input defaults to
+# empty, and an empty value configures no ignore file at all, so `publish.yml` must pass
+# `trivyignores: .trivyignore.yaml` for a single line below to apply. Dropping that input
+# does not fail loudly: it fails the release on every finding here. The first two
 # match TWO of the three images: the frontend's nginx base and the database's postgres
 # base, which are both alpine and both carry the same two packages. The libexpat trio
 # matches the frontend alone, postgres:18-alpine installing no libexpat. The API's

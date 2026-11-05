@@ -103,9 +103,9 @@ dev.deps = ["db-init"]
 format = "ruff format"
 format-check = "ruff format --check"
 # Build the API image, from the `dev` target in docker-bake.hcl - which is also where the
-# context and the Dockerfile are declared, so release.yml builds the same target. The flag
-# is bake refusing a context above its own directory until a caller allows it; CI passes
-# none, docker/bake-action allowing `fs=*` itself.
+# context and the Dockerfile are declared, so docker-hub-publish.yml builds the same
+# target. The flag is bake refusing a context above its own directory until a caller
+# allows it; CI passes none, docker/bake-action allowing `fs=*` itself.
 #
 # The first task whose tool pixi does not provide, so a machine without docker gets
 # `docker: command not found` rather than a pixi error. The :dev tag is local and names
