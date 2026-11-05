@@ -48,8 +48,8 @@ expense-tracker/
 
 Reference documentation lives under `docs/`: [the API](docs/api.md), [the
 database](docs/database.md), [the frontend](docs/frontend.md), [the
-images](docs/images.md), [releases](docs/releases.md) and [developing
-here](docs/development.md).
+images](docs/images.md), [publishing](docs/publish.md), [the automation
+App](docs/automation-app.md) and [developing here](docs/development.md).
 
 ## Prerequisites
 
@@ -315,9 +315,9 @@ byte-identical output.
 ## Container images
 
 Three images, each taking the repository root as its build context and each declaring
-itself in a `docker-bake.hcl` beside its Dockerfile, so the local task and `release.yml`
-build the same target. All three are published to Docker Hub on a release; see
-[docs/releases.md](docs/releases.md).
+itself in a `docker-bake.hcl` beside its Dockerfile, so the local task and the release
+workflow build the same target. All three are published to Docker Hub on a release; see
+[docs/publish.md](docs/publish.md).
 
 Two of them are one per stack, built from the lean pixi environment of the same name. The
 database image installs no environment at all: it is the official PostgreSQL image plus
@@ -328,9 +328,9 @@ How each of the three is built is in [docs/images.md](docs/images.md).
 ## Releases
 
 Tagged releases are cut by release-please and published to Docker Hub by
-`.github/workflows/release.yml`. The whole path, the four jobs, the credential, the
-vulnerability gate and the AWS objects behind it, is in
-[docs/releases.md](docs/releases.md).
+`.github/workflows/publish.yml`, which calls a reusable workflow in
+[TomBorglum/workflows](https://github.com/TomBorglum/workflows), pinned at an exact
+version. [docs/publish.md](docs/publish.md) documents what this repository decides.
 
 ## Deployment
 
@@ -338,8 +338,8 @@ vulnerability gate and the AWS objects behind it, is in
 script beside it: one file describing the three images as three services, plus the two
 loaders behind a `load` profile, on one network with one volume. The target is a single
 host, a laptop, and `docker compose up` is the whole operation. The directory is what
-`publish.yml` hands `release.yml` as a compose directory, and its name is the suffix the
-published artifact carries.
+`publish.yml` hands the release workflow as a compose directory, and its name is the
+suffix the published artifact carries.
 
 Every service names an `image:` and none a `build:`. `docker compose publish` refuses a
 service carrying `build` without `image`, and a release publishes this file as an OCI
@@ -390,7 +390,7 @@ carries a default, so an unset one stops the render and names itself. `config` r
 every `${...}`, so the rendered text holds no variable and the piped commands need
 nothing set. `IMAGE_PREFIX` and `IMAGE_TAG` are not among them: the artifact's second
 document names every image at its digest, as
-[the published stack](docs/releases.md#the-published-stack) explains.
+[the published stack](docs/publish.md#the-published-stack) explains.
 
 Rendering **pins digests and freezes `name:`**: re-run it to change a value or move
 releases. The project is `expense-tracker-stack`, its volume

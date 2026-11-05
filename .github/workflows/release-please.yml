@@ -1,7 +1,7 @@
 name: Release Please
 
-# Opens and updates the release PR, and tags on merge. What it does, why it authenticates
-# as a GitHub App, and the App's permissions: docs/releases.md.
+# Opens and updates the release PR, and tags on merge. Why it authenticates as a GitHub
+# App, and the App's permissions: docs/automation-app.md.
 
 on:
   push:

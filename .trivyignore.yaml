@@ -1,9 +1,12 @@
-# Suppressions for the HIGH/CRITICAL gate in .github/workflows/release.yml. Applied to
-# every image scan; an entry that does not match an image is simply inert. The first two
-# match TWO of the three images: the frontend's nginx base and the database's postgres
-# base, which are both alpine and both carry the same two packages. The libexpat trio
-# matches the frontend alone, postgres:18-alpine installing no libexpat. The API's
-# distroless base matches none of the five.
+# Suppressions for the HIGH/CRITICAL gate in the release workflow. Applied to every image
+# scan; an entry that does not match an image is simply inert. The first two match TWO of
+# the three images: the frontend's nginx base and the database's postgres base, which are
+# both alpine and both carry the same two packages. The libexpat trio matches the frontend
+# alone, postgres:18-alpine installing no libexpat. The API's distroless base matches none
+# of the five.
+#
+# `publish.yml` must pass `trivyignores: .trivyignore.yaml`. The input defaults to empty,
+# which applies nothing here.
 #
 # EVERY ENTRY CARRIES expired_at, AND THAT IS THE POINT. On the date below trivy stops
 # honouring the entry and the finding fails the release again, so a suppression cannot

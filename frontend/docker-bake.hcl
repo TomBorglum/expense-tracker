@@ -1,19 +1,15 @@
-# What the SPA image IS, declared beside it rather than in the pipeline. release.yml loads
-# the release metadata docker/metadata-action derives UNDER this file, so bake merges the
-# two: `labels` is a map and merges per key, so a key named here wins and every shared one
-# survives, and `annotations` is a list and is appended to.
+# What the SPA image IS, declared beside it rather than in the pipeline.
 #
 # Paths resolve the way a plain `docker build` resolves them - `context` against the
 # working directory, `dockerfile` against the context - so this file is invoked from THIS
-# directory, by `poe image` locally and by release.yml's `source` input in CI. A context
-# that leaves this directory needs `--allow=fs.read=..`, which both callers pass.
+# directory, as `poe image` does. A context that leaves this directory needs
+# `--allow=fs.read=..`.
 
 variable "DESCRIPTION" {
   default = "The expense-tracker single-page app - a React and Tailwind bundle served by nginx."
 }
 
-# The release target: no tags, because release.yml exports an OCI archive and the push job
-# is what names the images.
+# The release target. Its name is fixed at `image`; CLAUDE.md pairs it with what calls it.
 target "image" {
   context    = ".."
   dockerfile = "frontend/Dockerfile"

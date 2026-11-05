@@ -141,7 +141,7 @@ developer's cluster does.
 the `postgres` user, and all three call sites sit behind `if [ "$(id -u)" = '0' ]`, so
 starting as 70 reaches none of them. It was also 1.7 MB of Go carrying **26
 HIGH/CRITICAL** findings into [the vulnerability
-gate](releases.md#the-vulnerability-gate), none reachable; deleting it takes this image to
+gate](publish.md#the-vulnerability-gate), none reachable; deleting it takes this image to
 **zero**.
 
 What that gives up is chowning the data directory. A fresh **named** volume needs no

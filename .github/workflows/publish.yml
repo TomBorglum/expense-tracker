@@ -1,43 +1,45 @@
 name: Publish
 
-# What this repository publishes, and the events that publish it; release.yml is HOW.
-# THE FILENAMES LOOK BACKWARDS deliberately - CLAUDE.md states the pair that pins it.
-# A `./` reference resolves at this file's own ref, so a release calls release.yml as it
-# exists on the tag and `job_workflow_ref` carries that tag.
+# THE `uses:` PIN MUST STAY AN EXACT vX.Y.Z. The release role's trust policy conditions
+# job_workflow_ref on `...@refs/tags/v*.*.*`, whose two literal dots exclude the moving
+# `v1` and `v1.1` tags, so a moving pin fails every release at the credential exchange.
 
 on:
   release:
     types: [published]
-  # The build half only - release.yml guards `push` with an `if` of its own. EVERY PATH,
-  # no `paths` filter: that would be a second copy of what the two Dockerfiles copy by
-  # name, with nothing checking the two agree.
+  # Builds and gates; publishes nothing. EVERY PATH, no `paths` filter: that would be a
+  # second copy of what the two Dockerfiles copy by name, with nothing checking the two
+  # agree.
   pull_request:
     types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
 
-# Declared here rather than in release.yml: GitHub cancels the caller when the two share a
-# group. A RELEASE is never cancelled - docs/releases.md says why.
+# Declared here rather than in the called workflow: GitHub cancels the caller when the two
+# share a group. A RELEASE is never cancelled - docs/publish.md says why.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   images:
-    uses: ./.github/workflows/release.yml
-    # A ceiling the called workflow can only lower, which `build` does - the isolation
-    # invariant CLAUDE.md states.
+    uses: TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@v1.1.0
+    # A ceiling the called workflow can only lower - the isolation invariant CLAUDE.md
+    # states.
     permissions:
       contents: read
       id-token: write
-    # What each value is, and must contain, is its declaration's `description` in
-    # release.yml. Why each is sourced the way it is, docs/releases.md records.
+    # What each value is, and must contain, is its declaration's `description` in the
+    # called workflow, which also says why the role ARN is a secret and the SSM path is
+    # not.
     with:
       image-directories: '["backend", "database", "frontend"]'
       compose-directories: '["stack"]'
       aws-region: ${{ vars.AWS_REGION }}
       aws-ssm-parameter: /expense-tracker/release/dockerhub-pat
       dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
+      # The input defaults to empty, which applies no suppressions at all.
+      trivyignores: .trivyignore.yaml
     secrets:
       aws-role-arn: ${{ secrets.AWS_RELEASE_ROLE_ARN }}

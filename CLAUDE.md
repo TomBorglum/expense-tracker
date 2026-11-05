@@ -57,9 +57,9 @@ The `main-protection` ruleset rule pinning each of these is named in
   (`.github/workflows/release-please.yml`). **Never hand-edit versions, git tags, or
   `CHANGELOG.md`.**
 - **A job that checks out the repository never gets `id-token: write`.** Checked-out code
-  runs, and that token buys the Docker Hub credential out of AWS. `release.yml` splits
-  `build` from `push` for that reason. Nothing checks this;
-  [`docs/releases.md`](docs/releases.md) has the reasoning.
+  runs, and that token buys the Docker Hub credential out of AWS. `publish.yml` grants it
+  as a ceiling the called workflow lowers. Nothing checks this;
+  [`docs/publish.md`](docs/publish.md) has the reasoning.
 
 ## Source conventions
 
@@ -92,7 +92,8 @@ The `main-protection` ruleset rule pinning each of these is named in
   `cat .github/workflows/*.yml | grep -c '^[[:space:]]*#'` is the count.
 - **A compose file's `name:` is `<repository>-<directory>` and every `${...}` carries a
   `:?` naming the `.env` that owns it**, bar `IMAGE_PREFIX`/`IMAGE_TAG`, which take a
-  `:-` placeholder, the digest document overriding them. `release.yml` gates all three.
+  `:-` placeholder, the digest document overriding them. The release workflow gates all
+  three.
 - **Pin versions exactly:** `==` in `pixi.toml`, in both its conda tables and
   `[feature.test.pypi-dependencies]`, bare versions in `frontend/package.json`, GitHub
   Actions by SHA with a version comment.
@@ -171,20 +172,24 @@ The five payload pairs share a backend half, `backend/src/expense_tracker/__init
   `backend/.env`; the pair is created on **first boot only**, so a volume ignores edits.
 - **The pixi version:** `.envrc` + the builder image in both Dockerfiles; dependabot
   ignores that image, so all three move by hand.
-- **The release workflow's path:** `.github/workflows/release.yml` + the AWS release
-  role's `job_workflow_ref` condition, **in the console**: moving the file breaks it.
-- **The published image names:** `release.yml`'s `images` step + the Docker Hub
+- **The release workflow's version pin:** `publish.yml`'s `uses:` + the AWS release
+  role's `job_workflow_ref` condition, **in the console**: its pattern ends
+  `@refs/tags/v*.*.*`, whose two literal dots exclude `@v1` and `@v1.1`, so a moving pin
+  fails every release at the credential exchange.
+- **The Trivy suppression file:** `.trivyignore.yaml` + `publish.yml`'s `trivyignores`
+  input, which defaults to empty: a file the caller does not name is applied to nothing.
+- **The published image names:** this repository's own name + the Docker Hub
   repositories: renaming this GitHub repository renames what a release publishes to.
 - **The image reference formula:** `stack/compose.yaml`'s five `image:` keys +
   `publish.yml`'s `image-directories`: `-<service>` must spell a directory it names.
-- **The stack's interpolation variables:** the same `image:` keys + `release.yml`'s
-  publish step: `IMAGE_PREFIX` and `IMAGE_TAG`, the only two it sets, both defaulted.
-- **`release.yml`'s caller-filled configuration:** its `workflow_call` declarations +
-  `publish.yml`'s `with:`/`secrets:`; the `aws-role-arn` **secret** holds the account id.
+- **The stack's interpolation variables:** the same `image:` keys + the two the release
+  workflow sets: `IMAGE_PREFIX` and `IMAGE_TAG`, both defaulted.
+- **The called workflow's declared inputs** + `publish.yml`'s `with:`/`secrets:`; the
+  `aws-role-arn` **secret** holds the account id.
 - **The Docker Hub namespace:** `DOCKERHUB_NAMESPACE` + the account the PAT in SSM
   belongs to, **both outside this repository**.
-- **The bake target name:** the three `docker-bake.hcl` files + `release.yml`'s
-  `bake-target`, `targets` and `set:`: `image`, which is what merges the label files.
+- **The bake target name:** the three `docker-bake.hcl` files + the target name the
+  release workflow fixes: `image`.
 - **The API base URL placeholder:** `frontend/Dockerfile` +
   `frontend/docker/40-api-base-url.sh`: `__EXPENSE_TRACKER_API_BASE_URL__`.
 - **The `@` alias (`frontend/src`):** `frontend/vite.config.ts` +
