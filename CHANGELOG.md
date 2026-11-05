@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.3](https://github.com/TomBorglum/expense-tracker/compare/v2.3.2...v2.3.3) (2026-11-05)
+
+
+### Dependencies
+
+* Update ci.yml ([#203](https://github.com/TomBorglum/expense-tracker/issues/203)) ([631105d](https://github.com/TomBorglum/expense-tracker/commit/631105d722c0858642c4cf3c4ba1bb04d9888faa))
+
 ## [2.3.2](https://github.com/TomBorglum/expense-tracker/compare/v2.3.1...v2.3.2) (2026-11-05)
 
 
