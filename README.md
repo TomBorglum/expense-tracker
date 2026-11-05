@@ -48,8 +48,8 @@ expense-tracker/
 
 Reference documentation lives under `docs/`: [the API](docs/api.md), [the
 database](docs/database.md), [the frontend](docs/frontend.md), [the
-images](docs/images.md), [publishing](docs/publish.md) and [developing
-here](docs/development.md).
+images](docs/images.md), [publishing](docs/publish.md), [the automation
+App](docs/automation-app.md) and [developing here](docs/development.md).
 
 ## Prerequisites
 
