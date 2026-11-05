@@ -31,7 +31,8 @@ jobs:
       contents: read
       id-token: write
     # What each value is, and must contain, is its declaration's `description` in the
-    # called workflow. Why each is sourced the way it is, docs/publish.md records.
+    # called workflow, which also says why the role ARN is a secret and the SSM path is
+    # not.
     with:
       image-directories: '["backend", "database", "frontend"]'
       compose-directories: '["stack"]'

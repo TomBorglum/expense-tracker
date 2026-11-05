@@ -18,8 +18,8 @@ GitHub repository renames what a release publishes to.** The fourth is the stack
 than an image; see [The published stack](#the-published-stack).
 
 [`docs/docker-hub-publish.md`][reference] documents the called workflow: what a caller
-must provide, the credential path, the vulnerability gate and the trust policy in general
-form.
+must provide, the AWS objects to create, the credential path, the trust policy to put on
+the role and the tag rulesets that keep it trustworthy.
 
 ## The version pin
 
@@ -74,68 +74,7 @@ it is unreachable.
 
 **The file is found only because `publish.yml` names it.** The `trivyignores` input
 defaults to empty, and an empty value configures no ignore file at all, so dropping that
-one line applies no suppression and fails the release on all five findings.
-
-## The AWS objects
-
-Created once, by hand, in region `eu-north-1`. [The reference][reference] carries the
-runbook in general form. `<account-id>` is the 12-digit AWS account id, which never
-appears in this repository, the ARN carrying it being a repository **secret**.
-
-- **SSM parameter** `/expense-tracker/release/dockerhub-pat`, SecureString, **standard
-  tier**, encrypted with the default `alias/aws/ssm`.
-- **IAM role** `gha-expense-tracker-release`, trusting the pair below, and granting
-  `ssm:GetParameter` on that one parameter's ARN as a literal plus `kms:Decrypt` on the
-  `aws/ssm` key under a `kms:ViaService` condition. **With a shared key the literal
-  parameter ARN is the whole isolation boundary.**
-- **Secret** `AWS_RELEASE_ROLE_ARN` =
-  `arn:aws:iam::<account-id>:role/gha-expense-tracker-release`, passed as the
-  `aws-role-arn` secret. A fork's pull request gets no secrets, and a release is the only
-  event that publishes.
-- `DOCKERHUB_NAMESPACE` = `tomborglum`, passed as `dockerhub-namespace`. Has to be the
-  account the PAT belongs to, which nothing checks.
-- `AWS_REGION`, passed as `aws-region`.
-
-The role's `Allow` statement names the account's `token.actions.githubusercontent.com`
-provider as `Principal.Federated` and `sts:AssumeRoleWithWebIdentity` as its `Action`. Its
-`Condition` block, as applied:
-
-```json
-"Condition": {
-  "StringEquals": {
-    "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-  },
-  "StringLike": {
-    "token.actions.githubusercontent.com:sub":
-      "repo:TomBorglum@9831360/expense-tracker@1296807188:ref:refs/tags/v*",
-    "token.actions.githubusercontent.com:job_workflow_ref":
-      "TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@refs/tags/v*.*.*"
-  }
-}
-```
-
-**`sub` describes this repository and `job_workflow_ref` the called workflow, and the pair
-is the entire boundary**, `Principal.Federated` representing every repository on
-github.com. Either claim alone is insufficient: `sub` alone would let any workflow in this
-repository reach the role, and `job_workflow_ref` alone would let **any repository at
-all** reach it, the called workflow being public.
-
-The `sub` form carries the **owner and repository IDs** because immutable subject claims
-are enabled, under Settings → Actions → OIDC. IDs survive a rename, where a name-based
-`sub` would follow a renamed repository and could then be claimed by a new repository
-taking the old name. `job_workflow_ref` carries no IDs under that setting.
-
-**IAM Access Analyzer raises two security warnings** on this policy, both advisory, and
-Save stays enabled: the `*` in `sub`, and a wildcard in `job_workflow_ref` not preceded by
-six literal characters. The second counts characters and does not model the claim - the
-two dots are the control, and loosening to `v1.*` would pass the check while admitting
-the force-moved `v1.1`.
-
-Tag creation is restricted in **both** repositories, each by a tag ruleset on
-`refs/tags/v*` carrying Restrict creations, Restrict deletions and Block force pushes,
-with that repository's own automation App as the only bypass actor. Branch protection does
-not close this: a tag in this repository satisfies `sub`, and a tag in `workflows`
-carrying an altered workflow satisfies `job_workflow_ref`.
+one line applies no suppression and fails the release on every finding it suppresses.
 
 ## The published stack
 
