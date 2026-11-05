@@ -27,25 +27,22 @@ its `docker-bake.hcl` and merged last, which is why the build uses `docker build
 The bake target is spelled `image` in five places: all three bake files, metadata-action's
 `bake-target`, and the build step's `targets` and `set:` keys.
 
-[`docs/docker-hub-publish.md`][reference] is the reference for everything the called
-workflow does: its four jobs, the credential path, how the vulnerability gate is made
-trustworthy, the trust policy in general form and who may create a tag. This page carries
-what is this repository's to decide.
+[`docs/docker-hub-publish.md`][reference] documents the called workflow: its four jobs,
+the credential path, the vulnerability gate and the trust policy in general form.
 
 ## The version pin
 
-`publish.yml` pins the called workflow at an exact `vX.Y.Z` tag, which is a security
-boundary rather than a style. The release role's trust policy conditions
-`job_workflow_ref` on
-`TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@refs/tags/v*.*.*`. An AWS
-`StringLike` `*` matches dots, so two literal dots admit the immutable `vX.Y.Z` tags
-alone; the moving `v1` and `v1.1` tags carry at most one dot and match nothing.
+`publish.yml` pins the called workflow at an exact `vX.Y.Z` tag. The release role's trust
+policy conditions `job_workflow_ref` on
+`TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@refs/tags/v*.*.*`, and an
+AWS `StringLike` `*` matches dots, so two literal dots admit the immutable `vX.Y.Z` tags
+alone. The moving `v1` and `v1.1` tags carry at most one dot and match nothing.
 
-**Pinning `@v1` therefore fails every release** at `Configure AWS credentials`, with
-`Not authorized to perform sts:AssumeRoleWithWebIdentity` naming no condition. Denying the
-moving tags is the point of the pattern: a caller pinned at one could be handed new
-workflow content by whoever moves it. Dependabot's `github-actions` ecosystem bumps the
-pin to the next exact version, and every `vX.Y.Z` matches, so a bump needs no AWS change.
+**Pinning `@v1` fails every release** at `Configure AWS credentials`, with `Not authorized
+to perform sts:AssumeRoleWithWebIdentity` naming no condition. The exclusion is the
+security property: a caller pinned at a moving tag can be handed new workflow content by
+whoever moves it. Dependabot bumps the pin to the next exact version, which matches
+already, so a bump needs no AWS change.
 
 ## What publish.yml supplies
 
@@ -60,19 +57,18 @@ pin to the next exact version, and every `vX.Y.Z` matches, so a bump needs no AW
 | `aws-role-arn` (secret) | `secrets.AWS_RELEASE_ROLE_ARN` |
 
 What each value must contain is its declaration's `description` in the called workflow,
-which reads no `vars` and names no AWS object. `trivyignores` is the one that fails
-quietly when dropped; see [The vulnerability gate](#the-vulnerability-gate).
+which reads no `vars` and names no AWS object. Dropping `trivyignores` fails quietly; see
+[The vulnerability gate](#the-vulnerability-gate).
 
 `publish.yml` grants `contents: read` and `id-token: write` as a **ceiling**, which the
-called workflow lowers: its `build` and `compose` jobs check out repository code and take
+called workflow lowers: `build` and `compose` check out repository code and take
 `contents: read` alone, and only `push` holds the credential and checks nothing out.
 `CLAUDE.md` carries that split as an invariant.
 
-The concurrency group is declared here rather than in the called workflow, because GitHub
-cancels the *caller* when caller and called share a group. `cancel-in-progress` is
-conditioned on the event: **a release run is never cancelled**, where a superseded pull
-request run is. A run stopped partway through `push` can leave one image published and
-another not.
+The concurrency group is declared here because GitHub cancels the *caller* when caller and
+called share a group. `cancel-in-progress` is conditioned on the event: **a release run is
+never cancelled**, where a superseded pull request run is. A run stopped partway through
+`push` can leave one image published and another not.
 
 ## The automation App
 
@@ -99,7 +95,7 @@ in order to create the release tag at all.
 
 Each image is scanned by Trivy before anything is published, and a HIGH or CRITICAL
 finding fails the release. [The reference][reference] records how the scan is made
-trustworthy; the suppressions belong here.
+trustworthy.
 
 Suppressions live in **`.trivyignore.yaml`**, and every entry carries an `expired_at`
 date. The five today are CVEs in the alpine bases, each fixed in a package version the
@@ -108,16 +104,13 @@ invokes curl, or parses XML with the expat sitting behind an nginx module never 
 
 **The file is found only because `publish.yml` names it.** The `trivyignores` input
 defaults to empty, and an empty value configures no ignore file at all, so dropping that
-one line applies no suppression and fails the release on all five findings. That direction
-is deliberate - a suppression never applies unseen - but it fails on findings already read
-and dated, so the input is as load-bearing as the file.
+one line applies no suppression and fails the release on all five findings.
 
 ## The AWS objects
 
 Created once, by hand, in region `eu-north-1`. [The reference][reference] carries the
-runbook in general form, including why AWS stands in at all; the concrete values are here.
-`<account-id>` is the 12-digit AWS account id, which never appears in this repository, the
-ARN carrying it being a repository **secret**.
+runbook in general form. `<account-id>` is the 12-digit AWS account id, which never
+appears in this repository, the ARN carrying it being a repository **secret**.
 
 - **SSM parameter** `/expense-tracker/release/dockerhub-pat`, SecureString, **standard
   tier**, encrypted with the default `alias/aws/ssm`.
@@ -163,8 +156,7 @@ all** reach it, the called workflow being public.
 The `sub` form carries the **owner and repository IDs** because immutable subject claims
 are enabled, under Settings → Actions → OIDC. IDs survive a rename, where a name-based
 `sub` would follow a renamed repository and could then be claimed by a new repository
-taking the old name. `job_workflow_ref` carries no IDs under that setting, which was read
-out of a claim dump rather than assumed.
+taking the old name. `job_workflow_ref` carries no IDs under that setting.
 
 **IAM Access Analyzer raises two security warnings** on this policy, both advisory, and
 Save stays enabled: the `*` in `sub`, and a wildcard in `job_workflow_ref` not preceded by
@@ -236,16 +228,15 @@ published tags and nothing more.
 
 **The signing identity is the called workflow, not this repository.** Fulcio puts
 `job_workflow_ref` in the certificate's SAN, so the identity to match is
-`TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@refs/tags/vX.Y.Z`. A regexp
-written against `expense-tracker` matched the workflow while it lived here and matches
-nothing now.
+`TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@refs/tags/vX.Y.Z`. A
+regexp written against `expense-tracker` matches nothing.
 
 **If the credential exchange is refused**, read the `push` job's claim dump, correct the
 trust policy in the console and re-run the failed job: the AWS side lives outside the tag,
 so that loop is free.
 
 **If the called workflow itself is wrong**, the fix is a release in `workflows` and a pin
-bump here - a `release` event runs `publish.yml` as it exists on the tag, and that file
+bump here: a `release` event runs `publish.yml` as it exists on the tag, and that file
 names an exact version. Every pull request builds, scans and gates all three images, with
 `push` held back by `if: github.event_name == 'release'`.
 

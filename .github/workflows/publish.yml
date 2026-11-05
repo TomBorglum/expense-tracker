@@ -1,13 +1,8 @@
 name: Publish
 
-# What this repository publishes, and the events that publish it; the called workflow is
-# HOW. docs/releases.md records every value below that is this repository's to decide.
-#
-# THE CALLED WORKFLOW IS REMOTE AND PINNED AT AN EXACT TAG. The AWS release role trusts
-# the pair of this repository's `sub` claim and that workflow's `job_workflow_ref` claim,
-# and its pattern admits `vX.Y.Z` alone - the moving `v1` and `v1.1` tags carry too few
-# dots to match. So pinning this at `@v1` fails every release at the credential exchange.
-# CLAUDE.md states the pair as an invariant.
+# THE `uses:` PIN MUST STAY AN EXACT vX.Y.Z. The release role's trust policy conditions
+# job_workflow_ref on `...@refs/tags/v*.*.*`, whose two literal dots exclude the moving
+# `v1` and `v1.1` tags, so a moving pin fails every release at the credential exchange.
 
 on:
   release:
@@ -43,10 +38,7 @@ jobs:
       aws-region: ${{ vars.AWS_REGION }}
       aws-ssm-parameter: /expense-tracker/release/dockerhub-pat
       dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
-      # REQUIRED HERE, THOUGH THE INPUT IS OPTIONAL. It defaults to empty, and an empty
-      # value configures no ignore file at all, so omitting this line drops all five
-      # suppressions in .trivyignore.yaml and the gate fails the release on findings this
-      # repository has already accepted and dated.
+      # The input defaults to empty, which applies no suppressions at all.
       trivyignores: .trivyignore.yaml
     secrets:
       aws-role-arn: ${{ secrets.AWS_RELEASE_ROLE_ARN }}

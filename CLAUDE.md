@@ -174,10 +174,9 @@ The five payload pairs share a backend half, `backend/src/expense_tracker/__init
 - **The pixi version:** `.envrc` + the builder image in both Dockerfiles; dependabot
   ignores that image, so all three move by hand.
 - **The release workflow's version pin:** `publish.yml`'s `uses:` + the AWS release
-  role's `job_workflow_ref` condition, **in the console**. The role trusts
-  `TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@refs/tags/v*.*.*`, and
-  two literal dots admit exact versions alone, so pinning `@v1` or `@v1.1` breaks every
-  release at the credential exchange.
+  role's `job_workflow_ref` condition, **in the console**: its pattern ends
+  `@refs/tags/v*.*.*`, whose two literal dots exclude `@v1` and `@v1.1`, so a moving pin
+  fails every release at the credential exchange.
 - **The Trivy suppression file:** `.trivyignore.yaml` + `publish.yml`'s `trivyignores`
   input, which defaults to empty: a file the caller does not name is applied to nothing.
 - **The published image names:** `docker-hub-publish.yml`'s `images` step + the Docker Hub
