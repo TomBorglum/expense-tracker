@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.2](https://github.com/TomBorglum/expense-tracker/compare/v2.3.1...v2.3.2) (2026-11-05)
+
+
+### Dependencies
+
+* update pixi dependencies ([#201](https://github.com/TomBorglum/expense-tracker/issues/201)) ([9182ee5](https://github.com/TomBorglum/expense-tracker/commit/9182ee50b74e1a3fdf4528711edac9dee61560f0))
+
 ## [2.3.1](https://github.com/TomBorglum/expense-tracker/compare/v2.3.0...v2.3.1) (2026-11-04)
 
 
