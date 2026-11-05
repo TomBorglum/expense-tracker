@@ -50,16 +50,6 @@ jobs:
       # After the build, which is what rewrites this file: a non-empty diff means a route
       # was added, renamed or removed without committing the generated tree.
       - run: git diff --exit-code -- frontend/src/routeTree.gen.ts
-      # Paired with skipJreProvisioning below, which is what makes this JDK the one the
-      # scan runs on. docs/development.md records the version floor.
-      - name: Set up JDK
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: TomBorglum/actions/sonar/scan@f3028cddd68f2efc77b63a3f4fd749e541c8701c # v3.1.0
         with:
-          distribution: temurin
-          java-version: '21'
-      - name: SonarQube Cloud Scan
-        uses: SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304 # v8.4.0
-        with:
-          args: -Dsonar.scanner.skipJreProvisioning=true
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          sonar-token: ${{ secrets.SONAR_TOKEN }}
