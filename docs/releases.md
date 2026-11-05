@@ -53,13 +53,13 @@ already, so a bump needs no AWS change.
 | `trivyignores` | `.trivyignore.yaml` |
 | `aws-role-arn` (secret) | `secrets.AWS_RELEASE_ROLE_ARN` |
 
-What each value must contain is its declaration's `description` in the called workflow,
-which reads no `vars` and names no AWS object. Dropping `trivyignores` fails quietly; see
+What each value must contain is its declaration's `description` in the called workflow.
+Dropping `trivyignores` fails quietly; see
 [The vulnerability gate](#the-vulnerability-gate).
 
 `publish.yml` grants `contents: read` and `id-token: write` as a **ceiling**, which the
-called workflow lowers: only the job holding the credential can spend the token, and it
-checks nothing out. `CLAUDE.md` carries that split as an invariant.
+called workflow lowers. `CLAUDE.md` carries the invariant that a job checking out
+repository code never gets `id-token: write`.
 
 The concurrency group is declared here because GitHub cancels the *caller* when caller and
 called share a group. `cancel-in-progress` is conditioned on the event: **a release run is

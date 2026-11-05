@@ -7,9 +7,9 @@ name: Publish
 on:
   release:
     types: [published]
-  # The build half only - the called workflow guards `push` with an `if` of its own. EVERY
-  # PATH, no `paths` filter: that would be a second copy of what the two Dockerfiles copy
-  # by name, with nothing checking the two agree.
+  # Builds and gates; publishes nothing. EVERY PATH, no `paths` filter: that would be a
+  # second copy of what the two Dockerfiles copy by name, with nothing checking the two
+  # agree.
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -25,8 +25,8 @@ concurrency:
 jobs:
   images:
     uses: TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@v1.1.0
-    # A ceiling the called workflow can only lower, which `build` does - the isolation
-    # invariant CLAUDE.md states.
+    # A ceiling the called workflow can only lower - the isolation invariant CLAUDE.md
+    # states.
     permissions:
       contents: read
       id-token: write

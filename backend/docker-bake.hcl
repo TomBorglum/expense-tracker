@@ -1,16 +1,15 @@
-# What the API image IS, declared beside it rather than in the pipeline. A release merges
-# its own metadata under this file, so what is declared here wins.
+# What the API image IS, declared beside it rather than in the pipeline.
 #
 # Paths resolve the way a plain `docker build` resolves them - `context` against the
 # working directory, `dockerfile` against the context - so this file is invoked from THIS
-# directory, by `poe image` locally and by the release in CI. A context that leaves this
-# directory needs `--allow=fs.read=..`, which both callers pass.
+# directory, as `poe image` does. A context that leaves this directory needs
+# `--allow=fs.read=..`.
 
 variable "DESCRIPTION" {
   default = "The expense-tracker REST API - four read-only JSON endpoints over PostgreSQL, served by uvicorn."
 }
 
-# The release target: no tags - a release names what it publishes.
+# The release target. Its name is fixed at `image`; CLAUDE.md pairs it with what calls it.
 target "image" {
   context    = ".."
   dockerfile = "backend/Dockerfile"
