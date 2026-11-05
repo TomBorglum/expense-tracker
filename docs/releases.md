@@ -41,27 +41,9 @@ security property: a caller pinned at a moving tag can be handed new workflow co
 whoever moves it. Dependabot bumps the pin to the next exact version, which matches
 already, so a bump needs no AWS change.
 
-## What publish.yml supplies
+## Concurrency
 
-| Input | Value |
-| --- | --- |
-| `image-directories` | `["backend", "database", "frontend"]` |
-| `compose-directories` | `["stack"]` |
-| `aws-region` | `vars.AWS_REGION` |
-| `aws-ssm-parameter` | `/expense-tracker/release/dockerhub-pat` |
-| `dockerhub-namespace` | `vars.DOCKERHUB_NAMESPACE` |
-| `trivyignores` | `.trivyignore.yaml` |
-| `aws-role-arn` (secret) | `secrets.AWS_RELEASE_ROLE_ARN` |
-
-What each value must contain is its declaration's `description` in the called workflow.
-Dropping `trivyignores` fails quietly; see
-[The vulnerability gate](#the-vulnerability-gate).
-
-`publish.yml` grants `contents: read` and `id-token: write` as a **ceiling**, which the
-called workflow lowers. `CLAUDE.md` carries the invariant that a job checking out
-repository code never gets `id-token: write`.
-
-The concurrency group is declared here because GitHub cancels the *caller* when caller and
+The group is declared in `publish.yml` because GitHub cancels the *caller* when caller and
 called share a group. `cancel-in-progress` is conditioned on the event: **a release run is
 never cancelled**, where a superseded pull request run is. A run stopped partway through
 publishing can leave one image published and another not.
