@@ -94,8 +94,7 @@ is given.
 Docker Hub supports no OIDC for personal accounts, so AWS stands in: the job mints a
 GitHub OIDC token, exchanges it for temporary credentials on a role whose trust policy
 accepts only this repository's release workflow at a version tag, and reads a Docker Hub
-PAT out of SSM Parameter Store. `oidc-smoke-test.yml` is the cheapest way to diagnose a
-claim mismatch.
+PAT out of SSM Parameter Store.
 
 - The **role ARN is a secret at both ends**, because the runner echoes a step's `with:`
   block before the action runs. `mask-aws-account-id: true` masks the account id and the
@@ -240,19 +239,18 @@ provider, a standard-tier SSM parameter and the AWS-managed `aws/ssm` key.
 
    **With a shared key the isolation boundary is that parameter ARN alone.** `aws/ssm`
    grants `kms:Decrypt` to any caller in the account authorised for SSM, so the literal
-   parameter path above, rather than a prefix, is what holds this role away from the smoke
-   test's parameter under the same key.
+   parameter path above, rather than a prefix, is what confines this role to the one
+   parameter.
 
 4. **Repository variables and one secret**, named only in `publish.yml`.
 
    - **Secret** `AWS_RELEASE_ROLE_ARN` =
      `arn:aws:iam::<account-id>:role/gha-expense-tracker-release`, passed as the
      `aws-role-arn` secret. A fork's pull request gets no secrets, and `push` runs on the
-     release event alone. The name is one word from the smoke test's own `AWS_ROLE_ARN`, a
-     **variable** naming the **CI** role.
+     release event alone.
    - `DOCKERHUB_NAMESPACE` = `tomborglum`, passed as `dockerhub-namespace`. Has to be the
      account the PAT belongs to, which nothing checks.
-   - `AWS_REGION`, passed as `aws-region`, and read directly by `oidc-smoke-test.yml`.
+   - `AWS_REGION`, passed as `aws-region`.
 
    The SSM path is neither: `publish.yml` passes it as the `aws-ssm-parameter` input.
 
