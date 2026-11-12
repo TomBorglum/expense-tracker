@@ -28,7 +28,7 @@ jobs:
         with:
           # Full history so SonarCloud can attribute issues to the right commits.
           fetch-depth: 0
-      - uses: TomBorglum/actions/direnv/setup@8bb5c662cb67237681564ec96cbb7ed84bc4aed8 # v3.0.0
+      - uses: TomBorglum/actions/direnv/setup@f3028cddd68f2efc77b63a3f4fd749e541c8701c # v3.1.0
       # Each stack's gates run cheapest first, then its tests, then anything that builds.
       # The two stacks order lint differently; the measurements behind that are in
       # docs/development.md, under Continuous integration.
