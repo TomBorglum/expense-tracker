@@ -182,3 +182,17 @@ appearance rules are by eye.
     `onParseError` regardless; `@eslint/css` promotes every such call to a fatal parse
     error unless tolerating them. The cost: unbalanced braces go unreported, that check
     being skipped under `tolerant` too.
+
+## Declared twice - change both halves together
+
+Each bullet names two halves and the property they hold; **nothing checks any of them**.
+Pairs spanning more than this tree are in the root [`CLAUDE.md`](../CLAUDE.md).
+
+- **The `@` alias (`src`):** `vite.config.ts` + `tsconfig.app.json`, each resolving it
+  for its own tool.
+- **`VITE_API_BASE_URL`:** `.env` + `src/vite-env.d.ts`: set in the first, typed in the
+  second.
+- **The API base URL placeholder:** `Dockerfile` + `docker/40-api-base-url.sh`:
+  `__EXPENSE_TRACKER_API_BASE_URL__`.
+- **daisyUI's `@plugin` descriptors:** `src/styles/app.css` + the `plugin` override in
+  `eslint.config.ts`, which names the descriptors this repo uses.

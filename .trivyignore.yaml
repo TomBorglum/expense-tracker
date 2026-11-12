@@ -1,80 +1,135 @@
 # Suppressions for the HIGH/CRITICAL gate in the release workflow. Applied to every image
-# scan; an entry that does not match an image is simply inert. The first two match TWO of
-# the three images: the frontend's nginx base and the database's postgres base, which are
-# both alpine and both carry the same two packages. The libexpat trio matches the frontend
-# alone, postgres:18-alpine installing no libexpat. The API's distroless base matches none
-# of the five.
+# scan; an entry that does not match an image is simply inert.
 #
-# `publish.yml` must pass `trivyignores: .trivyignore.yaml`. The input defaults to empty,
-# which applies nothing here.
+# ONLY REACHABLE FINDINGS BELONG HERE. A finding whose vulnerable code no image of ours
+# can execute is a durable property of the image rather than something to wait out, and it
+# goes to .vex/expense-tracker.openvex.json as an OpenVEX not_affected statement with no
+# date. Every entry below is a finding that ships, and that is the whole difference
+# between the two files. docs/publish.md states the four-case triage.
 #
-# EVERY ENTRY CARRIES expired_at, AND THAT IS THE POINT. On the date below trivy stops
-# honouring the entry and the finding fails the release again, so a suppression cannot
-# outlive the reason for it by being forgotten. Removing the date instead of extending it
-# turns this file into a permanent blind spot.
+# `publish.yml` must pass both `trivyignores: .trivyignore.yaml` and
+# `vex-documents: .vex/expense-tracker.openvex.json`; a file the caller does not name is
+# applied to nothing.
 #
-# All five are one situation: the fix is published and the base has not been rebuilt to
-# take it. alpine v3.24/main carries brotli 1.2.1-r0, curl 8.23.0-r0 and libexpat
-# 2.10.0-r0 today, while nginxinc/nginx-unprivileged:1.31-alpine, last pushed
-# 2026-10-19, still ships brotli-libs 1.2.0-r1, libcurl 8.22.0-r0 and libexpat 2.9.0-r0,
-# and postgres:18-alpine the first two. The digest pinned in each Dockerfile is already
-# the newest its tag resolves to, so there is nothing to re-pin to - only an upstream
-# rebuild clears them. Switching either to the debian variant of the same image is not the
-# answer and was measured both times: 60 HIGH/CRITICAL for nginx, and 62 for postgres with
-# a fix available for none of them, against these 5.
+# TWO MEANINGS FOR A DATE, and which one an entry carries depends on the fix:
+#   - A fix is published and the base has not been rebuilt with it: the date is when that
+#     rebuild is expected, and expiry re-blocks the release rather than reminding anyone.
+#     Clearing the entry is a base bump, not an edit here.
+#   - No fix is published: the date is review-by, and the finding ships past it.
+# Every entry below is the first kind, so they share one date. Removing a date instead of
+# extending it turns this file into a permanent blind spot.
 #
-# None of the five is reachable, and the libexpat trio is the furthest out of reach. The
-# only ELF in the nginx image linking libexpat.so is libfontconfig.so.1.16.1, the only one
-# linking THAT is libgd.so.3, and libgd is there for ngx_http_image_filter_module.so - a
-# DYNAMIC module, which nginx loads only on a `load_module` directive. The base ships no
-# such directive and frontend/docker/default.conf.template declares none, so the module
-# is never loaded and no request reaches expat; the XSLT module links libxml2, not expat.
-# Fontconfig's own config files are the only XML in the image, and they are image content
-# rather than input. All of it measured in the pinned image, not inferred.
-#
-# The other two differ in how little they reach: nothing decodes brotli on either side -
-# nginx-unprivileged:alpine ships no brotli module and default.conf.template enables gzip,
-# and the database image only holds brotli-libs as a dependency of libcurl - while curl is
-# a base package the frontend never invokes and the database image has no curl binary at
-# all, only the library. The frontend runs nginx and one entrypoint script; the database
-# image runs postgres. The only curl in the repository is in CI.
+# alpine v3.24/main carries the fixed zlib and musl today, while
+# nginxinc/nginx-unprivileged:1.31-alpine, last pushed 2026-10-19, ships neither.
+# krb5-libs 1.22.3-r0 is likewise published and absent from postgres:18-alpine. The
+# digest pinned in each Dockerfile is already the newest its tag resolves to, so there is
+# nothing to re-pin to - only an upstream rebuild clears these. Switching either image to
+# the debian variant is not the answer and was measured both times: 60 HIGH/CRITICAL for
+# nginx and 62 for postgres, with a fix available for none of them.
 #
 # Dependabot's docker ecosystem covers all three bases (README.md, under Container
-# images), so the base bump that clears all five arrives on its own; this file then goes
-# back to holding nothing.
+# images), so the base bump that clears these arrives on its own.
 vulnerabilities:
-  - id: CVE-2026-111497
+  - id: CVE-2026-85091
     statement: >-
-      brotli out-of-bounds write in the decoder. brotli-libs 1.2.0-r1 is present in both
-      alpine bases as a curl dependency; fixed in 1.2.1-r0. No brotli module is loaded by
-      nginx, postgres decodes no brotli, and no layer of ours decodes it either, so there
-      is no path to the decoder in either image.
+      zlib heap buffer overflow in gz_vacate(), reached through gzprintf() after a write
+      stall; zlib 1.3.2-r0, fixed in 1.3.2-r1. Reachable: /usr/sbin/nginx links zlib
+      directly and default.conf.template sets `gzip on;`, so request data reaches the
+      library on every compressed response.
     expired_at: 2026-11-30
-  - id: CVE-2026-92392
+  - id: CVE-2026-107891
     statement: >-
-      curl HTTP/2 upload use-after-free, in curl and libcurl 8.22.0-r0; fixed in 8.23.0-r0.
-      Reachable only by running curl, which the frontend image never does and which the
-      database image cannot: it carries libcurl without the curl binary.
+      musl integer overflows in regcomp() on an untrusted regular expression, in musl and
+      musl-utils 1.2.6-r2; fixed in 1.2.6-r3. Treated as reachable because musl is libc.
+      Nothing measured compiles an untrusted pattern - nginx matches with PCRE2 and
+      compiles only patterns from its own configuration - but a libc fault is not written
+      off on the strength of today's call sites.
     expired_at: 2026-11-30
-  - id: CVE-2026-117610
+  # THE KRB5 SIXTEEN ARE ONE FINDING in every respect that matters here: krb5-libs
+  # 1.22.2-r1 in the database image, every one fixed in 1.22.3-r0, every one in the KDC,
+  # kadmind or GSS-RPC paths. The image runs none of those - it is a PostgreSQL server,
+  # and /usr/lib/krb5 holds the libraries a KDC would use - but /usr/local/bin/postgres
+  # and libpq.so.5 do link libgssapi_krb5, the base being built --with-gssapi, so the
+  # library is in the server's address space. Kerberos authentication is never
+  # negotiated:
+  # stack/compose.yaml sets POSTGRES_HOST_AUTH_METHOD to trust and no pg_hba entry names
+  # gss. Reachable by that linkage alone, and listed here rather than in the VEX document
+  # because the claim that clears them rests on how the server is configured rather
+  # than on what the image contains.
+  - id: CVE-2026-107364
     statement: >-
-      libexpat NULL pointer dereference in externalEntityInitProcessor2() on empty input,
-      in libexpat 2.9.0-r0; fixed in 2.10.0-r0. Present in the frontend's nginx base
-      alone, and only as a fontconfig dependency behind the image filter module, which
-      nginx never loads: nothing in the image parses attacker-supplied XML.
+      Unauthenticated KDC DoS via an ASN.1 decoder read overrun. No KDC runs here.
     expired_at: 2026-11-30
-  - id: CVE-2026-118370
-    statement: >-
-      libexpat signed integer overflow in storeAtts(), reached by a start tag carrying
-      over 2^30 attributes in a multi-gigabyte document; libexpat 2.9.0-r0, fixed in
-      2.10.0-r0. Same single, unloaded path as CVE-2026-117610, and the frontend serves
-      static files rather than accepting a document at all.
+  - id: CVE-2026-119079
+    statement: Unauthenticated KDC CPU DoS via quadratic ASN.1 decoding. No KDC runs here.
     expired_at: 2026-11-30
-  - id: CVE-2026-113351
+  - id: CVE-2026-71200
     statement: >-
-      libexpat denial of service: XML_ParserReset() zeroes the direct byte count without
-      offsetting the heap allocations it tracks, so a parser reused after a large document
-      fails every later parse with XML_ERROR_NO_MEMORY until it is recreated. Affects
-      2.7.2 through 2.9.0, fixed in 2.10.0-r0. Same single, unloaded path as the two
-      above, and nothing in the image resets a parser because nothing creates one.
+      Unauthenticated KDC NULL dereference via a crafted PKINIT pre-auth request. No KDC
+      runs here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-112317
+    statement: >-
+      Unauthenticated KDC memory leak in the KDB keytab key decryption error path. No KDC
+      runs here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-71199
+    statement: >-
+      Alteration of authentication indicators in a CAMMAC container, in the KDC's ticket
+      path. No KDC runs here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-112315
+    statement: >-
+      Unauthenticated kadmind memory leak on an RPCSEC_GSS buffer decode failure. No
+      kadmind runs here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-112316
+    statement: >-
+      Authenticated kadmind memory leak on an xdr_krb5_tl_data() decode failure. No
+      kadmind runs here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-112318
+    statement: >-
+      Authenticated kadmind DoS dereferencing a null policy name pointer. No kadmind runs
+      here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-112319
+    statement: >-
+      Authenticated kadmind memory exhaustion via unbounded RPC XDR allocation. No kadmind
+      runs here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-112320
+    statement: >-
+      Unauthenticated kadmind memory leak via GSS-RPC auth flavor switching. No kadmind
+      runs here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-112321
+    statement: >-
+      Unauthenticated kadmind memory leak in AUTH_GSSAPI_INIT error paths. No kadmind runs
+      here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-112322
+    statement: >-
+      Unauthenticated kadmind CPU DoS in AUTH_GSSAPI client state cleanup. No kadmind runs
+      here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-112323
+    statement: >-
+      Unauthenticated kadmind memory exhaustion via failed AUTH_GSSAPI_INIT requests. No
+      kadmind runs here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-118380
+    statement: >-
+      kadmind request alteration and protected information disclosure. No kadmind runs
+      here.
+    expired_at: 2026-11-30
+  - id: CVE-2026-40355
+    statement: >-
+      NULL dereference in the NegoEx mechanism, reached while negotiating GSSAPI. The
+      server negotiates no Kerberos authentication.
+    expired_at: 2026-11-30
+  - id: CVE-2026-40356
+    statement: >-
+      Integer underflow and out-of-bounds read, reached while negotiating GSSAPI. The
+      server negotiates no Kerberos authentication.
     expired_at: 2026-11-30
