@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.4](https://github.com/TomBorglum/expense-tracker/compare/v2.3.3...v2.3.4) (2026-11-12)
+
+
+### Dependencies
+
+* bump the frontend group across 1 directory with 6 updates ([#210](https://github.com/TomBorglum/expense-tracker/issues/210)) ([b74fb2c](https://github.com/TomBorglum/expense-tracker/commit/b74fb2cc9d6c27eaf19f0d88c87ac7ed9f6e73c1))
+* update pixi dependencies ([#207](https://github.com/TomBorglum/expense-tracker/issues/207)) ([d6b0573](https://github.com/TomBorglum/expense-tracker/commit/d6b0573fac5d3c0446fa5bff74f6baeb032d40cc))
+
 ## [2.3.3](https://github.com/TomBorglum/expense-tracker/compare/v2.3.2...v2.3.3) (2026-11-05)
 
 
