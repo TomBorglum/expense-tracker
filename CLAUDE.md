@@ -176,8 +176,10 @@ The five payload pairs share a backend half, `backend/src/expense_tracker/__init
   role's `job_workflow_ref` condition, **in the console**: its pattern ends
   `@refs/tags/v*.*.*`, whose two literal dots exclude `@v1` and `@v1.1`, so a moving pin
   fails every release at the credential exchange.
-- **The Trivy suppression file:** `.trivyignore.yaml` + `publish.yml`'s `trivyignores`
-  input, which defaults to empty: a file the caller does not name is applied to nothing.
+- **The two suppression files:** `.trivyignore.yaml` and
+  `.vex/expense-tracker.openvex.json` + `publish.yml`'s `trivyignores` and
+  `vex-documents`, both defaulting to empty: a file the caller does not name is applied
+  to nothing. [`docs/publish.md`](docs/publish.md) states which finding goes in which.
 - **The published image names:** this repository's own name + the Docker Hub
   repositories: renaming this GitHub repository renames what a release publishes to.
 - **The image reference formula:** `stack/compose.yaml`'s five `image:` keys +
@@ -190,15 +192,7 @@ The five payload pairs share a backend half, `backend/src/expense_tracker/__init
   belongs to, **both outside this repository**.
 - **The bake target name:** the three `docker-bake.hcl` files + the target name the
   release workflow fixes: `image`.
-- **The API base URL placeholder:** `frontend/Dockerfile` +
-  `frontend/docker/40-api-base-url.sh`: `__EXPENSE_TRACKER_API_BASE_URL__`.
-- **The `@` alias (`frontend/src`):** `frontend/vite.config.ts` +
-  `frontend/tsconfig.app.json`, each resolving it for its own tool.
 - **The `frontend/src/main.tsx` coverage exclusion:** `frontend/vite.config.ts` +
   `sonar-project.properties`: one exclusion, two tools that each name it.
 - **The `frontend/src/routeTree.gen.ts` exclusion:** `frontend/.prettierignore` +
   `frontend/vite.config.ts` + `sonar-project.properties`; prettier's half has the gate.
-- **`VITE_API_BASE_URL`:** `frontend/.env` + `frontend/src/vite-env.d.ts`: set in the
-  first, typed in the second.
-- **daisyUI's `@plugin` descriptors:** `frontend/src/styles/app.css` + the `plugin`
-  override in `frontend/eslint.config.ts`, which names the descriptors this repo uses.
