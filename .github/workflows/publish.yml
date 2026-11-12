@@ -41,10 +41,6 @@ jobs:
       dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
       # The input defaults to empty, which applies no suppressions at all.
       trivyignores: .trivyignore.yaml
-      # A HIGH or CRITICAL finding fails a release. On a pull request it writes the
-      # findings to the job summary and passes, so upstream base-image drift does not
-      # fail a change that did not cause it. The check that trivy scanned this image,
-      # and not something else, fails under either value.
       vulnerability-gate: release
     secrets:
       aws-role-arn: ${{ secrets.AWS_RELEASE_ROLE_ARN }}
