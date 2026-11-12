@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   images:
-    uses: TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@v1.1.0
+    uses: TomBorglum/workflows/.github/workflows/docker-hub-publish.yml@v1.2.0
     # A ceiling the called workflow can only lower - the isolation invariant CLAUDE.md
     # states.
     permissions:
@@ -39,7 +39,7 @@ jobs:
       aws-region: ${{ vars.AWS_REGION }}
       aws-ssm-parameter: /expense-tracker/release/dockerhub-pat
       dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
-      # The input defaults to empty, which applies no suppressions at all.
       trivyignores: .trivyignore.yaml
+      vulnerability-gate: release
     secrets:
       aws-role-arn: ${{ secrets.AWS_RELEASE_ROLE_ARN }}
