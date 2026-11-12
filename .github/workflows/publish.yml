@@ -39,7 +39,6 @@ jobs:
       aws-region: ${{ vars.AWS_REGION }}
       aws-ssm-parameter: /expense-tracker/release/dockerhub-pat
       dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
-      # The input defaults to empty, which applies no suppressions at all.
       trivyignores: .trivyignore.yaml
       vulnerability-gate: release
     secrets:
