@@ -44,16 +44,44 @@ publishing can leave one image published and another not.
 
 ## The vulnerability gate
 
-Each image is scanned by Trivy before anything is published, and a HIGH or CRITICAL
-finding fails the release. [The reference][reference] records how the scan is made
-trustworthy.
+Each image is scanned by Trivy before anything is published. A HIGH or CRITICAL finding
+fails a release. On a pull request the same finding is advisory: it goes to the run's job
+summary and the leg passes. `vulnerability-gate: release` is what splits the two, and a
+contributor who cannot fix drift in an upstream base is the reason for the split. The
+check that Trivy scanned this image, and not something else, fails under either value.
+[The reference][reference] records how the scan is made trustworthy.
 
-Suppressions live in **`.trivyignore.yaml`**, which records what each one covers and why
-it is unreachable.
+### Where a finding is recorded
 
-**The file is found only because `publish.yml` names it.** The `trivyignores` input
-defaults to empty, and an empty value configures no ignore file at all, so dropping that
-one line applies no suppression and fails the release on every finding it suppresses.
+Two properties decide the file: whether any image of ours can execute the vulnerable
+code, and whether a fix is published.
+
+| | Fix available | No fix available |
+| --- | --- | --- |
+| **Not reachable** | VEX, no date | VEX, no date |
+| **Reachable** | Ignore file, dated to the base bump | Ignore file, review-by date |
+
+**`.vex/expense-tracker.openvex.json`** holds the unreachable set, each statement
+carrying the measurement that puts the vulnerable code out of reach. Unreachability is a
+property of the image rather than a wait, so no statement carries a date. `trivy --vex`
+suppresses `not_affected` and `fixed` only, so an `affected` statement documents a
+finding without hiding it and never clears the gate.
+
+**A statement's product is a bare package PURL**, such as `pkg:apk/alpine/libxslt`. The
+gate scans a local OCI layout, which carries neither a repository name nor a digest, so a
+`pkg:oci/...` product matches nothing and the statement is silently inert - the finding
+is still reported and nothing says the document was ignored. A package PURL applies to
+every image scanned, so a statement's rationale has to hold in all three. One PURL also
+covers a package's subpackages: the statement on `pkg:apk/alpine/curl` clears `libcurl`
+as well.
+
+**`.trivyignore.yaml`** holds the reachable set, so every entry in it is a finding that
+ships. Each carries `expired_at`, and the file's header states the two meanings a date
+has.
+
+**Both files are found only because `publish.yml` names them.** The `trivyignores` and
+`vex-documents` inputs default to empty, so dropping either line applies that file to
+nothing and fails the release on every finding it covers.
 
 ## The published stack
 

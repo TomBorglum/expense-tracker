@@ -40,6 +40,7 @@ jobs:
       aws-ssm-parameter: /expense-tracker/release/dockerhub-pat
       dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
       trivyignores: .trivyignore.yaml
+      vex-documents: .vex/expense-tracker.openvex.json
       vulnerability-gate: release
     secrets:
       aws-role-arn: ${{ secrets.AWS_RELEASE_ROLE_ARN }}
