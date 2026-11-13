@@ -155,4 +155,4 @@ it. **That is the path to mount.**
 
 Alpine is for the gate rather than the size: 62 HIGH/CRITICAL in `postgres:18.6` with a
 fix available for **none** of them, against the 2 here, both covered by
-`.trivyignore.yaml`.
+`database/.trivyignore.yaml`.

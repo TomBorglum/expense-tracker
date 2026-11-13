@@ -11,8 +11,8 @@
 # 18-alpine resolves to 18.6, the version pixi.toml pins for the local cluster, so a
 # developer and a deployment run the same minor.
 #
-# alpine rather than the debian variant, for the reason .trivyignore.yaml records for the
-# SPA's base: the smaller package inventory is what keeps findings out of the HIGH/CRITICAL
+# alpine rather than the debian variant, for the reason frontend/.trivyignore.yaml records
+# for the SPA's base: the smaller package inventory keeps findings out of the HIGH/CRITICAL
 # gate, which fails a release outright.
 
 FROM postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5

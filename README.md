@@ -338,7 +338,7 @@ version. [docs/publish.md](docs/publish.md) documents what this repository decid
 script beside it: one file describing the three images as three services, plus the two
 loaders behind a `load` profile, on one network with one volume. The target is a single
 host, a laptop, and `docker compose up` is the whole operation. The directory is what
-`publish.yml` hands the release workflow as a compose directory, and its name is the
+`.github/docker-hub-publish.yml` declares as a compose project, and its name is the
 suffix the published artifact carries.
 
 Every service names an `image:` and none a `build:`. `docker compose publish` refuses a

@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/TomBorglum/workflows/v2.0.1/schema/docker-hub-publish.json
+images:
+  directories:
+    backend:
+    database:
+      trivyignores: 
+        - .trivyignore.yaml
+      vex-documents: 
+        - .vex/database.openvex.json
+    frontend:
+      trivyignores: 
+        - .trivyignore.yaml
+      vex-documents: 
+        - .vex/frontend.openvex.json
+  gates:
+    vulnerability: release
+
+compose-projects:
+  directories:
+    stack:

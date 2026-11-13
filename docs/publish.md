@@ -2,8 +2,10 @@
 
 `.github/workflows/publish.yml` publishes all three images to Docker Hub when
 release-please's GitHub Release is published. It holds the triggers, the concurrency group
-and every value belonging to this repository; the work is done by the reusable
-`docker-hub-publish.yml` in [TomBorglum/workflows][workflows], pinned at an exact version.
+and the values describing this repository's environment; `.github/docker-hub-publish.yml`
+declares what is published and the scan policy applied to it. The work is done by the
+reusable `docker-hub-publish.yml` in [TomBorglum/workflows][workflows], pinned at an exact
+version.
 
 ```
 tomborglum/expense-tracker-backend
@@ -13,7 +15,7 @@ tomborglum/expense-tracker-stack      <- the stack, not an image
 ```
 
 **No one of those names is written down.** Each is `<namespace>/<repository>-<directory>`,
-composed at release time from the directories `publish.yml` names. **So renaming this
+composed at release time from the directories the config file names. **So renaming this
 GitHub repository renames what a release publishes to.** The fourth is the stack rather
 than an image; see [The published stack](#the-published-stack).
 
@@ -46,22 +48,24 @@ publishing can leave one image published and another not.
 
 Each image is scanned by Trivy before anything is published. A HIGH or CRITICAL finding
 fails a release. On a pull request the same finding is advisory: it goes to the run's job
-summary and the leg passes. `vulnerability-gate: release` is what splits the two, and a
-contributor who cannot fix drift in an upstream base is the reason for the split. The
-check that Trivy scanned this image, and not something else, fails under either value.
+summary and the leg passes. `images.gates.vulnerability: release` is what splits the two,
+and a contributor who cannot fix drift in an upstream base is the reason for the split.
+**The key defaults to `always`**, which fails a pull request on the same finding, so
+dropping it is what reinstates that. The check that Trivy scanned this image, and not
+something else, fails under either value.
 [The reference][reference] records how the scan is made trustworthy.
 
 ### Where a finding is recorded
 
-Two properties decide the file: whether any image of ours can execute the vulnerable
-code, and whether a fix is published.
+Two properties decide the file: whether the image can execute the vulnerable code, and
+whether a fix is published. Each image carries its own pair, under its own directory.
 
 | | Fix available | No fix available |
 | --- | --- | --- |
 | **Not reachable** | VEX, no date | VEX, no date |
 | **Reachable** | Ignore file, dated to the base bump | Ignore file, review-by date |
 
-**`.vex/expense-tracker.openvex.json`** holds the unreachable set, each statement
+**`<dir>/.vex/<dir>.openvex.json`** holds that image's unreachable set, each statement
 carrying the measurement that puts the vulnerable code out of reach. Unreachability is a
 property of the image rather than a wait, so no statement carries a date. `trivy --vex`
 suppresses `not_affected` and `fixed` only, so an `affected` statement documents a
@@ -70,18 +74,19 @@ finding without hiding it and never clears the gate.
 **A statement's product is a bare package PURL**, such as `pkg:apk/alpine/libxslt`. The
 gate scans a local OCI layout, which carries neither a repository name nor a digest, so a
 `pkg:oci/...` product matches nothing and the statement is silently inert - the finding
-is still reported and nothing says the document was ignored. A package PURL applies to
-every image scanned, so a statement's rationale has to hold in all three. One PURL also
-covers a package's subpackages: the statement on `pkg:apk/alpine/curl` clears `libcurl`
-as well.
+is still reported and nothing says the document was ignored. One PURL covers a
+package's subpackages: the statement on `pkg:apk/alpine/curl` clears `libcurl` as well.
+A document reaches one image's scan, so a rationale has to hold for that image alone,
+and a package both alpine images carry is stated in both documents.
 
-**`.trivyignore.yaml`** holds the reachable set, so every entry in it is a finding that
-ships. Each carries `expired_at`, and the file's header states the two meanings a date
-has.
+**`<dir>/.trivyignore.yaml`** holds that image's reachable set, so every entry in it is
+a finding that ships. Each carries `expired_at`, and each file's header states the two
+meanings a date has.
 
-**Both files are found only because `publish.yml` names them.** The `trivyignores` and
-`vex-documents` inputs default to empty, so dropping either line applies that file to
-nothing and fails the release on every finding it covers.
+**A file is found only because `.github/docker-hub-publish.yml` names it**, under its
+image's directory key and relative to that directory. `trivyignores` and `vex-documents`
+default to empty, so dropping an entry applies that file to nothing and fails the release
+on every finding it covers.
 
 ## The published stack
 

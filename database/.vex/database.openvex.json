@@ -1,0 +1,77 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/TomBorglum/expense-tracker/blob/main/database/.vex/database.openvex.json",
+  "author": "https://github.com/TomBorglum/expense-tracker",
+  "timestamp": "2026-11-13T10:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-125350"
+      },
+      "products": [
+        {
+          "@id": "pkg:apk/alpine/libxslt"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "/usr/local/lib/postgresql/pgxml.so links libxslt and loads only on CREATE EXTENSION xml2, which backend/schema.sql never issues. /usr/bin/xsltproc is a CLI nothing in the image invokes."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-87636"
+      },
+      "products": [
+        {
+          "@id": "pkg:apk/alpine/libxslt"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "Same unreached paths as CVE-2026-125350: pgxml.so behind an extension the schema never creates, and an xsltproc nothing invokes."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-9947"
+      },
+      "products": [
+        {
+          "@id": "pkg:apk/alpine/libxslt"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "Same unreached paths as CVE-2026-125350: pgxml.so behind an extension the schema never creates, and an xsltproc nothing invokes."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-111497"
+      },
+      "products": [
+        {
+          "@id": "pkg:apk/alpine/brotli-libs"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The fault is in the brotli decoder. brotli-libs is in the alpine base as a libcurl dependency. This image holds the library with nothing that calls it, and no layer of ours decodes brotli."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-92392"
+      },
+      "products": [
+        {
+          "@id": "pkg:apk/alpine/curl"
+        },
+        {
+          "@id": "pkg:apk/alpine/libcurl"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The fault is reached by an HTTP/2 upload. This image carries libcurl without the curl binary, and the server it runs makes no outbound HTTP request."
+    }
+  ]
+}

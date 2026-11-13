@@ -1,15 +1,12 @@
-# Suppressions for the HIGH/CRITICAL gate in the release workflow. Applied to every image
-# scan; an entry that does not match an image is simply inert.
+# Suppressions for the HIGH/CRITICAL gate, covering the database image alone. Named by
+# .github/docker-hub-publish.yml under `database:`, relative to this directory; a file
+# the config does not name is applied to nothing.
 #
-# ONLY REACHABLE FINDINGS BELONG HERE. A finding whose vulnerable code no image of ours
-# can execute is a durable property of the image rather than something to wait out, and it
-# goes to .vex/expense-tracker.openvex.json as an OpenVEX not_affected statement with no
-# date. Every entry below is a finding that ships, and that is the whole difference
-# between the two files. docs/publish.md states the four-case triage.
-#
-# `publish.yml` must pass both `trivyignores: .trivyignore.yaml` and
-# `vex-documents: .vex/expense-tracker.openvex.json`; a file the caller does not name is
-# applied to nothing.
+# ONLY REACHABLE FINDINGS BELONG HERE. A finding whose vulnerable code this image cannot
+# execute is a durable property of the image rather than something to wait out, and it
+# goes to .vex/database.openvex.json as an OpenVEX not_affected statement with no date.
+# Every entry below is a finding that ships, and that is the whole difference between the
+# two files. docs/publish.md states the four-case triage.
 #
 # TWO MEANINGS FOR A DATE, and which one an entry carries depends on the fix:
 #   - A fix is published and the base has not been rebuilt with it: the date is when that
@@ -19,43 +16,26 @@
 # Every entry below is the first kind, so they share one date. Removing a date instead of
 # extending it turns this file into a permanent blind spot.
 #
-# alpine v3.24/main carries the fixed zlib and musl today, while
-# nginxinc/nginx-unprivileged:1.31-alpine, last pushed 2026-10-19, ships neither.
-# krb5-libs 1.22.3-r0 is likewise published and absent from postgres:18-alpine. The
-# digest pinned in each Dockerfile is already the newest its tag resolves to, so there is
-# nothing to re-pin to - only an upstream rebuild clears these. Switching either image to
-# the debian variant is not the answer and was measured both times: 60 HIGH/CRITICAL for
-# nginx and 62 for postgres, with a fix available for none of them.
+# krb5-libs 1.22.3-r0 is published in alpine v3.24/main and absent from
+# postgres:18-alpine. The digest pinned in Dockerfile is already the newest its tag
+# resolves to, so there is nothing to re-pin to - only an upstream rebuild clears these.
+# Switching this image to the debian variant is not the answer and was measured: 62
+# HIGH/CRITICAL, with a fix available for none of them.
 #
-# Dependabot's docker ecosystem covers all three bases (README.md, under Container
-# images), so the base bump that clears these arrives on its own.
+# Dependabot's docker ecosystem covers this base (README.md, under Container images), so
+# the base bump that clears these arrives on its own.
+#
+# THE KRB5 SIXTEEN ARE ONE FINDING in every respect that matters here: krb5-libs
+# 1.22.2-r1, every one fixed in 1.22.3-r0, every one in the KDC, kadmind or GSS-RPC paths.
+# This image runs none of those - it is a PostgreSQL server, and /usr/lib/krb5 holds the
+# libraries a KDC would use - but /usr/local/bin/postgres and libpq.so.5 do link
+# libgssapi_krb5, the base being built --with-gssapi, so the library is in the server's
+# address space. Kerberos authentication is never negotiated: stack/compose.yaml sets
+# POSTGRES_HOST_AUTH_METHOD to trust and no pg_hba entry names gss. Reachable by that
+# linkage alone, and listed here rather than in the VEX document because the claim that
+# clears them rests on how the server is configured rather than on what the image
+# contains.
 vulnerabilities:
-  - id: CVE-2026-85091
-    statement: >-
-      zlib heap buffer overflow in gz_vacate(), reached through gzprintf() after a write
-      stall; zlib 1.3.2-r0, fixed in 1.3.2-r1. Reachable: /usr/sbin/nginx links zlib
-      directly and default.conf.template sets `gzip on;`, so request data reaches the
-      library on every compressed response.
-    expired_at: 2026-11-30
-  - id: CVE-2026-107891
-    statement: >-
-      musl integer overflows in regcomp() on an untrusted regular expression, in musl and
-      musl-utils 1.2.6-r2; fixed in 1.2.6-r3. Treated as reachable because musl is libc.
-      Nothing measured compiles an untrusted pattern - nginx matches with PCRE2 and
-      compiles only patterns from its own configuration - but a libc fault is not written
-      off on the strength of today's call sites.
-    expired_at: 2026-11-30
-  # THE KRB5 SIXTEEN ARE ONE FINDING in every respect that matters here: krb5-libs
-  # 1.22.2-r1 in the database image, every one fixed in 1.22.3-r0, every one in the KDC,
-  # kadmind or GSS-RPC paths. The image runs none of those - it is a PostgreSQL server,
-  # and /usr/lib/krb5 holds the libraries a KDC would use - but /usr/local/bin/postgres
-  # and libpq.so.5 do link libgssapi_krb5, the base being built --with-gssapi, so the
-  # library is in the server's address space. Kerberos authentication is never
-  # negotiated:
-  # stack/compose.yaml sets POSTGRES_HOST_AUTH_METHOD to trust and no pg_hba entry names
-  # gss. Reachable by that linkage alone, and listed here rather than in the VEX document
-  # because the claim that clears them rests on how the server is configured rather
-  # than on what the image contains.
   - id: CVE-2026-107364
     statement: >-
       Unauthenticated KDC DoS via an ASN.1 decoder read overrun. No KDC runs here.
