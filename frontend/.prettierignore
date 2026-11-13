@@ -14,3 +14,5 @@ src/routeTree.gen.ts
 
 # Hand-formatted prose we do not want reflowed
 *.md
+.trivyignore.yaml
+.vex/

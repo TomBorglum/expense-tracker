@@ -1,8 +1,8 @@
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": "https://github.com/TomBorglum/expense-tracker/blob/main/.vex/expense-tracker.openvex.json",
+  "@id": "https://github.com/TomBorglum/expense-tracker/blob/main/frontend/.vex/frontend.openvex.json",
   "author": "https://github.com/TomBorglum/expense-tracker",
-  "timestamp": "2026-11-12T15:00:00Z",
+  "timestamp": "2026-11-13T10:00:00Z",
   "version": 1,
   "statements": [
     {
@@ -16,7 +16,7 @@
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "libexpat is present in the frontend image alone, as a fontconfig dependency behind ngx_http_image_filter_module.so. nginx loads a dynamic module only on a load_module directive; the nginx-unprivileged alpine base ships none and frontend/docker/default.conf.template declares none, so no request reaches expat. Measured in the pinned base: the only ELF linking libexpat.so is libfontconfig.so.1.16.1, the only one linking that is libgd.so.3, and libgd is there for the image filter module."
+      "impact_statement": "libexpat is in this image as a fontconfig dependency behind ngx_http_image_filter_module.so. nginx loads a dynamic module only on a load_module directive; the nginx-unprivileged alpine base ships none and docker/default.conf.template declares none, so no request reaches expat. Measured in the pinned base: the only ELF linking libexpat.so is libfontconfig.so.1.16.1, the only one linking that is libgd.so.3, and libgd is there for the image filter module."
     },
     {
       "vulnerability": {
@@ -29,7 +29,7 @@
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "Same unloaded path as CVE-2026-117610. The frontend serves static files and accepts no XML document at all, so the start tag carrying over 2^30 attributes that reaches storeAtts() has no way in."
+      "impact_statement": "Same unloaded path as CVE-2026-117610. This image serves static files and accepts no XML document at all, so the start tag carrying over 2^30 attributes that reaches storeAtts() has no way in."
     },
     {
       "vulnerability": {
@@ -68,7 +68,7 @@
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "libxslt is in both alpine images and neither reaches it. In the frontend, ngx_http_xslt_filter_module.so is the only ELF linking it, and nginx loads a dynamic module only on a load_module directive that neither the base nor frontend/docker/default.conf.template declares. In the database image, /usr/local/lib/postgresql/pgxml.so links it and loads only on CREATE EXTENSION xml2, which backend/schema.sql never issues, and /usr/bin/xsltproc is a CLI nothing in the image invokes."
+      "impact_statement": "ngx_http_xslt_filter_module.so is the only ELF in this image linking libxslt, and nginx loads a dynamic module only on a load_module directive that neither the base nor docker/default.conf.template declares."
     },
     {
       "vulnerability": {
@@ -81,7 +81,7 @@
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "Same two unreached paths as CVE-2026-125350: the unloaded nginx XSLT filter module, and pgxml.so behind an extension the schema never creates."
+      "impact_statement": "Same unreached path as CVE-2026-125350: the unloaded nginx XSLT filter module."
     },
     {
       "vulnerability": {
@@ -94,7 +94,7 @@
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "Same two unreached paths as CVE-2026-125350: the unloaded nginx XSLT filter module, and pgxml.so behind an extension the schema never creates."
+      "impact_statement": "Same unreached path as CVE-2026-125350: the unloaded nginx XSLT filter module."
     },
     {
       "vulnerability": {
@@ -107,7 +107,7 @@
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "The fault is in the brotli decoder. brotli-libs is present in both alpine bases as a libcurl dependency. nginx-unprivileged:alpine ships no brotli module and default.conf.template enables gzip, the database image holds the library with nothing that calls it, and no layer of ours decodes brotli."
+      "impact_statement": "The fault is in the brotli decoder. brotli-libs is in the alpine base as a libcurl dependency. nginx-unprivileged:alpine ships no brotli module and docker/default.conf.template enables gzip, so nothing in this image decodes brotli."
     },
     {
       "vulnerability": {
@@ -123,7 +123,7 @@
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "The fault is reached by an HTTP/2 upload. The frontend runs nginx and one entrypoint script and invokes curl in neither; the database image carries libcurl without the curl binary. The only curl in the repository is in CI."
+      "impact_statement": "The fault is reached by an HTTP/2 upload. This image runs nginx and one entrypoint script, docker/40-api-base-url.sh, and invokes curl in neither."
     }
   ]
 }

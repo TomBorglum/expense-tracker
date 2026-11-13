@@ -176,14 +176,14 @@ The five payload pairs share a backend half, `backend/src/expense_tracker/__init
   role's `job_workflow_ref` condition, **in the console**: its pattern ends
   `@refs/tags/v*.*.*`, whose two literal dots exclude `@v1` and `@v1.1`, so a moving pin
   fails every release at the credential exchange.
-- **The two suppression files:** `.trivyignore.yaml` and
-  `.vex/expense-tracker.openvex.json` + `publish.yml`'s `trivyignores` and
-  `vex-documents`, both defaulting to empty: a file the caller does not name is applied
-  to nothing. [`docs/publish.md`](docs/publish.md) states which finding goes in which.
+- **The four suppression files:** `frontend/` and `database/`'s `.trivyignore.yaml`
+  and `.vex/*.openvex.json` + the `trivyignores` and `vex-documents` keys naming them in
+  `.github/docker-hub-publish.yml`, both defaulting to empty: a file the config does not
+  name is applied to nothing. [`docs/publish.md`](docs/publish.md) states which is which.
 - **The published image names:** this repository's own name + the Docker Hub
   repositories: renaming this GitHub repository renames what a release publishes to.
-- **The image reference formula:** `stack/compose.yaml`'s five `image:` keys +
-  `publish.yml`'s `image-directories`: `-<service>` must spell a directory it names.
+- **The image reference formula:** `stack/compose.yaml`'s five `image:` keys + the
+  config's `images.directories`: `-<service>` must spell a directory it names.
 - **The stack's interpolation variables:** the same `image:` keys + the two the release
   workflow sets: `IMAGE_PREFIX` and `IMAGE_TAG`, both defaulted.
 - **The called workflow's declared inputs** + `publish.yml`'s `with:`/`secrets:`; the

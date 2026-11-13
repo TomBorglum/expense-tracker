@@ -1,0 +1,43 @@
+# Suppressions for the HIGH/CRITICAL gate, covering the SPA image alone. Named by
+# .github/docker-hub-publish.yml under `frontend:`, relative to this directory; a file
+# the config does not name is applied to nothing.
+#
+# ONLY REACHABLE FINDINGS BELONG HERE. A finding whose vulnerable code this image cannot
+# execute is a durable property of the image rather than something to wait out, and it
+# goes to .vex/frontend.openvex.json as an OpenVEX not_affected statement with no date.
+# Every entry below is a finding that ships, and that is the whole difference between the
+# two files. docs/publish.md states the four-case triage.
+#
+# TWO MEANINGS FOR A DATE, and which one an entry carries depends on the fix:
+#   - A fix is published and the base has not been rebuilt with it: the date is when that
+#     rebuild is expected, and expiry re-blocks the release rather than reminding anyone.
+#     Clearing the entry is a base bump, not an edit here.
+#   - No fix is published: the date is review-by, and the finding ships past it.
+# Both entries below are the first kind, so they share one date. Removing a date instead
+# of extending it turns this file into a permanent blind spot.
+#
+# alpine v3.24/main carries the fixed zlib and musl today, while
+# nginxinc/nginx-unprivileged:1.31-alpine, last pushed 2026-10-19, ships neither. The
+# digest pinned in Dockerfile is already the newest its tag resolves to, so there is
+# nothing to re-pin to - only an upstream rebuild clears these. Switching this image to
+# the debian variant is not the answer and was measured: 60 HIGH/CRITICAL, with a fix
+# available for none of them.
+#
+# Dependabot's docker ecosystem covers this base (README.md, under Container images), so
+# the base bump that clears these arrives on its own.
+vulnerabilities:
+  - id: CVE-2026-85091
+    statement: >-
+      zlib heap buffer overflow in gz_vacate(), reached through gzprintf() after a write
+      stall; zlib 1.3.2-r0, fixed in 1.3.2-r1. Reachable: /usr/sbin/nginx links zlib
+      directly and docker/default.conf.template sets `gzip on;`, so request data reaches
+      the library on every compressed response.
+    expired_at: 2026-11-30
+  - id: CVE-2026-107891
+    statement: >-
+      musl integer overflows in regcomp() on an untrusted regular expression, in musl and
+      musl-utils 1.2.6-r2; fixed in 1.2.6-r3. Treated as reachable because musl is libc.
+      Nothing measured compiles an untrusted pattern - nginx matches with PCRE2 and
+      compiles only patterns from its own configuration - but a libc fault is not written
+      off on the strength of today's call sites.
+    expired_at: 2026-11-30
