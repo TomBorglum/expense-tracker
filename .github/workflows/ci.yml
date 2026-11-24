@@ -28,7 +28,7 @@ jobs:
         with:
           # Full history so SonarCloud can attribute issues to the right commits.
           fetch-depth: 0
-      - uses: TomBorglum/actions/direnv/setup@f3028cddd68f2efc77b63a3f4fd749e541c8701c # v3.1.0
+      - uses: TomBorglum/actions/direnv/setup@e28b4a48eb5d290f75bd764e076331ab58e7988e # v3.2.0
       # Each stack's gates run cheapest first, then its tests, then anything that builds.
       # The two stacks order lint differently; the measurements behind that are in
       # docs/development.md, under Continuous integration.
@@ -50,6 +50,6 @@ jobs:
       # After the build, which is what rewrites this file: a non-empty diff means a route
       # was added, renamed or removed without committing the generated tree.
       - run: git diff --exit-code -- frontend/src/routeTree.gen.ts
-      - uses: TomBorglum/actions/sonar/scan@f3028cddd68f2efc77b63a3f4fd749e541c8701c # v3.1.0
+      - uses: TomBorglum/actions/sonar/scan@e28b4a48eb5d290f75bd764e076331ab58e7988e # v3.2.0
         with:
           sonar-token: ${{ secrets.SONAR_TOKEN }}

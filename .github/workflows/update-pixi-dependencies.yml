@@ -20,7 +20,7 @@ concurrency:
 jobs:
   # Every input left at its default; the called workflow documents them.
   update:
-    uses: TomBorglum/workflows/.github/workflows/update-pixi-dependencies.yml@970104ceafc350958d70a3617a8ced3207784188 # v1.0.2
+    uses: TomBorglum/workflows/.github/workflows/update-pixi-dependencies.yml@d39b99286b01a936871326e3f1be9fed7dfc64dc # v1.1.1
     secrets:
       app-client-id: ${{ secrets.AUTOMATION_APP_CLIENT_ID }}
       app-private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
