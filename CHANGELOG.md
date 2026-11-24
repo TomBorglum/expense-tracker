@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.5](https://github.com/TomBorglum/expense-tracker/compare/v2.3.4...v2.3.5) (2026-11-24)
+
+
+### Dependencies
+
+* bump the frontend group across 1 directory with 10 updates ([#217](https://github.com/TomBorglum/expense-tracker/issues/217)) ([267b3e2](https://github.com/TomBorglum/expense-tracker/commit/267b3e2cb5722a2074f6634cb41685f1aed0e261))
+
 ## [2.3.4](https://github.com/TomBorglum/expense-tracker/compare/v2.3.3...v2.3.4) (2026-11-12)
 
 
